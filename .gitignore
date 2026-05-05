@@ -1,0 +1,7 @@
+node_modules/
+docs/superpowers/
+dist/
+.aide/
+.env.local
+coverage/
+*.log
