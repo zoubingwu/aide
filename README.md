@@ -1,0 +1,117 @@
+# Aide
+
+Turn Codex into your personal assistant.
+
+Aide is a CLI that connects Codex to assistant endpoints. The MVP supports Discord endpoints, creates a private workspace per endpoint, and runs Codex inside the matching workspace when a message arrives.
+
+## Install
+
+```bash
+bun install
+bun run build
+```
+
+`bun run build` creates a bundled CLI at `dist/cli.js`. Use it directly during development:
+
+```bash
+node dist/cli.js --help
+```
+
+## Initialize
+
+```bash
+aide init
+```
+
+This creates:
+
+```text
+~/.aide/
+  config.toml
+  endpoints.toml
+  runtime.json
+  usage.jsonl
+  logs/
+    runtime.log
+    activity.jsonl
+  workspace/
+```
+
+Use `AIDE_HOME=/path/to/home` or `--home /path/to/home` for isolated local testing.
+
+## Add A Discord Endpoint
+
+Interactive:
+
+```bash
+aide endpoint add discord
+```
+
+Scripted:
+
+```bash
+aide endpoint add discord \
+  --id discord-agent-ops \
+  --name "Discord #agent-ops" \
+  --token "$DISCORD_BOT_TOKEN" \
+  --server agent-lab \
+  --channel "#agent-ops" \
+  --approval-shell \
+  --approval-writes
+```
+
+Aide stores endpoint tokens in `~/.aide/.env.local` using endpoint-specific keys such as `AIDE_DISCORD_TOKEN_DISCORD_AGENT_OPS`.
+
+## Run
+
+```bash
+aide start
+```
+
+The runtime runs in the foreground, stores its PID in `runtime.json`, listens for Discord mentions, runs Codex from the endpoint workspace, and posts the final response back to Discord.
+
+Stop it from another terminal:
+
+```bash
+aide stop
+```
+
+## Codex Invocation
+
+The default runtime args are:
+
+```toml
+[runtime]
+command = "codex"
+args = ["exec", "resume", "--last", "--json", "--skip-git-repo-check"]
+```
+
+Aide appends the prompt to those args and runs the process with `cwd` set to the endpoint workspace. If resume has no usable session, Aide runs a fresh `codex exec --json --skip-git-repo-check` request.
+
+## Commands
+
+```bash
+aide status
+aide logs
+aide logs --activity
+aide tokens
+aide doctor
+
+aide endpoint list
+aide endpoint show <id>
+aide endpoint pause <id>
+aide endpoint resume <id>
+aide endpoint remove <id>
+aide endpoint test <id> --message "hello"
+aide endpoint open <id>
+aide endpoint config list <id>
+aide endpoint config open <id>
+```
+
+## Development
+
+```bash
+bun run typecheck
+bun run test
+bun run build
+```
