@@ -29,62 +29,6 @@ export async function addEndpointCommand(provider: string, options: CommandOptio
   await addDiscordEndpoint(options);
 }
 
-export async function endpointCommand(args: string[] = [], options: CommandOptions): Promise<void> {
-  const [command, second, third] = args;
-
-  if (command === "add" && second) {
-    await addEndpointCommand(second, options);
-    return;
-  }
-
-  if (command === "list") {
-    await listEndpointsCommand(options);
-    return;
-  }
-
-  if (command === "show" && second) {
-    await showEndpointCommand(second, options);
-    return;
-  }
-
-  if (command === "pause" && second) {
-    await pauseEndpointCommand(second, options);
-    return;
-  }
-
-  if (command === "resume" && second) {
-    await resumeEndpointCommand(second, options);
-    return;
-  }
-
-  if (command === "remove" && second) {
-    await removeEndpointCommand(second, options);
-    return;
-  }
-
-  if (command === "test" && second) {
-    await testEndpointCommand(second, options);
-    return;
-  }
-
-  if (command === "open" && second) {
-    await openEndpointCommand(second, options);
-    return;
-  }
-
-  if (command === "config" && second === "list" && third) {
-    await listEndpointConfigCommand(third, options);
-    return;
-  }
-
-  if (command === "config" && second === "open" && third) {
-    await openEndpointConfigCommand(third, options);
-    return;
-  }
-
-  throw new Error(endpointUsage());
-}
-
 export async function listEndpointsCommand(options: CommandOptions): Promise<void> {
   const home = homeFromOptions(options);
   const endpoints = loadEndpoints(home);
@@ -358,18 +302,4 @@ async function setEndpointEnabled(id: string, options: CommandOptions, enabled: 
 function normalizeChannel(value: string): string {
   const trimmed = value.trim();
   return trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
-}
-
-function endpointUsage(): string {
-  return `Usage:
-  aide endpoint add discord
-  aide endpoint list
-  aide endpoint show <id>
-  aide endpoint pause <id>
-  aide endpoint resume <id>
-  aide endpoint remove <id>
-  aide endpoint test <id>
-  aide endpoint open <id>
-  aide endpoint config list <id>
-  aide endpoint config open <id>`;
 }
