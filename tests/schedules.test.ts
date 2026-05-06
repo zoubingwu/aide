@@ -92,6 +92,48 @@ message = "Generate my daily brief."
     expect(() => loadSchedules(home)).toThrow("Invalid IANA timezone");
   });
 
+  it("rejects biweekly schedules with invalid start dates", () => {
+    const home = tempHome();
+    ensureAideHome(home);
+
+    expect(() =>
+      addSchedule(home, {
+        id: "bad-biweekly",
+        endpoint: "discord-main",
+        enabled: true,
+        kind: "biweekly",
+        weekday: "monday",
+        startDate: "2026-02-31",
+        time: "09:00",
+        timezone: "Asia/Shanghai",
+        target: "channel:123",
+        message: "Generate my biweekly brief."
+      })
+    ).toThrow("Invalid calendar date");
+  });
+
+  it("rejects biweekly schedules with mismatched weekdays", () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    fs.writeFileSync(
+      schedulesPath(home),
+      `[[schedules]]
+id = "bad-biweekly"
+endpoint = "discord-main"
+enabled = true
+kind = "biweekly"
+weekday = "monday"
+startDate = "2026-05-05"
+time = "09:00"
+timezone = "Asia/Shanghai"
+target = "channel:123"
+message = "Generate my biweekly brief."
+`
+    );
+
+    expect(() => loadSchedules(home)).toThrow("Biweekly startDate must match weekday");
+  });
+
   it("loads valid runtime schedules and reports invalid ones", () => {
     const home = tempHome();
     ensureAideHome(home);
@@ -122,6 +164,31 @@ message = "Generate my daily brief."
     expect(loadRuntimeSchedules(home)).toMatchObject({
       schedules: [{ id: "daily-brief" }],
       issues: [{ index: 1, id: "bad-timezone", error: expect.stringContaining("Invalid IANA timezone") }]
+    });
+  });
+
+  it("reports invalid biweekly anchors during runtime load", () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    fs.writeFileSync(
+      schedulesPath(home),
+      `[[schedules]]
+id = "bad-biweekly"
+endpoint = "discord-main"
+enabled = true
+kind = "biweekly"
+weekday = "monday"
+startDate = "2026-05-05"
+time = "09:00"
+timezone = "Asia/Shanghai"
+target = "channel:123"
+message = "Generate my biweekly brief."
+`
+    );
+
+    expect(loadRuntimeSchedules(home)).toMatchObject({
+      schedules: [],
+      issues: [{ index: 0, id: "bad-biweekly", error: expect.stringContaining("Biweekly startDate must match weekday") }]
     });
   });
 

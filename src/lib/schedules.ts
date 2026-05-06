@@ -2,13 +2,22 @@ import fs from "node:fs";
 import { z } from "zod";
 import { assertInitialized, readToml, stringifyToml } from "./config.js";
 import { schedulesPath } from "./paths.js";
-import type { Schedule, SchedulesFile } from "./types.js";
+import type { Schedule, SchedulesFile, Weekday } from "./types.js";
 
 const idSchema = z.string().min(1).regex(/^[a-z0-9][a-z0-9-]*$/);
 const timeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const targetSchema = z.string().min(3);
 const timezoneSchema = z.string().min(1).refine(isValidTimeZone, { message: "Invalid IANA timezone" });
 const weekdaySchema = z.enum(["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]);
+const weekdayIndex: Record<Weekday, number> = {
+  sunday: 0,
+  monday: 1,
+  tuesday: 2,
+  wednesday: 3,
+  thursday: 4,
+  friday: 5,
+  saturday: 6
+};
 const baseScheduleSchema = z.object({
   id: idSchema,
   endpoint: idSchema,
@@ -17,7 +26,7 @@ const baseScheduleSchema = z.object({
   message: z.string().min(1)
 });
 
-const scheduleSchema = z.discriminatedUnion("kind", [
+const rawScheduleSchema = z.discriminatedUnion("kind", [
   baseScheduleSchema.extend({
     kind: z.literal("hourly"),
     minute: z.number().int().min(0).max(59).default(0),
@@ -52,6 +61,16 @@ const scheduleSchema = z.discriminatedUnion("kind", [
     runAt: z.string().datetime({ offset: true })
   })
 ]);
+
+const scheduleSchema = rawScheduleSchema
+  .refine((schedule) => schedule.kind !== "biweekly" || isRealDate(schedule.startDate), {
+    path: ["startDate"],
+    message: "Invalid calendar date"
+  })
+  .refine((schedule) => schedule.kind !== "biweekly" || biweeklyStartMatchesWeekday(schedule.startDate, schedule.weekday), {
+    path: ["startDate"],
+    message: "Biweekly startDate must match weekday"
+  });
 
 const schedulesFileSchema = z.object({
   schedules: z.array(scheduleSchema).default([])
@@ -178,6 +197,48 @@ function isValidTimeZone(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+function isRealDate(value: string): boolean {
+  const parts = dateParts(value);
+
+  if (!parts) {
+    return false;
+  }
+
+  const date = utcDate(parts);
+  return date.getUTCFullYear() === parts.year && date.getUTCMonth() === parts.month - 1 && date.getUTCDate() === parts.day;
+}
+
+function biweeklyStartMatchesWeekday(value: string, weekday: Weekday): boolean {
+  const parts = dateParts(value);
+
+  if (!parts || !isRealDate(value)) {
+    return true;
+  }
+
+  return utcDate(parts).getUTCDay() === weekdayIndex[weekday];
+}
+
+function dateParts(value: string): { year: number; month: number; day: number } | undefined {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+
+  if (!match) {
+    return undefined;
+  }
+
+  return {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3])
+  };
+}
+
+function utcDate(parts: { year: number; month: number; day: number }): Date {
+  const date = new Date(0);
+  date.setUTCHours(0, 0, 0, 0);
+  date.setUTCFullYear(parts.year, parts.month - 1, parts.day);
+  return date;
 }
 
 function scheduleId(value: unknown): string | undefined {
