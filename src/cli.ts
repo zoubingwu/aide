@@ -9,6 +9,7 @@ import {
 } from "./commands/system.js";
 import {
   restartCommand,
+  runCommand,
   startCommand,
   stopCommand
 } from "./commands/runtime.js";
@@ -25,9 +26,12 @@ import {
   testEndpointCommand
 } from "./commands/endpoints.js";
 
+const runArgv = subcommandArgv(process.argv, "__run", "aide __run");
 const endpointArgv = subcommandArgv(process.argv, "endpoint", "aide endpoint");
 
-if (endpointArgv) {
+if (runArgv) {
+  await runInternalRuntimeCli(runArgv);
+} else if (endpointArgv) {
   const configArgv = subcommandArgv(endpointArgv, "config", "aide endpoint config");
   if (configArgv) {
     runEndpointConfigCli(configArgv);
@@ -47,7 +51,7 @@ function runRootCli(argv: string[]): void {
     .help();
 
   cli.command("init", "Initialize Aide home").action(wrap(initCommand));
-  cli.command("start", "Start Aide runtime").action(wrap(startCommand));
+  cli.command("start", "Start Aide runtime in the background").action(wrap(startCommand));
   cli.command("stop", "Stop Aide runtime").action(wrap(stopCommand));
   cli.command("restart", "Restart Aide runtime").action(wrap(restartCommand));
   cli.command("status", "Show runtime status").action(wrap(statusCommand));
@@ -100,6 +104,13 @@ function runEndpointConfigCli(argv: string[]): void {
   cli.command("open <id>", "Open endpoint config files").action(wrap(openEndpointConfigCommand));
 
   handleNoMatch(cli, cli.parse(argv));
+}
+
+async function runInternalRuntimeCli(argv: string[]): Promise<void> {
+  const cli = cac("aide __run");
+  cli.option("--home <path>", "Aide home directory");
+  const parsed = cli.parse(argv, { run: false });
+  await runCommand(parsed.options);
 }
 
 function subcommandArgv(argv: string[], command: string, displayName: string): string[] | undefined {

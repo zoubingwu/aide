@@ -9,7 +9,7 @@ Aide is a TypeScript CLI package. Runtime code targets Node-compatible APIs and 
 - `src/cli.ts`: CLI entrypoint and command registration.
 - `src/commands/system.ts`: `init`, `status`, `logs`, `tokens`, `doctor`.
 - `src/commands/endpoints.ts`: endpoint CRUD, config commands, local endpoint tests.
-- `src/commands/runtime.ts`: `start`, `stop`, `restart`.
+- `src/commands/runtime.ts`: `start`, `stop`, `restart`, and foreground runtime dispatch.
 - `src/lib/config.ts`: TOML user config, JSON runtime state, and schema validation.
 - `src/lib/paths.ts`: Aide home, display paths, endpoint id helpers.
 - `src/lib/workspace.ts`: endpoint workspace creation and validation.
@@ -17,7 +17,7 @@ Aide is a TypeScript CLI package. Runtime code targets Node-compatible APIs and 
 - `src/lib/codex.ts`: Codex process args, execution, JSONL response extraction.
 - `src/lib/assistant.ts`: shared assistant request flow.
 - `src/lib/discord.ts`: Discord listener and message delivery.
-- `src/lib/runtime.ts`: foreground runtime lifecycle.
+- `src/lib/runtime.ts`: background process launch and runtime lifecycle.
 - `src/lib/runtime-state.ts`: PID state helpers.
 - `src/lib/usage.ts`: JSONL usage events and estimated token accounting.
 - `src/lib/logging.ts`: runtime log and activity JSONL events.

@@ -13,6 +13,12 @@ describe("CLI help", () => {
     }
   });
 
+  it("shows background start command", async () => {
+    const { stdout } = await runCli("--help");
+
+    expect(stdout).toContain("start     Start Aide runtime in the background");
+  });
+
   it("shows endpoint subcommands", async () => {
     const { stdout } = await runCli("endpoint", "--help");
 

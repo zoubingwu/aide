@@ -1,9 +1,75 @@
+import { spawn } from "node:child_process";
 import { loadConfig, loadEndpoints } from "./config.js";
 import { appendRuntimeLog } from "./logging.js";
 import { markRuntimeRunning, markRuntimeStopped, runtimeDisplayStatus, isPidAlive } from "./runtime-state.js";
 import { startDiscordEndpoint } from "./discord.js";
 import { assertEndpointWorkspace } from "./workspace.js";
 import type { Client } from "discord.js";
+
+const START_WAIT_MS = 3_000;
+
+export async function startRuntimeInBackground(home: string): Promise<void> {
+  const config = loadConfig(home);
+  const endpoints = loadEndpoints(home).filter((endpoint) => endpoint.enabled);
+  const current = runtimeDisplayStatus(home);
+
+  if (current.status === "running") {
+    throw new Error(`Aide is already running with PID ${current.pid}.`);
+  }
+
+  if (endpoints.length === 0) {
+    console.log("No enabled endpoints. Add one with `aide endpoint add discord --id <id> --token <token>`.");
+    return;
+  }
+
+  const scriptPath = process.argv[1];
+
+  if (!scriptPath) {
+    throw new Error("Cannot resolve current CLI path for background runtime.");
+  }
+
+  const child = spawn(process.execPath, [scriptPath, "__run", "--home", home], {
+    detached: true,
+    stdio: "ignore",
+    env: process.env
+  });
+  let childExited = false;
+  let childError: Error | undefined;
+
+  child.once("exit", () => {
+    childExited = true;
+  });
+
+  child.once("error", (error) => {
+    childExited = true;
+    childError = error;
+  });
+
+  child.unref();
+  appendRuntimeLog(home, "runtime_background_start_requested", { pid: child.pid });
+
+  const result = await waitForRuntimeStart(
+    home,
+    child.pid,
+    Math.min(config.runtime.startupTimeoutMs, START_WAIT_MS),
+    () => childExited
+  );
+
+  if (result === "started") {
+    console.log(`Aide runtime started in background with PID ${child.pid}.`);
+    return;
+  }
+
+  if (result === "exited" || !isPidAlive(child.pid)) {
+    appendRuntimeLog(home, "runtime_background_start_failed", { pid: child.pid });
+    const message = childError
+      ? `Aide runtime failed to start: ${childError.message}`
+      : "Aide runtime failed to start. Run `aide logs` for details.";
+    throw new Error(message);
+  }
+
+  console.log(`Aide runtime is starting in background with PID ${child.pid}. Run \`aide status\` to check it.`);
+}
 
 export async function startRuntime(home: string): Promise<void> {
   const config = loadConfig(home);
@@ -15,7 +81,7 @@ export async function startRuntime(home: string): Promise<void> {
   }
 
   if (endpoints.length === 0) {
-    console.log("No enabled endpoints. Add one with `aide endpoint add discord`.");
+    console.log("No enabled endpoints. Add one with `aide endpoint add discord --id <id> --token <token>`.");
     return;
   }
 
@@ -23,7 +89,6 @@ export async function startRuntime(home: string): Promise<void> {
     assertEndpointWorkspace(endpoint);
   }
 
-  markRuntimeRunning(home);
   appendRuntimeLog(home, "runtime_starting", { pid: process.pid, command: config.runtime.command });
 
   const clients: Client[] = [];
@@ -41,6 +106,7 @@ export async function startRuntime(home: string): Promise<void> {
     throw error;
   }
 
+  markRuntimeRunning(home);
   appendRuntimeLog(home, "runtime_started", { pid: process.pid, endpoints: endpoints.map((endpoint) => endpoint.id) });
   console.log(`Aide runtime started with PID ${process.pid}. Press Ctrl+C to stop.`);
 
@@ -95,4 +161,33 @@ export function stopRuntime(home: string): void {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+async function waitForRuntimeStart(
+  home: string,
+  pid: number | undefined,
+  timeoutMs: number,
+  hasExited: () => boolean
+): Promise<"started" | "exited" | "timeout"> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const current = runtimeDisplayStatus(home);
+
+    if (current.status === "running" && current.pid === pid) {
+      return "started";
+    }
+
+    if (hasExited()) {
+      return "exited";
+    }
+
+    await sleep(100);
+  }
+
+  return "timeout";
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

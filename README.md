@@ -74,7 +74,7 @@ After Aide saves the endpoint, run `aide start` and mention the bot in an allowe
 aide start
 ```
 
-The runtime runs in the foreground, stores its PID in `runtime.json`, listens for Discord mentions, runs Codex from the endpoint workspace, and posts the final response back to Discord.
+The runtime starts in the background, stores its PID in `runtime.json`, listens for Discord mentions, runs Codex from the endpoint workspace, and posts the final response back to Discord.
 
 Stop it from another terminal:
 
