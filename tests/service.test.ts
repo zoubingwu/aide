@@ -13,6 +13,8 @@ describe("service files", () => {
     });
 
     expect(plist).toContain("<key>KeepAlive</key>");
+    expect(plist).toContain("<key>SuccessfulExit</key>");
+    expect(plist).toContain("<false/>");
     expect(plist).toContain("<string>/usr/local/bin/node</string>");
     expect(plist).toContain("<string>__run</string>");
     expect(plist).toContain("<string>--home</string>");
@@ -26,7 +28,7 @@ describe("service files", () => {
     });
 
     expect(unit).toContain("[Service]");
-    expect(unit).toContain("Restart=always");
+    expect(unit).toContain("Restart=on-failure");
     expect(unit).toContain("ExecStart=/usr/bin/node /usr/local/bin/aide __run --home /home/zou/.aide");
   });
 });

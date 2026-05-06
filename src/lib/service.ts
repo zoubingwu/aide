@@ -104,7 +104,10 @@ export function renderLaunchdPlist(options: LaunchdPlistOptions): string {
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
-  <true/>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
   <key>StandardOutPath</key>
   <string>${escapeXml(options.stdoutPath)}</string>
   <key>StandardErrorPath</key>
@@ -120,7 +123,7 @@ Description=Aide runtime
 
 [Service]
 ExecStart=${escapeSystemd(options.execPath)} ${escapeSystemd(options.scriptPath)} __run --home ${escapeSystemd(options.home)}
-Restart=always
+Restart=on-failure
 RestartSec=5
 
 [Install]
