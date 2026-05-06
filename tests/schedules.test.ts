@@ -92,6 +92,36 @@ message = "Generate my daily brief."
     expect(() => loadSchedules(home)).toThrow("Invalid IANA timezone");
   });
 
+  it("rejects schedules with duplicate ids", () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    fs.writeFileSync(
+      schedulesPath(home),
+      `[[schedules]]
+id = "daily-brief"
+endpoint = "discord-main"
+enabled = true
+kind = "daily"
+time = "09:00"
+timezone = "Asia/Shanghai"
+target = "channel:123"
+message = "Generate my daily brief."
+
+[[schedules]]
+id = "daily-brief"
+endpoint = "discord-main"
+enabled = true
+kind = "daily"
+time = "10:00"
+timezone = "Asia/Shanghai"
+target = "channel:456"
+message = "Generate my second brief."
+`
+    );
+
+    expect(() => loadSchedules(home)).toThrow("Duplicate schedule id: daily-brief");
+  });
+
   it("rejects biweekly schedules with invalid start dates", () => {
     const home = tempHome();
     ensureAideHome(home);
@@ -189,6 +219,39 @@ message = "Generate my biweekly brief."
     expect(loadRuntimeSchedules(home)).toMatchObject({
       schedules: [],
       issues: [{ index: 0, id: "bad-biweekly", error: expect.stringContaining("Biweekly startDate must match weekday") }]
+    });
+  });
+
+  it("reports duplicate schedule ids during runtime load", () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    fs.writeFileSync(
+      schedulesPath(home),
+      `[[schedules]]
+id = "daily-brief"
+endpoint = "discord-main"
+enabled = true
+kind = "daily"
+time = "09:00"
+timezone = "Asia/Shanghai"
+target = "channel:123"
+message = "Generate my daily brief."
+
+[[schedules]]
+id = "daily-brief"
+endpoint = "discord-main"
+enabled = true
+kind = "daily"
+time = "10:00"
+timezone = "Asia/Shanghai"
+target = "channel:456"
+message = "Generate my second brief."
+`
+    );
+
+    expect(loadRuntimeSchedules(home)).toMatchObject({
+      schedules: [{ id: "daily-brief", time: "09:00" }],
+      issues: [{ index: 1, id: "daily-brief", error: "Duplicate schedule id: daily-brief" }]
     });
   });
 

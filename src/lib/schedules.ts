@@ -72,8 +72,28 @@ const scheduleSchema = rawScheduleSchema
     message: "Biweekly startDate must match weekday"
   });
 
+const schedulesArraySchema = z
+  .array(scheduleSchema)
+  .superRefine((schedules, context) => {
+    const seen = new Set<string>();
+
+    for (const [index, schedule] of schedules.entries()) {
+      if (seen.has(schedule.id)) {
+        context.addIssue({
+          code: "custom",
+          path: [index, "id"],
+          message: duplicateScheduleIdMessage(schedule.id)
+        });
+        continue;
+      }
+
+      seen.add(schedule.id);
+    }
+  })
+  .default([]);
+
 const schedulesFileSchema = z.object({
-  schedules: z.array(scheduleSchema).default([])
+  schedules: schedulesArraySchema
 });
 const looseSchedulesFileSchema = z.object({
   schedules: z.array(z.unknown()).default([])
@@ -98,11 +118,22 @@ export function loadRuntimeSchedules(home: string): RuntimeSchedules {
   const rawSchedules = looseSchedulesFileSchema.parse(readToml(schedulesPath(home))).schedules;
   const schedules: Schedule[] = [];
   const issues: RuntimeSchedules["issues"] = [];
+  const seen = new Set<string>();
 
   for (const [index, rawSchedule] of rawSchedules.entries()) {
     const result = scheduleSchema.safeParse(rawSchedule);
 
     if (result.success) {
+      if (seen.has(result.data.id)) {
+        issues.push({
+          index,
+          id: result.data.id,
+          error: duplicateScheduleIdMessage(result.data.id)
+        });
+        continue;
+      }
+
+      seen.add(result.data.id);
       schedules.push(result.data);
       continue;
     }
@@ -239,6 +270,10 @@ function utcDate(parts: { year: number; month: number; day: number }): Date {
   date.setUTCHours(0, 0, 0, 0);
   date.setUTCFullYear(parts.year, parts.month - 1, parts.day);
   return date;
+}
+
+function duplicateScheduleIdMessage(id: string): string {
+  return `Duplicate schedule id: ${id}`;
 }
 
 function scheduleId(value: unknown): string | undefined {
