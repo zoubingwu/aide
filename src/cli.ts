@@ -107,7 +107,10 @@ function runRootCli(argv: string[]): void {
     .option("--lines <count>", "Number of lines to show", { default: 80 })
     .action(wrap(logsCommand));
   cli.command("usage", "Show usage").action(wrap(usageCommand));
-  cli.command("doctor", "Validate local setup").action(wrap(doctorCommand));
+  cli
+    .command("doctor", "Validate local setup")
+    .option("--fix", "Create missing Aide base files and directories")
+    .action(wrap(doctorCommand));
   cli.command("config", "Manage runtime config").action(() => runConfigCli(["node", "aide config"]));
   cli.command("endpoint", "Manage endpoints").action(() => runEndpointCli(["node", "aide endpoint"]));
   cli.command("help", "Show detailed help").action(() => runHelpCli(["node", "aide help"]));

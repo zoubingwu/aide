@@ -98,6 +98,15 @@ export async function usageCommand(options: CommandOptions): Promise<void> {
 
 export async function doctorCommand(options: CommandOptions): Promise<void> {
   const home = homeFromOptions(options);
+
+  if (options.fix === true) {
+    const missing = missingBasePathLabels(home);
+    ensureAideHome(home);
+    console.log(
+      missing.length > 0 ? `Fixed missing Aide base paths: ${missing.join(", ")}.\n` : "No missing Aide base paths.\n"
+    );
+  }
+
   const checks = await runDoctorChecks(home);
 
   console.log("Aide Doctor\n");
@@ -106,6 +115,21 @@ export async function doctorCommand(options: CommandOptions): Promise<void> {
     const detail = check.detail ? ` - ${check.detail}` : "";
     console.log(`${checkMark(check.status)} ${check.label}${detail}`);
   }
+}
+
+function missingBasePathLabels(home: string): string[] {
+  return [
+    { label: "Aide home", path: home },
+    { label: "config.toml", path: configPath(home) },
+    { label: "endpoints.toml", path: endpointsPath(home) },
+    { label: "schedules.toml", path: schedulesPath(home) },
+    { label: "runtime.json", path: runtimePath(home) },
+    { label: "usage.jsonl", path: usagePath(home) },
+    { label: "logs directory", path: logsDir(home) },
+    { label: "workspace directory", path: workspaceDir(home) }
+  ]
+    .filter((entry) => !fs.existsSync(entry.path))
+    .map((entry) => entry.label);
 }
 
 async function runDoctorChecks(home: string): Promise<DoctorCheck[]> {

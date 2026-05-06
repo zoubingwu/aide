@@ -22,6 +22,30 @@ describe("CLI help", () => {
     expect(stdout).toContain("usage     Show usage");
   });
 
+  it("shows doctor fix option", async () => {
+    const { stdout } = await runCli("doctor", "--help");
+
+    expect(stdout).toContain("--fix");
+    expect(stdout).toContain("Create missing Aide base files and directories");
+  });
+
+  it("repairs missing base paths with doctor fix", async () => {
+    const home = tempHome();
+    await runCli("--home", home, "init");
+    fs.rmSync(path.join(home, "schedules.toml"), { force: true });
+    fs.rmSync(path.join(home, "runtime.json"), { force: true });
+    fs.rmSync(path.join(home, "logs"), { recursive: true, force: true });
+
+    const { stdout } = await runCli("--home", home, "doctor", "--fix");
+
+    expect(stdout).toContain("Fixed missing Aide base paths: schedules.toml, runtime.json, logs directory.");
+    expect(stdout).toContain("✓ schedules.toml");
+    expect(stdout).toContain("✓ runtime.json");
+    expect(fs.existsSync(path.join(home, "schedules.toml"))).toBe(true);
+    expect(fs.existsSync(path.join(home, "runtime.json"))).toBe(true);
+    expect(fs.existsSync(path.join(home, "logs"))).toBe(true);
+  });
+
   it("gets and sets runtime config", async () => {
     const home = tempHome();
     await runCli("--home", home, "init");
