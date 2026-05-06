@@ -8,6 +8,7 @@ import {
   endpointsPath,
   logsDir,
   runtimePath,
+  schedulesPath,
   usagePath,
   workspaceDir
 } from "./paths.js";
@@ -70,6 +71,7 @@ export function ensureAideHome(home: string): void {
 
   writeFileIfMissing(configPath(home), stringifyToml(defaultConfig(home)));
   writeFileIfMissing(endpointsPath(home), stringifyToml({ endpoints: [] }));
+  writeFileIfMissing(schedulesPath(home), stringifyToml({ schedules: [] }));
   writeFileIfMissing(runtimePath(home), stringifyJson(defaultRuntimeState(home)));
   writeFileIfMissing(usagePath(home), "");
 }

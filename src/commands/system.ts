@@ -8,6 +8,7 @@ import {
   endpointsPath,
   logsDir,
   runtimePath,
+  schedulesPath,
   usagePath,
   workspaceDir
 } from "../lib/paths.js";
@@ -120,9 +121,16 @@ async function runDoctorChecks(home: string): Promise<DoctorCheck[]> {
   const endpointsExists = fs.existsSync(endpointsPath(home));
   checks.push({ status: configExists ? "ok" : "fail", label: "config.toml" });
   checks.push({ status: endpointsExists ? "ok" : "fail", label: "endpoints.toml" });
+  checks.push({ status: fs.existsSync(schedulesPath(home)) ? "ok" : "fail", label: "schedules.toml" });
   checks.push({ status: fs.existsSync(runtimePath(home)) ? "ok" : "fail", label: "runtime.json" });
   checks.push({ status: fs.existsSync(usagePath(home)) ? "ok" : "fail", label: "usage.jsonl" });
   checks.push({ status: fs.existsSync(workspaceDir(home)) ? "ok" : "fail", label: "workspace directory" });
+  const serviceSupported = process.platform === "darwin" || process.platform === "linux";
+  checks.push({
+    status: serviceSupported ? "ok" : "warn",
+    label: "runtime service",
+    detail: serviceSupported ? process.platform : "manual start supported"
+  });
 
   const config = configExists && endpointsExists ? loadConfig(home) : undefined;
   const agentProvider = config?.runtime.provider ?? "codex";

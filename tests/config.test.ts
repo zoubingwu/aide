@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ensureAideHome, loadConfig, loadEndpoints } from "../src/lib/config.js";
-import { configPath, endpointsPath, logsDir, usagePath, workspaceDir } from "../src/lib/paths.js";
+import { configPath, endpointsPath, logsDir, schedulesPath, usagePath, workspaceDir } from "../src/lib/paths.js";
 
 const cleanupPaths: string[] = [];
 
@@ -21,6 +21,7 @@ describe("config", () => {
 
     expect(fs.existsSync(configPath(home))).toBe(true);
     expect(fs.existsSync(endpointsPath(home))).toBe(true);
+    expect(fs.existsSync(schedulesPath(home))).toBe(true);
     expect(fs.existsSync(usagePath(home))).toBe(true);
     expect(fs.readFileSync(usagePath(home), "utf8")).toBe("");
     expect(fs.existsSync(logsDir(home))).toBe(true);

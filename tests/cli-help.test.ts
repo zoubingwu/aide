@@ -48,6 +48,108 @@ describe("CLI help", () => {
     expect(stdout).toContain("open <id>  Open endpoint config files");
   });
 
+  it("shows schedule subcommands", async () => {
+    const { stdout } = await runCli("schedule", "--help");
+
+    expect(stdout).toContain("add <kind>   Add a schedule");
+    expect(stdout).toContain("list         List schedules");
+    expect(stdout).toContain("config       Manage schedule config");
+  });
+
+  it("adds and lists a daily schedule", async () => {
+    const home = tempHome();
+    await runCli("--home", home, "init");
+
+    await runCli(
+      "--home",
+      home,
+      "schedule",
+      "add",
+      "daily",
+      "--id",
+      "daily-brief",
+      "--endpoint",
+      "discord-main",
+      "--time",
+      "09:00",
+      "--timezone",
+      "Asia/Shanghai",
+      "--target",
+      "channel:123",
+      "--message",
+      "Generate my daily brief."
+    );
+
+    const { stdout } = await runCli("--home", home, "schedule", "list");
+    expect(stdout).toContain("daily-brief");
+    expect(stdout).toContain("daily");
+    expect(stdout).toContain("discord-main");
+  });
+
+  it("rejects non-numeric hourly minute values", async () => {
+    const home = tempHome();
+    await runCli("--home", home, "init");
+
+    await expect(
+      runCli(
+        "--home",
+        home,
+        "schedule",
+        "add",
+        "hourly",
+        "--id",
+        "hourly-brief",
+        "--endpoint",
+        "discord-main",
+        "--minute",
+        "abc",
+        "--target",
+        "channel:123",
+        "--message",
+        "Generate my hourly brief."
+      )
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining("Invalid numeric option: --minute")
+    });
+  });
+
+  it("rejects non-numeric monthly day values", async () => {
+    const home = tempHome();
+    await runCli("--home", home, "init");
+
+    await expect(
+      runCli(
+        "--home",
+        home,
+        "schedule",
+        "add",
+        "monthly",
+        "--id",
+        "monthly-brief",
+        "--endpoint",
+        "discord-main",
+        "--day",
+        "foo",
+        "--time",
+        "09:00",
+        "--target",
+        "channel:123",
+        "--message",
+        "Generate my monthly brief."
+      )
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining("Invalid numeric option: --day")
+    });
+  });
+
+  it("shows service subcommands", async () => {
+    const { stdout } = await runCli("service", "--help");
+
+    expect(stdout).toContain("install    Install runtime service");
+    expect(stdout).toContain("uninstall  Uninstall runtime service");
+    expect(stdout).toContain("status     Show service status");
+  });
+
   it("supports global options before endpoint", async () => {
     const home = tempHome();
     await runCli("--home", home, "init");
