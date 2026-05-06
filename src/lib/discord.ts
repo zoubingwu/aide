@@ -75,14 +75,14 @@ function stripMention(content: string, botUserId: string): string {
 }
 
 async function sendResponse(message: Message, response: string): Promise<void> {
-  const chunks = chunkMessage(response);
+  const chunks = chunkDiscordMessage(response);
 
   for (const chunk of chunks) {
     await message.reply({ content: chunk });
   }
 }
 
-function chunkMessage(response: string): string[] {
+export function chunkDiscordMessage(response: string): string[] {
   const max = 1900;
 
   if (response.length <= max) {

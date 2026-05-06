@@ -3,6 +3,7 @@ import { loadConfig, loadEndpoints } from "./config.js";
 import { appendRuntimeLog } from "./logging.js";
 import { markRuntimeRunning, markRuntimeStopped, runtimeDisplayStatus, isPidAlive } from "./runtime-state.js";
 import { startDiscordEndpoint } from "./discord.js";
+import { RuntimeScheduler } from "./scheduler.js";
 import { assertEndpointWorkspace } from "./workspace.js";
 import type { Client } from "discord.js";
 
@@ -107,12 +108,13 @@ export async function startRuntime(home: string): Promise<void> {
     command: config.runtime.command
   });
 
-  const clients: Client[] = [];
+  const clients = new Map<string, Client>();
+  let scheduler: RuntimeScheduler | undefined;
 
   try {
     for (const endpoint of endpoints) {
       if (endpoint.provider === "discord") {
-        clients.push(await startDiscordEndpoint(home, endpoint));
+        clients.set(endpoint.id, await startDiscordEndpoint(home, endpoint));
         console.log(`Discord endpoint ${endpoint.id} connected.`);
       }
     }
@@ -122,6 +124,8 @@ export async function startRuntime(home: string): Promise<void> {
     throw error;
   }
 
+  scheduler = new RuntimeScheduler({ home, endpoints, clients });
+  scheduler.start();
   markRuntimeRunning(home);
   appendRuntimeLog(home, "runtime_started", { pid: process.pid, endpoints: endpoints.map((endpoint) => endpoint.id) });
   console.log(`Aide runtime started with PID ${process.pid}. Press Ctrl+C to stop.`);
@@ -129,8 +133,9 @@ export async function startRuntime(home: string): Promise<void> {
   await new Promise<void>((resolve) => {
     const stop = async () => {
       appendRuntimeLog(home, "runtime_stopping", { pid: process.pid });
+      scheduler?.stop();
 
-      for (const client of clients) {
+      for (const client of clients.values()) {
         client.destroy();
       }
 
