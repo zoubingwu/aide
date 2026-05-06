@@ -8,7 +8,9 @@ Aide is a TypeScript CLI package. Runtime code targets Node-compatible APIs and 
 
 - `src/cli.ts`: CLI entrypoint and command registration.
 - `src/commands/system.ts`: `init`, `status`, `logs`, `usage`, `doctor`.
+- `src/commands/config.ts`: root runtime config `get` and `set` commands.
 - `src/commands/endpoints.ts`: endpoint CRUD, config commands, local endpoint tests.
+- `src/commands/help.ts`: reusable CLI help constants, examples, and agent-facing guide.
 - `src/commands/runtime.ts`: `start`, `stop`, `restart`, and foreground runtime dispatch.
 - `src/commands/schedules.ts`: schedule CRUD and schedule config commands.
 - `src/commands/service.ts`: OS service install, uninstall, and status commands.

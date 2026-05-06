@@ -94,14 +94,19 @@ aide logs
 aide usage
 aide doctor
 
+aide config get
+aide config set runtime.model gpt-5.5
+aide config set runtime.reasoningEffort high
+
 aide endpoint list
 aide endpoint show <id>
 aide endpoint test <id> --message "hello"
 aide endpoint open <id>
 aide endpoint config open <id>
 
-aide schedule add daily --id daily-brief --endpoint <id> --target channel:<channel-id> --time 09:00 --message "Daily brief"
+aide schedule add "Daily brief" --id daily-brief --kind daily --endpoint <id> --target channel:<channel-id> --time 09:00
 aide schedule list
+aide schedule pause --id daily-brief
 
 aide stop
 ```

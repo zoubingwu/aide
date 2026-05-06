@@ -80,6 +80,10 @@ This file holds endpoint-specific instructions, project notes, commands, paths, 
 
 Run work from this endpoint workspace by default. Keep secrets in Aide's secret storage or environment variables.
 
+## Aide Runtime Management
+
+When asked to inspect or change Aide settings or schedules, run \`aide help agent\` first, then use the \`aide\` CLI. Prefer CLI commands over direct edits to Aide TOML files.
+
 ## Working Structure
 
 - \`memory/\`: durable user and project facts useful across conversations

@@ -35,6 +35,8 @@ describe("workspace", () => {
     expect(soul).toContain("## Technical Posture");
     expect(soul).not.toContain("Endpoint Context");
     expect(agents).toContain("## Workspace Rules");
+    expect(agents).toContain("## Aide Runtime Management");
+    expect(agents).toContain("aide help agent");
     expect(agents).toContain("## Working Structure");
   });
 });
