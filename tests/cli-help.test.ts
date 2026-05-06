@@ -86,6 +86,62 @@ describe("CLI help", () => {
     expect(stdout).toContain("discord-main");
   });
 
+  it("rejects non-numeric hourly minute values", async () => {
+    const home = tempHome();
+    await runCli("--home", home, "init");
+
+    await expect(
+      runCli(
+        "--home",
+        home,
+        "schedule",
+        "add",
+        "hourly",
+        "--id",
+        "hourly-brief",
+        "--endpoint",
+        "discord-main",
+        "--minute",
+        "abc",
+        "--target",
+        "channel:123",
+        "--message",
+        "Generate my hourly brief."
+      )
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining("Invalid numeric option: --minute")
+    });
+  });
+
+  it("rejects non-numeric monthly day values", async () => {
+    const home = tempHome();
+    await runCli("--home", home, "init");
+
+    await expect(
+      runCli(
+        "--home",
+        home,
+        "schedule",
+        "add",
+        "monthly",
+        "--id",
+        "monthly-brief",
+        "--endpoint",
+        "discord-main",
+        "--day",
+        "foo",
+        "--time",
+        "09:00",
+        "--target",
+        "channel:123",
+        "--message",
+        "Generate my monthly brief."
+      )
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining("Invalid numeric option: --day")
+    });
+  });
+
   it("shows service subcommands", async () => {
     const { stdout } = await runCli("service", "--help");
 

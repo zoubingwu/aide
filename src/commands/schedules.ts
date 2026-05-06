@@ -115,7 +115,7 @@ function buildSchedule(kindValue: string, options: CommandOptions): Schedule {
     case "hourly":
       return {
         ...base,
-        minute: numberOption(options, "minute") ?? 0,
+        minute: optionalNumberOption(options, "minute", 0),
         timezone: timezoneOption(options)
       };
     case "daily":
@@ -142,7 +142,7 @@ function buildSchedule(kindValue: string, options: CommandOptions): Schedule {
     case "monthly":
       return {
         ...base,
-        day: numberOption(options, "day") ?? 1,
+        day: optionalNumberOption(options, "day", 1),
         time: requiredOption(options, "time"),
         timezone: timezoneOption(options)
       };
@@ -166,6 +166,20 @@ function requiredOption(options: CommandOptions, key: string): string {
 
 function timezoneOption(options: CommandOptions): string {
   return stringOption(options, "timezone") ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
+}
+
+function optionalNumberOption(options: CommandOptions, key: string, fallback: number): number {
+  if (options[key] === undefined) {
+    return fallback;
+  }
+
+  const value = numberOption(options, key);
+
+  if (value !== undefined) {
+    return value;
+  }
+
+  throw new Error(`Invalid numeric option: --${kebab(key)}`);
 }
 
 function parseKind(value: string): ScheduleKind {
