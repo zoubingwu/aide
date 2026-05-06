@@ -92,6 +92,24 @@ message = "Generate my daily brief."
     expect(() => loadSchedules(home)).toThrow("Invalid IANA timezone");
   });
 
+  it("rejects schedules with unsupported targets", () => {
+    const home = tempHome();
+    ensureAideHome(home);
+
+    expect(() =>
+      addSchedule(home, {
+        id: "bad-target",
+        endpoint: "discord-main",
+        enabled: true,
+        kind: "daily",
+        time: "09:00",
+        timezone: "Asia/Shanghai",
+        target: "not-a-discord-target",
+        message: "Generate my daily brief."
+      })
+    ).toThrow("Unsupported schedule target");
+  });
+
   it("rejects schedules with duplicate ids", () => {
     const home = tempHome();
     ensureAideHome(home);
@@ -219,6 +237,29 @@ message = "Generate my biweekly brief."
     expect(loadRuntimeSchedules(home)).toMatchObject({
       schedules: [],
       issues: [{ index: 0, id: "bad-biweekly", error: expect.stringContaining("Biweekly startDate must match weekday") }]
+    });
+  });
+
+  it("reports unsupported targets during runtime load", () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    fs.writeFileSync(
+      schedulesPath(home),
+      `[[schedules]]
+id = "bad-target"
+endpoint = "discord-main"
+enabled = true
+kind = "daily"
+time = "09:00"
+timezone = "Asia/Shanghai"
+target = "not-a-discord-target"
+message = "Generate my daily brief."
+`
+    );
+
+    expect(loadRuntimeSchedules(home)).toMatchObject({
+      schedules: [],
+      issues: [{ index: 0, id: "bad-target", error: expect.stringContaining("Unsupported schedule target") }]
     });
   });
 

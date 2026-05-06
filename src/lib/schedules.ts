@@ -6,7 +6,7 @@ import type { Schedule, SchedulesFile, Weekday } from "./types.js";
 
 const idSchema = z.string().min(1).regex(/^[a-z0-9][a-z0-9-]*$/);
 const timeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
-const targetSchema = z.string().min(3);
+const targetSchema = z.string().refine(isValidScheduleTarget, { message: "Unsupported schedule target. Use channel:<id> or user:<id>." });
 const timezoneSchema = z.string().min(1).refine(isValidTimeZone, { message: "Invalid IANA timezone" });
 const weekdaySchema = z.enum(["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]);
 const weekdayIndex: Record<Weekday, number> = {
@@ -228,6 +228,11 @@ function isValidTimeZone(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+function isValidScheduleTarget(value: string): boolean {
+  const [kind, id, extra] = value.split(":");
+  return extra === undefined && (kind === "channel" || kind === "user") && Boolean(id);
 }
 
 function isRealDate(value: string): boolean {
