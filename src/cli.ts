@@ -14,6 +14,10 @@ import {
   stopCommand
 } from "./commands/runtime.js";
 import {
+  getConfigCommand,
+  setConfigCommand
+} from "./commands/config.js";
+import {
   installServiceCommand,
   statusServiceCommand,
   uninstallServiceCommand
@@ -39,16 +43,29 @@ import {
   showEndpointCommand,
   testEndpointCommand
 } from "./commands/endpoints.js";
+import {
+  addExamples,
+  agentHelpCommand,
+  CONFIG_EXAMPLES,
+  CONFIG_PATH_LIST,
+  SCHEDULE_ADD_EXAMPLES,
+  SCHEDULE_KIND_LIST,
+  WEEKDAY_LIST
+} from "./commands/help.js";
 import { appendRuntimeLog } from "./lib/logging.js";
 import { homeFromOptions } from "./commands/options.js";
 
 const runArgv = subcommandArgv(process.argv, "__run", "aide __run");
+const configArgv = subcommandArgv(process.argv, "config", "aide config");
 const endpointArgv = subcommandArgv(process.argv, "endpoint", "aide endpoint");
+const helpArgv = subcommandArgv(process.argv, "help", "aide help");
 const scheduleArgv = subcommandArgv(process.argv, "schedule", "aide schedule");
 const serviceArgv = subcommandArgv(process.argv, "service", "aide service");
 
 if (runArgv) {
   await runInternalRuntimeCli(runArgv);
+} else if (configArgv) {
+  runConfigCli(configArgv);
 } else if (endpointArgv) {
   const configArgv = subcommandArgv(endpointArgv, "config", "aide endpoint config");
   if (configArgv) {
@@ -56,6 +73,8 @@ if (runArgv) {
   } else {
     runEndpointCli(endpointArgv);
   }
+} else if (helpArgv) {
+  runHelpCli(helpArgv);
 } else if (scheduleArgv) {
   const configArgv = subcommandArgv(scheduleArgv, "config", "aide schedule config");
   if (configArgv) {
@@ -89,9 +108,33 @@ function runRootCli(argv: string[]): void {
     .action(wrap(logsCommand));
   cli.command("usage", "Show usage").action(wrap(usageCommand));
   cli.command("doctor", "Validate local setup").action(wrap(doctorCommand));
+  cli.command("config", "Manage runtime config").action(() => runConfigCli(["node", "aide config"]));
   cli.command("endpoint", "Manage endpoints").action(() => runEndpointCli(["node", "aide endpoint"]));
+  cli.command("help", "Show detailed help").action(() => runHelpCli(["node", "aide help"]));
   cli.command("schedule", "Manage schedules").action(() => runScheduleCli(["node", "aide schedule"]));
   cli.command("service", "Manage runtime service").action(() => runServiceCli(["node", "aide service"]));
+
+  handleNoMatch(cli, cli.parse(argv));
+}
+
+function runConfigCli(argv: string[]): void {
+  const cli = cac("aide config");
+
+  cli.option("--home <path>", "Aide home directory").help();
+  addExamples(
+    cli
+      .command("get [path]", "Show runtime config")
+      .usage(`get [path]\n\nPaths: ${CONFIG_PATH_LIST}`)
+      .action(wrap(getConfigCommand)),
+    CONFIG_EXAMPLES.slice(0, 2)
+  );
+  addExamples(
+    cli
+      .command("set <path> <value>", "Set runtime config")
+      .usage(`set <path> <value>\n\nPaths: ${CONFIG_PATH_LIST}`)
+      .action(wrap(setConfigCommand)),
+    CONFIG_EXAMPLES.slice(2)
+  );
 
   handleNoMatch(cli, cli.parse(argv));
 }
@@ -139,26 +182,43 @@ function runScheduleCli(argv: string[]): void {
   const cli = cac("aide schedule");
 
   cli.option("--home <path>", "Aide home directory").help();
-  cli
-    .command("add <kind>", "Add a schedule")
-    .option("--id <id>", "Schedule id")
-    .option("--endpoint <id>", "Endpoint id")
-    .option("--target <target>", "Delivery target")
-    .option("--message <message>", "Message to send")
-    .option("--timezone <timezone>", "IANA timezone")
-    .option("--time <HH:mm>", "Local time")
-    .option("--weekday <weekday>", "Weekday")
-    .option("--start-date <date>", "Biweekly start date")
-    .option("--run-at <timestamp>", "One-shot run time")
-    .option("--minute <minute>", "Minute for hourly schedules")
-    .option("--day <day>", "Day of month")
-    .action(wrap(addScheduleCommand));
+  addExamples(
+    cli
+      .command("add <prompt>", "Add a schedule")
+      .usage(`add <prompt> --id <id> --kind <kind> --endpoint <id> --target <target> [options]
+
+Kinds: ${SCHEDULE_KIND_LIST}
+Weekdays: ${WEEKDAY_LIST}
+Targets: channel:<id> or user:<id>`)
+      .option("--id <id>", "Schedule id")
+      .option("--kind <kind>", `Schedule kind: ${SCHEDULE_KIND_LIST}`)
+      .option("--endpoint <id>", "Endpoint id")
+      .option("--target <target>", "Delivery target: channel:<id> or user:<id>")
+      .option("--timezone <timezone>", "IANA timezone")
+      .option("--time <HH:mm>", "Local time")
+      .option("--weekday <weekday>", `Weekday: ${WEEKDAY_LIST}`)
+      .option("--start-date <date>", "Biweekly start date")
+      .option("--run-at <timestamp>", "One-shot run time")
+      .option("--minute <minute>", "Minute for hourly schedules")
+      .option("--day <day>", "Day of month")
+      .action(wrap(addScheduleCommand)),
+    SCHEDULE_ADD_EXAMPLES
+  );
   cli.command("list", "List schedules").action(wrap(listSchedulesCommand));
-  cli.command("show <id>", "Show schedule details").action(wrap(showScheduleCommand));
-  cli.command("pause <id>", "Pause schedule").action(wrap(pauseScheduleCommand));
-  cli.command("resume <id>", "Resume schedule").action(wrap(resumeScheduleCommand));
-  cli.command("remove <id>", "Remove schedule").action(wrap(removeScheduleCommand));
+  cli.command("show", "Show schedule details").option("--id <id>", "Schedule id").action(wrap(showScheduleCommand));
+  cli.command("pause", "Pause schedule").option("--id <id>", "Schedule id").action(wrap(pauseScheduleCommand));
+  cli.command("resume", "Resume schedule").option("--id <id>", "Schedule id").action(wrap(resumeScheduleCommand));
+  cli.command("remove", "Remove schedule").option("--id <id>", "Schedule id").action(wrap(removeScheduleCommand));
   cli.command("config", "Manage schedule config").action(() => runScheduleConfigCli(["node", "aide schedule config"]));
+
+  handleNoMatch(cli, cli.parse(argv));
+}
+
+function runHelpCli(argv: string[]): void {
+  const cli = cac("aide help");
+
+  cli.help();
+  cli.command("agent", "Show agent-facing CLI guide").action(wrap(agentHelpCommand));
 
   handleNoMatch(cli, cli.parse(argv));
 }

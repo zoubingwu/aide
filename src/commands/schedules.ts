@@ -3,12 +3,13 @@ import { openPath } from "../lib/open.js";
 import { schedulesPath, slugifyId } from "../lib/paths.js";
 import { addSchedule, findSchedule, loadSchedules, pauseSchedule, removeSchedule, resumeSchedule } from "../lib/schedules.js";
 import type { Schedule, ScheduleKind, Weekday } from "../lib/types.js";
+import { SCHEDULE_KINDS, WEEKDAYS } from "./help.js";
 import type { CommandOptions } from "./options.js";
 import { homeFromOptions, numberOption, stringOption } from "./options.js";
 
-export async function addScheduleCommand(kind: string, options: CommandOptions): Promise<void> {
+export async function addScheduleCommand(prompt: string, options: CommandOptions): Promise<void> {
   const home = homeFromOptions(options);
-  const schedule = buildSchedule(kind, options);
+  const schedule = buildSchedule(prompt, options);
   addSchedule(home, schedule);
   console.log(`Schedule ${schedule.id} created.`);
 }
@@ -37,7 +38,8 @@ export function listSchedulesCommand(options: CommandOptions): void {
   );
 }
 
-export function showScheduleCommand(id: string, options: CommandOptions): void {
+export function showScheduleCommand(options: CommandOptions): void {
+  const id = requiredOption(options, "id");
   const schedule = findSchedule(homeFromOptions(options), id);
 
   console.log(`Schedule ${schedule.id}\n`);
@@ -68,17 +70,20 @@ export function showScheduleCommand(id: string, options: CommandOptions): void {
   }
 }
 
-export function pauseScheduleCommand(id: string, options: CommandOptions): void {
+export function pauseScheduleCommand(options: CommandOptions): void {
+  const id = requiredOption(options, "id");
   pauseSchedule(homeFromOptions(options), id);
   console.log(`Paused schedule ${id}.`);
 }
 
-export function resumeScheduleCommand(id: string, options: CommandOptions): void {
+export function resumeScheduleCommand(options: CommandOptions): void {
+  const id = requiredOption(options, "id");
   resumeSchedule(homeFromOptions(options), id);
   console.log(`Resumed schedule ${id}.`);
 }
 
-export function removeScheduleCommand(id: string, options: CommandOptions): void {
+export function removeScheduleCommand(options: CommandOptions): void {
+  const id = requiredOption(options, "id");
   removeSchedule(homeFromOptions(options), id);
   console.log(`Removed schedule ${id}.`);
 }
@@ -87,12 +92,12 @@ export async function openScheduleConfigCommand(options: CommandOptions): Promis
   await openPath(schedulesPath(homeFromOptions(options)));
 }
 
-function buildSchedule(kindValue: string, options: CommandOptions): Schedule {
-  const kind = parseKind(kindValue);
+function buildSchedule(prompt: string, options: CommandOptions): Schedule {
+  const kind = parseKind(requiredOption(options, "kind"));
   const id = slugifyId(requiredOption(options, "id"));
   const endpoint = slugifyId(requiredOption(options, "endpoint"));
   const target = requiredOption(options, "target");
-  const message = requiredOption(options, "message");
+  const message = prompt.trim();
 
   if (id.length === 0) {
     throw new Error("Schedule id must contain at least one letter or number.");
@@ -100,6 +105,10 @@ function buildSchedule(kindValue: string, options: CommandOptions): Schedule {
 
   if (endpoint.length === 0) {
     throw new Error("Endpoint id must contain at least one letter or number.");
+  }
+
+  if (message.length === 0) {
+    throw new Error("Schedule prompt must be non-empty.");
   }
 
   const base = {
@@ -183,9 +192,7 @@ function optionalNumberOption(options: CommandOptions, key: string, fallback: nu
 }
 
 function parseKind(value: string): ScheduleKind {
-  const kinds: ScheduleKind[] = ["hourly", "daily", "weekly", "biweekly", "monthly", "once"];
-
-  if (kinds.includes(value as ScheduleKind)) {
+  if ((SCHEDULE_KINDS as readonly string[]).includes(value)) {
     return value as ScheduleKind;
   }
 
@@ -194,9 +201,8 @@ function parseKind(value: string): ScheduleKind {
 
 function parseWeekday(value: string): Weekday {
   const normalized = value.toLowerCase();
-  const weekdays: Weekday[] = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 
-  if (weekdays.includes(normalized as Weekday)) {
+  if ((WEEKDAYS as readonly string[]).includes(normalized)) {
     return normalized as Weekday;
   }
 

@@ -17,7 +17,34 @@ describe("CLI help", () => {
     const { stdout } = await runCli("--help");
 
     expect(stdout).toContain("start     Start Aide runtime in the background");
+    expect(stdout).toContain("config    Manage runtime config");
+    expect(stdout).toContain("help      Show detailed help");
     expect(stdout).toContain("usage     Show usage");
+  });
+
+  it("gets and sets runtime config", async () => {
+    const home = tempHome();
+    await runCli("--home", home, "init");
+
+    await runCli("--home", home, "config", "set", "runtime.model", "gpt-5.4");
+    await runCli("--home", home, "config", "set", "runtime.reasoningEffort", "high");
+    await runCli("--home", home, "config", "set", "runtime.args", "[\"exec\",\"--json\",\"--skip-git-repo-check\"]");
+
+    const model = await runCli("--home", home, "config", "get", "runtime.model");
+    const config = fs.readFileSync(path.join(home, "config.toml"), "utf8");
+
+    expect(model.stdout).toContain('runtime.model = "gpt-5.4"');
+    expect(config).toContain('model = "gpt-5.4"');
+    expect(config).toContain('reasoningEffort = "high"');
+    expect(config).toContain('args = [ "exec", "--json", "--skip-git-repo-check" ]');
+  });
+
+  it("shows config help examples", async () => {
+    const { stdout } = await runCli("config", "set", "--help");
+
+    expect(stdout).toContain("runtime.model");
+    expect(stdout).toContain("runtime.args");
+    expect(stdout).toContain("aide config set runtime.reasoningEffort high");
   });
 
   it("shows endpoint subcommands", async () => {
@@ -52,9 +79,18 @@ describe("CLI help", () => {
   it("shows schedule subcommands", async () => {
     const { stdout } = await runCli("schedule", "--help");
 
-    expect(stdout).toContain("add <kind>   Add a schedule");
-    expect(stdout).toContain("list         List schedules");
-    expect(stdout).toContain("config       Manage schedule config");
+    expect(stdout).toContain("add <prompt>  Add a schedule");
+    expect(stdout).toContain("list          List schedules");
+    expect(stdout).toContain("config        Manage schedule config");
+  });
+
+  it("shows schedule add examples and enum values", async () => {
+    const { stdout } = await runCli("schedule", "add", "--help");
+
+    expect(stdout).toContain("hourly | daily | weekly | biweekly | monthly | once");
+    expect(stdout).toContain("sunday | monday | tuesday | wednesday | thursday | friday | saturday");
+    expect(stdout).toContain('aide schedule add "Generate my daily brief."');
+    expect(stdout).toContain("--kind <kind>");
   });
 
   it("adds and lists a daily schedule", async () => {
@@ -66,9 +102,11 @@ describe("CLI help", () => {
       home,
       "schedule",
       "add",
-      "daily",
+      "Generate my daily brief.",
       "--id",
       "daily-brief",
+      "--kind",
+      "daily",
       "--endpoint",
       "discord-main",
       "--time",
@@ -76,15 +114,20 @@ describe("CLI help", () => {
       "--timezone",
       "Asia/Shanghai",
       "--target",
-      "channel:123",
-      "--message",
-      "Generate my daily brief."
+      "channel:123"
     );
 
     const { stdout } = await runCli("--home", home, "schedule", "list");
     expect(stdout).toContain("daily-brief");
     expect(stdout).toContain("daily");
     expect(stdout).toContain("discord-main");
+
+    const show = await runCli("--home", home, "schedule", "show", "--id", "daily-brief");
+    expect(show.stdout).toContain("Message    Generate my daily brief.");
+
+    await runCli("--home", home, "schedule", "pause", "--id", "daily-brief");
+    const paused = await runCli("--home", home, "schedule", "show", "--id", "daily-brief");
+    expect(paused.stdout).toContain("Status     paused");
   });
 
   it("rejects non-numeric hourly minute values", async () => {
@@ -97,17 +140,17 @@ describe("CLI help", () => {
         home,
         "schedule",
         "add",
-        "hourly",
+        "Generate my hourly brief.",
         "--id",
         "hourly-brief",
+        "--kind",
+        "hourly",
         "--endpoint",
         "discord-main",
         "--minute",
         "abc",
         "--target",
-        "channel:123",
-        "--message",
-        "Generate my hourly brief."
+        "channel:123"
       )
     ).rejects.toMatchObject({
       stderr: expect.stringContaining("Invalid numeric option: --minute")
@@ -124,9 +167,11 @@ describe("CLI help", () => {
         home,
         "schedule",
         "add",
-        "monthly",
+        "Generate my monthly brief.",
         "--id",
         "monthly-brief",
+        "--kind",
+        "monthly",
         "--endpoint",
         "discord-main",
         "--day",
@@ -134,9 +179,7 @@ describe("CLI help", () => {
         "--time",
         "09:00",
         "--target",
-        "channel:123",
-        "--message",
-        "Generate my monthly brief."
+        "channel:123"
       )
     ).rejects.toMatchObject({
       stderr: expect.stringContaining("Invalid numeric option: --day")
@@ -149,6 +192,15 @@ describe("CLI help", () => {
     expect(stdout).toContain("install    Install runtime service");
     expect(stdout).toContain("uninstall  Uninstall runtime service");
     expect(stdout).toContain("status     Show service status");
+  });
+
+  it("shows agent-facing help", async () => {
+    const { stdout } = await runCli("help", "agent");
+
+    expect(stdout).toContain("Aide Agent Guide");
+    expect(stdout).toContain("aide config set runtime.model gpt-5.5");
+    expect(stdout).toContain("aide schedule add <prompt>");
+    expect(stdout).toContain("Schedule changes are reloaded by the runtime within 30 seconds.");
   });
 
   it("supports global options before endpoint", async () => {
