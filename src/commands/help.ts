@@ -1,4 +1,5 @@
 import type { Command } from "cac";
+import { defaultCodexResumeArgsJson } from "../lib/codex-args.js";
 import type { ScheduleKind, Weekday } from "../lib/types.js";
 
 export const SCHEDULE_KINDS = ["cron", "hourly", "daily", "weekly", "biweekly", "monthly", "once"] as const satisfies readonly ScheduleKind[];
@@ -21,7 +22,7 @@ export const CONFIG_EXAMPLES = [
   "aide config get runtime.model",
   "aide config set runtime.model gpt-5.5",
   "aide config set runtime.reasoningEffort high",
-  "aide config set runtime.args '[\"exec\",\"resume\",\"--last\",\"--json\",\"--skip-git-repo-check\",\"--dangerously-bypass-approvals-and-sandbox\"]'"
+  `aide config set runtime.args '${defaultCodexResumeArgsJson()}'`
 ];
 
 export const SCHEDULE_ADD_EXAMPLES = [

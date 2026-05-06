@@ -12,40 +12,26 @@ import {
   usagePath,
   workspaceDir
 } from "./paths.js";
+import { defaultCodexResumeArgs } from "./codex-args.js";
 import type { AideConfig, Endpoint, EndpointsFile, RuntimeConfig, RuntimeState } from "./types.js";
 
-const DEFAULT_RUNTIME_ARGS = [
-  "exec",
-  "resume",
-  "--last",
-  "--json",
-  "--skip-git-repo-check",
-  "--dangerously-bypass-approvals-and-sandbox"
-];
-
-const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
-  provider: "codex",
-  command: "codex",
-  args: DEFAULT_RUNTIME_ARGS,
-  model: "gpt-5.5",
-  reasoningEffort: "medium",
-  startupTimeoutMs: 30_000
-};
+const DEFAULT_RUNTIME_MODEL = "gpt-5.5";
+const DEFAULT_REASONING_EFFORT = "medium";
 
 const codexReasoningEffortSchema = z.enum(["low", "medium", "high", "xhigh"]);
 
 const runtimeConfigSchema = z.object({
   provider: z.literal("codex").default("codex"),
   command: z.string().min(1).default("codex"),
-  args: z.array(z.string()).default(DEFAULT_RUNTIME_ARGS),
-  model: z.string().min(1).default(DEFAULT_RUNTIME_CONFIG.model),
-  reasoningEffort: codexReasoningEffortSchema.default(DEFAULT_RUNTIME_CONFIG.reasoningEffort),
+  args: z.array(z.string()).default(defaultCodexResumeArgs),
+  model: z.string().min(1).default(DEFAULT_RUNTIME_MODEL),
+  reasoningEffort: codexReasoningEffortSchema.default(DEFAULT_REASONING_EFFORT),
   startupTimeoutMs: z.number().int().positive().default(30_000)
 });
 
 const configSchema = z.object({
   home: z.string().min(1),
-  runtime: runtimeConfigSchema.default(DEFAULT_RUNTIME_CONFIG)
+  runtime: runtimeConfigSchema.default(defaultRuntimeConfig)
 });
 
 const endpointSchema = z.object({
@@ -68,7 +54,18 @@ const runtimeStateSchema = z.object({
 export function defaultConfig(home: string): AideConfig {
   return {
     home: displayPath(home),
-    runtime: { ...DEFAULT_RUNTIME_CONFIG }
+    runtime: defaultRuntimeConfig()
+  };
+}
+
+function defaultRuntimeConfig(): RuntimeConfig {
+  return {
+    provider: "codex",
+    command: "codex",
+    args: defaultCodexResumeArgs(),
+    model: DEFAULT_RUNTIME_MODEL,
+    reasoningEffort: DEFAULT_REASONING_EFFORT,
+    startupTimeoutMs: 30_000
   };
 }
 

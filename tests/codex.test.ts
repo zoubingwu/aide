@@ -9,6 +9,7 @@ import {
   extractFinalResponse,
   runCodex
 } from "../src/lib/codex.js";
+import { defaultCodexFreshArgs, defaultCodexResumeArgs } from "../src/lib/codex-args.js";
 import { ACTIVITY_LOG_FILE } from "../src/lib/logging.js";
 import { logsDir } from "../src/lib/paths.js";
 import type { Endpoint, RuntimeConfig } from "../src/lib/types.js";
@@ -20,14 +21,7 @@ vi.mock("execa", () => ({
 const runtimeConfig: RuntimeConfig = {
   provider: "codex",
   command: "codex",
-  args: [
-    "exec",
-    "resume",
-    "--last",
-    "--json",
-    "--skip-git-repo-check",
-    "--dangerously-bypass-approvals-and-sandbox"
-  ],
+  args: defaultCodexResumeArgs(),
   model: "gpt-5.5",
   reasoningEffort: "medium",
   startupTimeoutMs: 30_000
@@ -55,11 +49,7 @@ describe("codex", () => {
       "gpt-5.5",
       "-c",
       "model_reasoning_effort=\"medium\"",
-      "resume",
-      "--last",
-      "--json",
-      "--skip-git-repo-check",
-      "--dangerously-bypass-approvals-and-sandbox",
+      ...defaultCodexResumeArgs().slice(1),
       "hello"
     ]);
   });
@@ -71,9 +61,7 @@ describe("codex", () => {
       "gpt-5.5",
       "-c",
       "model_reasoning_effort=\"medium\"",
-      "--json",
-      "--skip-git-repo-check",
-      "--dangerously-bypass-approvals-and-sandbox",
+      ...defaultCodexFreshArgs().slice(1),
       "hello"
     ]);
   });

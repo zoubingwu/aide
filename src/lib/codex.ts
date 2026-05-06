@@ -1,26 +1,15 @@
 import { execa } from "execa";
+import { defaultCodexFreshArgs, defaultCodexResumeArgs } from "./codex-args.js";
 import { appendActivityLog, endpointActivity } from "./logging.js";
 import type { AgentRunResult, AideConfig, Endpoint, RuntimeConfig } from "./types.js";
 
-const DEFAULT_RESUME_ARGS = [
-  "exec",
-  "resume",
-  "--last",
-  "--json",
-  "--skip-git-repo-check",
-  "--dangerously-bypass-approvals-and-sandbox"
-];
-
 export function buildCodexArgs(runtime: RuntimeConfig, prompt: string): string[] {
-  const runtimeArgs = runtime.args.length > 0 ? runtime.args : DEFAULT_RESUME_ARGS;
+  const runtimeArgs = runtime.args.length > 0 ? runtime.args : defaultCodexResumeArgs();
   return withCodexRuntimeConfig(buildPromptArgs(runtimeArgs, prompt), runtime);
 }
 
 export function buildFreshCodexArgs(runtime: RuntimeConfig, prompt: string): string[] {
-  return withCodexRuntimeConfig(
-    ["exec", "--json", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox", prompt],
-    runtime
-  );
+  return withCodexRuntimeConfig([...defaultCodexFreshArgs(), prompt], runtime);
 }
 
 function buildPromptArgs(runtimeArgs: string[], prompt: string): string[] {

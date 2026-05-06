@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { defaultCodexResumeArgs } from "../src/lib/codex-args.js";
 import { ensureAideHome, loadConfig, loadEndpoints } from "../src/lib/config.js";
 import { configPath, endpointsPath, logsDir, schedulesPath, usagePath, workspaceDir } from "../src/lib/paths.js";
 
@@ -29,14 +30,7 @@ describe("config", () => {
     expect(loadConfig(home).runtime.provider).toBe("codex");
     expect(loadConfig(home).runtime.model).toBe("gpt-5.5");
     expect(loadConfig(home).runtime.reasoningEffort).toBe("medium");
-    expect(loadConfig(home).runtime.args).toEqual([
-      "exec",
-      "resume",
-      "--last",
-      "--json",
-      "--skip-git-repo-check",
-      "--dangerously-bypass-approvals-and-sandbox"
-    ]);
+    expect(loadConfig(home).runtime.args).toEqual(defaultCodexResumeArgs());
     expect(loadEndpoints(home)).toEqual([]);
   });
 });
