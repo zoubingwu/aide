@@ -10,6 +10,8 @@ Aide is a TypeScript CLI package. Runtime code targets Node-compatible APIs and 
 - `src/commands/system.ts`: `init`, `status`, `logs`, `tokens`, `doctor`.
 - `src/commands/endpoints.ts`: endpoint CRUD, config commands, local endpoint tests.
 - `src/commands/runtime.ts`: `start`, `stop`, `restart`, and foreground runtime dispatch.
+- `src/commands/schedules.ts`: schedule CRUD and schedule config commands.
+- `src/commands/service.ts`: OS service install, uninstall, and status commands.
 - `src/lib/config.ts`: TOML user config, JSON runtime state, and schema validation.
 - `src/lib/paths.ts`: Aide home, display paths, endpoint id helpers.
 - `src/lib/workspace.ts`: endpoint workspace creation and validation.
@@ -18,6 +20,11 @@ Aide is a TypeScript CLI package. Runtime code targets Node-compatible APIs and 
 - `src/lib/codex.ts`: Codex provider args, execution, JSONL response extraction.
 - `src/lib/assistant.ts`: shared assistant request flow.
 - `src/lib/discord.ts`: Discord listener and message delivery.
+- `src/lib/discord-delivery.ts`: Discord target parsing and scheduled message delivery.
+- `src/lib/schedules.ts`: TOML schedule config validation and mutations.
+- `src/lib/schedule-plan.ts`: user schedule kind normalization into cron or one-shot plans.
+- `src/lib/scheduler.ts`: runtime schedule jobs, overlap handling, and one-shot cleanup.
+- `src/lib/service.ts`: launchd and systemd user service file generation and lifecycle.
 - `src/lib/runtime.ts`: background process launch and runtime lifecycle.
 - `src/lib/runtime-state.ts`: PID state helpers.
 - `src/lib/usage.ts`: JSONL usage events and estimated token accounting.
