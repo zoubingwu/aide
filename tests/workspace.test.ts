@@ -26,7 +26,16 @@ describe("workspace", () => {
     expect(status.exists).toBe(true);
     expect(status.soulExists).toBe(true);
     expect(status.agentsExists).toBe(true);
-    expect(fs.readFileSync(path.join(workspacePath, "AGENTS.md"), "utf8")).toContain("Recommended Working Structure");
+
+    const soul = fs.readFileSync(path.join(workspacePath, "SOUL.md"), "utf8");
+    const agents = fs.readFileSync(path.join(workspacePath, "AGENTS.md"), "utf8");
+
+    expect(soul).toContain("## Identity");
+    expect(soul).toContain("## Communication");
+    expect(soul).toContain("## Technical Posture");
+    expect(soul).not.toContain("Endpoint Context");
+    expect(agents).toContain("## Workspace Rules");
+    expect(agents).toContain("## Working Structure");
   });
 });
 

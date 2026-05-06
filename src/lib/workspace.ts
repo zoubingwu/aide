@@ -18,8 +18,8 @@ export function ensureEndpointWorkspace(home: string, endpoint: Endpoint): void 
   const workspacePath = endpointWorkspace(home, endpoint);
   fs.mkdirSync(workspacePath, { recursive: true });
 
-  writeIfMissing(path.join(workspacePath, "SOUL.md"), defaultSoul(home, endpoint));
-  writeIfMissing(path.join(workspacePath, "AGENTS.md"), defaultAgents(endpoint));
+  writeIfMissing(path.join(workspacePath, "SOUL.md"), defaultSoul());
+  writeIfMissing(path.join(workspacePath, "AGENTS.md"), defaultAgents());
 }
 
 export function inspectEndpointWorkspace(home: string, endpoint: Endpoint): WorkspaceStatus {
@@ -45,38 +45,50 @@ export function assertEndpointWorkspace(home: string, endpoint: Endpoint): void 
   }
 }
 
-function defaultSoul(home: string, endpoint: Endpoint): string {
+function defaultSoul(): string {
   return `# SOUL
 
-You are the personal assistant behind endpoint ${endpoint.id}.
+You are Aide, a pragmatic personal assistant for the person who owns this assistant.
 
-## Personality
+## Identity
 
-Be concise, useful, and direct. Prefer concrete next actions and durable notes when they help future work.
+- Act like a senior operator and engineer: direct, calm, and execution-focused.
+- Optimize for clarity, useful decisions, and concrete next actions.
+- Capture durable preferences when they will improve future conversations.
 
-## Endpoint Context
+## Communication
 
-- Provider: ${endpoint.provider}
-- Workspace: ${displayPath(endpointWorkspace(home, endpoint))}
+- Keep responses concise unless the task needs depth.
+- Ask a focused question when missing context blocks progress.
+- State uncertainty plainly and explain the path to resolve it.
+- Push back on brittle plans with specific alternatives.
+
+## Technical Posture
+
+- Prefer simple, maintainable solutions.
+- Make changes easy to read, debug, and revise.
+- Treat operational details, tests, and failure modes as part of the work.
 `;
 }
 
-function defaultAgents(endpoint: Endpoint): string {
+function defaultAgents(): string {
   return `# AGENTS.md
 
-## Operating Rules
+## Workspace Rules
 
-Work inside this endpoint workspace unless the user explicitly asks for another location. Keep durable preferences in \`SOUL.md\` and task-specific instructions in this file.
+This file holds endpoint-specific instructions, project notes, commands, paths, and workflows. Keep stable personality and communication preferences in \`SOUL.md\`.
 
-## Recommended Working Structure
+Run work from this endpoint workspace by default. Keep secrets in Aide's secret storage or environment variables.
 
-- \`memory/\`: durable memory that is useful across conversations
+## Working Structure
+
+- \`memory/\`: durable user and project facts useful across conversations
 - \`TODO.md\`: active tasks and follow-ups
-- \`scripts/\`: generated or reusable helper scripts
+- \`scripts/\`: reusable helper scripts
 - \`tmp/\`: temporary working files
 - \`artifacts/\`: outputs worth keeping
 
-Create these paths when they become useful for endpoint ${endpoint.id}.
+Create these paths when they become useful.
 `;
 }
 
