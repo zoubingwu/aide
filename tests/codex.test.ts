@@ -94,7 +94,12 @@ describe("codex", () => {
   it("logs Codex CLI JSONL output", async () => {
     const home = tempHome();
     const workspace = tempHome();
-    const stdout = JSON.stringify({ type: "final", final_response: "done" });
+    const stdout = [
+      JSON.stringify({ type: "thread.started", thread_id: "thread_1" }),
+      JSON.stringify({ type: "turn.started" }),
+      JSON.stringify({ type: "item.completed", item: { id: "item_0", type: "agent_message", text: "done" } }),
+      JSON.stringify({ type: "turn.completed", usage: { input_tokens: 10, output_tokens: 2 } })
+    ].join("\n");
 
     mockExeca().mockResolvedValueOnce({
       stdout,
@@ -106,7 +111,7 @@ describe("codex", () => {
     const events = readActivityEvents(home);
 
     expect(result.response).toBe("done");
-    expect(events).toHaveLength(2);
+    expect(events).toHaveLength(6);
     expect(events[0]).toMatchObject({
       endpoint: "yaya",
       event: "codex_cli_started",
@@ -117,7 +122,20 @@ describe("codex", () => {
         cwd: workspace
       }
     });
-    expect(events[1]).toMatchObject({
+    expect(events.slice(1, 5).map((event) => [event.event, event.metadata?.type])).toEqual([
+      ["codex_cli_event", "thread.started"],
+      ["codex_cli_event", "turn.started"],
+      ["codex_cli_event", "item.completed"],
+      ["codex_cli_event", "turn.completed"]
+    ]);
+    expect(events[3]?.metadata?.payload).toMatchObject({
+      type: "item.completed",
+      item: {
+        type: "agent_message",
+        text: "done"
+      }
+    });
+    expect(events[5]).toMatchObject({
       endpoint: "yaya",
       event: "codex_cli_finished",
       metadata: {
@@ -158,6 +176,7 @@ describe("codex", () => {
       ["codex_cli_started", "resume"],
       ["codex_cli_finished", "resume"],
       ["codex_cli_started", "fresh"],
+      ["codex_cli_event", "fresh"],
       ["codex_cli_finished", "fresh"]
     ]);
     expect(events[1]?.metadata).toMatchObject({
@@ -165,6 +184,12 @@ describe("codex", () => {
       stderr: "missing session"
     });
     expect(events[3]?.metadata).toMatchObject({
+      type: "final",
+      payload: {
+        final_response: "fresh done"
+      }
+    });
+    expect(events[4]?.metadata).toMatchObject({
       exitCode: 0,
       stdout
     });

@@ -183,6 +183,7 @@ async function runCodexOnce(execution: CodexExecution): Promise<Omit<AgentRunRes
     throw error;
   }
 
+  appendCodexJsonEvents(execution, runResult.stdout);
   appendActivityLog(
     execution.home,
     endpointActivity(execution.home, execution.endpoint, "codex_cli_finished", {
@@ -194,6 +195,25 @@ async function runCodexOnce(execution: CodexExecution): Promise<Omit<AgentRunRes
   );
 
   return runResult;
+}
+
+function appendCodexJsonEvents(execution: CodexExecution, stdout: string): void {
+  for (const line of stdout.split(/\r?\n/)) {
+    const payload = parseJsonObjectLine(line);
+
+    if (!payload) {
+      continue;
+    }
+
+    appendActivityLog(
+      execution.home,
+      endpointActivity(execution.home, execution.endpoint, "codex_cli_event", {
+        attempt: execution.attempt,
+        type: typeof payload.type === "string" ? payload.type : undefined,
+        payload
+      })
+    );
+  }
 }
 
 function sanitizeArgs(args: string[], prompt: string): string[] {
@@ -210,6 +230,21 @@ function parseJsonLine(line: string): unknown | undefined {
   } catch {
     return undefined;
   }
+}
+
+function parseJsonObjectLine(line: string): Record<string, unknown> | undefined {
+  const trimmed = line.trim();
+
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+
+  const parsed = parseJsonLine(trimmed);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return undefined;
+  }
+
+  return parsed as Record<string, unknown>;
 }
 
 function extractStringCandidate(value: unknown): string | undefined {
