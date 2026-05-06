@@ -25,6 +25,7 @@ Aide is a TypeScript CLI package. Runtime code targets Node-compatible APIs and 
 - `src/lib/discord-delivery.ts`: Discord target parsing and scheduled message delivery.
 - `src/lib/schedules.ts`: TOML schedule config validation and mutations.
 - `src/lib/schedule-plan.ts`: user schedule kind normalization into cron or one-shot plans.
+- `src/lib/schedule-reload.ts`: signal running runtime to reload schedule jobs after schedule config mutations.
 - `src/lib/scheduler.ts`: runtime schedule jobs, overlap handling, and one-shot cleanup.
 - `src/lib/service.ts`: launchd and systemd user service file generation and lifecycle.
 - `src/lib/runtime.ts`: background process launch and runtime lifecycle.

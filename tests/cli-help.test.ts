@@ -236,7 +236,7 @@ describe("CLI help", () => {
     expect(stdout).toContain("aide config set runtime.model gpt-5.5");
     expect(stdout).toContain("aide schedule add <prompt>");
     expect(stdout).toContain("Agents should prefer --kind cron with --cron for exact schedules.");
-    expect(stdout).toContain("Schedule changes are reloaded by the runtime within 30 seconds.");
+    expect(stdout).toContain("Schedule changes reload the running runtime immediately");
   });
 
   it("supports global options before endpoint", async () => {

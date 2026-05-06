@@ -4,6 +4,7 @@ import { appendRuntimeLog } from "./logging.js";
 import { markRuntimeRunning, markRuntimeStopped, runtimeDisplayStatus, isPidAlive } from "./runtime-state.js";
 import { startDiscordEndpoint } from "./discord.js";
 import { RuntimeScheduler } from "./scheduler.js";
+import { SCHEDULE_RELOAD_SIGNAL } from "./schedule-reload.js";
 import { assertEndpointWorkspace } from "./workspace.js";
 import type { Client } from "discord.js";
 
@@ -126,6 +127,11 @@ export async function startRuntime(home: string): Promise<void> {
 
   scheduler = new RuntimeScheduler({ home, endpoints, clients });
   scheduler.start();
+  const reloadSchedules = () => {
+    appendRuntimeLog(home, "schedule_reload_signal", { pid: process.pid });
+    scheduler?.reload();
+  };
+  process.on(SCHEDULE_RELOAD_SIGNAL, reloadSchedules);
   markRuntimeRunning(home);
   appendRuntimeLog(home, "runtime_started", { pid: process.pid, endpoints: endpoints.map((endpoint) => endpoint.id) });
   console.log(`Aide runtime started with PID ${process.pid}. Press Ctrl+C to stop.`);
@@ -133,6 +139,7 @@ export async function startRuntime(home: string): Promise<void> {
   await new Promise<void>((resolve) => {
     const stop = async () => {
       appendRuntimeLog(home, "runtime_stopping", { pid: process.pid });
+      process.off(SCHEDULE_RELOAD_SIGNAL, reloadSchedules);
       scheduler?.stop();
 
       for (const client of clients.values()) {

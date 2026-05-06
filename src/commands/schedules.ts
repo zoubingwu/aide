@@ -1,6 +1,7 @@
 import { printTable, statusLabel } from "../lib/format.js";
 import { openPath } from "../lib/open.js";
 import { schedulesPath, slugifyId } from "../lib/paths.js";
+import { requestScheduleReload } from "../lib/schedule-reload.js";
 import { addSchedule, findSchedule, loadSchedules, pauseSchedule, removeSchedule, resumeSchedule } from "../lib/schedules.js";
 import type { Schedule, ScheduleKind, Weekday } from "../lib/types.js";
 import { SCHEDULE_KINDS, WEEKDAYS } from "./help.js";
@@ -12,6 +13,7 @@ export async function addScheduleCommand(prompt: string, options: CommandOptions
   const schedule = buildSchedule(prompt, options);
   addSchedule(home, schedule);
   console.log(`Schedule ${schedule.id} created.`);
+  printReloadStatus(home);
 }
 
 export function listSchedulesCommand(options: CommandOptions): void {
@@ -76,20 +78,26 @@ export function showScheduleCommand(options: CommandOptions): void {
 
 export function pauseScheduleCommand(options: CommandOptions): void {
   const id = requiredOption(options, "id");
-  pauseSchedule(homeFromOptions(options), id);
+  const home = homeFromOptions(options);
+  pauseSchedule(home, id);
   console.log(`Paused schedule ${id}.`);
+  printReloadStatus(home);
 }
 
 export function resumeScheduleCommand(options: CommandOptions): void {
   const id = requiredOption(options, "id");
-  resumeSchedule(homeFromOptions(options), id);
+  const home = homeFromOptions(options);
+  resumeSchedule(home, id);
   console.log(`Resumed schedule ${id}.`);
+  printReloadStatus(home);
 }
 
 export function removeScheduleCommand(options: CommandOptions): void {
   const id = requiredOption(options, "id");
-  removeSchedule(homeFromOptions(options), id);
+  const home = homeFromOptions(options);
+  removeSchedule(home, id);
   console.log(`Removed schedule ${id}.`);
+  printReloadStatus(home);
 }
 
 export async function openScheduleConfigCommand(options: CommandOptions): Promise<void> {
@@ -221,4 +229,10 @@ function parseWeekday(value: string): Weekday {
 
 function kebab(value: string): string {
   return value.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
+}
+
+function printReloadStatus(home: string): void {
+  if (requestScheduleReload(home)) {
+    console.log("Runtime schedules reloaded.");
+  }
 }

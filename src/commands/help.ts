@@ -75,7 +75,7 @@ Schedules
 - High-level kinds are available for human-friendly daily, weekly, monthly, and one-shot schedules.
 - Weekdays: ${WEEKDAY_LIST}
 - Targets: channel:<id> or user:<id>
-- Schedule changes are reloaded by the runtime within 30 seconds.
+- Schedule changes reload the running runtime immediately and still have a 30-second polling fallback.
 
 Schedule examples
 ${SCHEDULE_ADD_EXAMPLES.map((example) => `- ${example}`).join("\n")}
