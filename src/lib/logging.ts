@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { logsDir } from "./paths.js";
+import { endpointWorkspacePath, logsDir } from "./paths.js";
 import type { Endpoint } from "./types.js";
 
 export const RUNTIME_LOG_FILE = "runtime.log";
@@ -35,10 +35,10 @@ export function appendActivityLog(home: string, event: ActivityEvent): void {
   );
 }
 
-export function endpointActivity(endpoint: Endpoint, event: string, metadata: Record<string, unknown> = {}): ActivityEvent {
+export function endpointActivity(home: string, endpoint: Endpoint, event: string, metadata: Record<string, unknown> = {}): ActivityEvent {
   return {
     endpoint: endpoint.id,
-    endpointWorkspace: endpoint.workspacePath,
+    endpointWorkspace: endpointWorkspacePath(home, endpoint.id),
     provider: endpoint.provider,
     event,
     metadata

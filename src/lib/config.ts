@@ -33,19 +33,7 @@ const configSchema = z.object({
 const endpointSchema = z.object({
   id: z.string().min(1),
   provider: z.literal("discord"),
-  name: z.string().min(1),
-  enabled: z.boolean(),
-  workspacePath: z.string().min(1),
-  routing: z.object({
-    mode: z.literal("mention_only"),
-    server: z.string(),
-    channel: z.string()
-  }),
-  permissions: z.object({
-    requireApprovalForShell: z.boolean(),
-    requireApprovalForWrites: z.boolean(),
-    restrictToEndpointWorkspace: z.boolean()
-  })
+  enabled: z.boolean()
 });
 
 const endpointsFileSchema = z.object({

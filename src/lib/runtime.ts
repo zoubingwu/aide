@@ -98,7 +98,7 @@ export async function startRuntime(home: string): Promise<void> {
   }
 
   for (const endpoint of endpoints) {
-    assertEndpointWorkspace(endpoint);
+    assertEndpointWorkspace(home, endpoint);
   }
 
   appendRuntimeLog(home, "runtime_starting", { pid: process.pid, command: config.runtime.command });

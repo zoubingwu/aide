@@ -17,15 +17,16 @@ describe("workspace", () => {
 
   it("creates SOUL.md and AGENTS.md for an endpoint", () => {
     const home = tempHome();
-    const endpoint = makeEndpoint(home);
+    const endpoint = makeEndpoint();
+    const workspacePath = endpointWorkspacePath(home, endpoint.id);
 
-    ensureEndpointWorkspace(endpoint);
+    ensureEndpointWorkspace(home, endpoint);
 
-    const status = inspectEndpointWorkspace(endpoint);
+    const status = inspectEndpointWorkspace(home, endpoint);
     expect(status.exists).toBe(true);
     expect(status.soulExists).toBe(true);
     expect(status.agentsExists).toBe(true);
-    expect(fs.readFileSync(path.join(endpoint.workspacePath, "AGENTS.md"), "utf8")).toContain("Recommended Working Structure");
+    expect(fs.readFileSync(path.join(workspacePath, "AGENTS.md"), "utf8")).toContain("Recommended Working Structure");
   });
 });
 
@@ -35,22 +36,10 @@ function tempHome(): string {
   return target;
 }
 
-function makeEndpoint(home: string): Endpoint {
+function makeEndpoint(): Endpoint {
   return {
     id: "discord-agent-ops",
     provider: "discord",
-    name: "Discord #agent-ops",
-    enabled: true,
-    workspacePath: endpointWorkspacePath(home, "discord-agent-ops"),
-    routing: {
-      mode: "mention_only",
-      server: "agent-lab",
-      channel: "#agent-ops"
-    },
-    permissions: {
-      requireApprovalForShell: true,
-      requireApprovalForWrites: true,
-      restrictToEndpointWorkspace: true
-    }
+    enabled: true
   };
 }

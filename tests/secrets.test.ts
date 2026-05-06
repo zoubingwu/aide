@@ -35,18 +35,6 @@ function makeEndpoint(): Endpoint {
   return {
     id: "discord-agent-ops",
     provider: "discord",
-    name: "Discord #agent-ops",
-    enabled: true,
-    workspacePath: "/tmp/discord-agent-ops",
-    routing: {
-      mode: "mention_only",
-      server: "agent-lab",
-      channel: "#agent-ops"
-    },
-    permissions: {
-      requireApprovalForShell: true,
-      requireApprovalForWrites: true,
-      restrictToEndpointWorkspace: true
-    }
+    enabled: true
   };
 }

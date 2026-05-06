@@ -65,6 +65,12 @@ describe("CLI help", () => {
 
     const { stdout } = await runCli("--home", home, "endpoint", "list");
     expect(stdout).toContain("discord-agent-ops");
+
+    const endpointsToml = fs.readFileSync(path.join(home, "endpoints.toml"), "utf8");
+    expect(endpointsToml).toContain('id = "discord-agent-ops"');
+    expect(endpointsToml).not.toContain("workspacePath");
+    expect(endpointsToml).not.toContain("routing");
+    expect(endpointsToml).not.toContain("permissions");
   });
 
   it("requires endpoint id for scripted Discord add", async () => {

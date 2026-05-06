@@ -2,7 +2,7 @@ import { runCodex, makeAssistantPrompt, type CodexRunResult } from "./codex.js";
 import { loadConfig } from "./config.js";
 import { appendActivityLog, endpointActivity } from "./logging.js";
 import { estimateTokens, addEstimatedUsage } from "./usage.js";
-import { assertEndpointWorkspace } from "./workspace.js";
+import { assertEndpointWorkspace, endpointWorkspace } from "./workspace.js";
 import type { Endpoint } from "./types.js";
 
 export async function handleAssistantRequest(
@@ -11,19 +11,20 @@ export async function handleAssistantRequest(
   message: string,
   author: string
 ): Promise<CodexRunResult> {
-  assertEndpointWorkspace(endpoint);
+  assertEndpointWorkspace(home, endpoint);
   const config = loadConfig(home);
   const prompt = makeAssistantPrompt(endpoint, message, author);
+  const workspace = endpointWorkspace(home, endpoint);
 
-  appendActivityLog(home, endpointActivity(endpoint, "message_received", { author }));
-  appendActivityLog(home, endpointActivity(endpoint, "codex_request", { workspace: endpoint.workspacePath }));
+  appendActivityLog(home, endpointActivity(home, endpoint, "message_received", { author }));
+  appendActivityLog(home, endpointActivity(home, endpoint, "codex_request", { workspace }));
 
-  const result = await runCodex(config, endpoint, prompt);
+  const result = await runCodex(config, workspace, endpoint, prompt);
   const tokens = estimateTokens(prompt) + estimateTokens(result.response);
 
   addEstimatedUsage(home, endpoint, tokens);
   appendActivityLog(home, {
-    ...endpointActivity(endpoint, "codex_response", {
+    ...endpointActivity(home, endpoint, "codex_response", {
       exitCode: result.exitCode,
       resumed: result.resumed
     }),

@@ -12,11 +12,10 @@ import { printTable, statusLabel } from "../lib/format.js";
 import { openFiles, openPath } from "../lib/open.js";
 import {
   displayPath,
-  endpointWorkspacePath,
   slugifyId
 } from "../lib/paths.js";
 import { resolveDiscordToken, writeDiscordToken } from "../lib/secrets.js";
-import { inspectEndpointWorkspace, ensureEndpointWorkspace } from "../lib/workspace.js";
+import { inspectEndpointWorkspace, ensureEndpointWorkspace, endpointWorkspace } from "../lib/workspace.js";
 import type { Endpoint } from "../lib/types.js";
 import type { CommandOptions } from "./options.js";
 import { homeFromOptions, stringOption } from "./options.js";
@@ -44,12 +43,11 @@ export async function listEndpointsCommand(options: CommandOptions): Promise<voi
 
   console.log(
     printTable(
-      ["ID", "Provider", "Status", "Route"],
+      ["ID", "Provider", "Status"],
       endpoints.map((endpoint) => [
         endpoint.id,
         endpoint.provider === "discord" ? "Discord" : endpoint.provider,
-        statusLabel(endpoint.enabled),
-        routeLabel(endpoint)
+        statusLabel(endpoint.enabled)
       ])
     )
   );
@@ -58,13 +56,12 @@ export async function listEndpointsCommand(options: CommandOptions): Promise<voi
 export async function showEndpointCommand(id: string, options: CommandOptions): Promise<void> {
   const home = homeFromOptions(options);
   const endpoint = findEndpoint(home, id);
-  const workspace = inspectEndpointWorkspace(endpoint);
+  const workspace = inspectEndpointWorkspace(home, endpoint);
 
   console.log(`Endpoint ${endpoint.id}\n`);
   console.log(`Provider    ${endpoint.provider}`);
   console.log(`Status      ${statusLabel(endpoint.enabled)}`);
-  console.log(`Route       ${routeLabel(endpoint)}`);
-  console.log(`Workspace   ${displayPath(endpoint.workspacePath)}`);
+  console.log(`Workspace   ${displayPath(workspace.path)}`);
   console.log(`SOUL.md     ${workspace.soulExists ? "exists" : "missing"}`);
   console.log(`AGENTS.md   ${workspace.agentsExists ? "exists" : "missing"}`);
   console.log(`Token       ${resolveDiscordToken(home, endpoint) ? "configured" : "missing"}`);
@@ -102,7 +99,7 @@ export async function removeEndpointCommand(id: string, options: CommandOptions)
   writeEndpoints(home, endpoints);
 
   if (options.deleteWorkspace && endpoint) {
-    fs.rmSync(endpoint.workspacePath, { recursive: true, force: true });
+    fs.rmSync(endpointWorkspace(home, endpoint), { recursive: true, force: true });
   }
 
   console.log(`Removed endpoint ${id}.`);
@@ -120,18 +117,18 @@ export async function testEndpointCommand(id: string, options: CommandOptions): 
 export async function openEndpointCommand(id: string, options: CommandOptions): Promise<void> {
   const home = homeFromOptions(options);
   const endpoint = findEndpoint(home, id);
-  ensureEndpointWorkspace(endpoint);
-  await openPath(endpoint.workspacePath);
+  ensureEndpointWorkspace(home, endpoint);
+  await openPath(endpointWorkspace(home, endpoint));
 }
 
 export async function listEndpointConfigCommand(id: string, options: CommandOptions): Promise<void> {
   const home = homeFromOptions(options);
   const endpoint = findEndpoint(home, id);
-  const workspace = inspectEndpointWorkspace(endpoint);
+  const workspace = inspectEndpointWorkspace(home, endpoint);
 
   console.log("Endpoint Config\n");
   console.log(`Endpoint    ${endpoint.id}`);
-  console.log(`Path        ${displayPath(endpoint.workspacePath)}`);
+  console.log(`Path        ${displayPath(workspace.path)}`);
   console.log("");
   console.log(`SOUL        SOUL.md      ${workspace.soulExists ? "exists" : "missing"}`);
   console.log(`AGENTS      AGENTS.md    ${workspace.agentsExists ? "exists" : "missing"}`);
@@ -140,10 +137,11 @@ export async function listEndpointConfigCommand(id: string, options: CommandOpti
 export async function openEndpointConfigCommand(id: string, options: CommandOptions): Promise<void> {
   const home = homeFromOptions(options);
   const endpoint = findEndpoint(home, id);
-  ensureEndpointWorkspace(endpoint);
+  const workspacePath = endpointWorkspace(home, endpoint);
+  ensureEndpointWorkspace(home, endpoint);
   await openFiles([
-    path.join(endpoint.workspacePath, "SOUL.md"),
-    path.join(endpoint.workspacePath, "AGENTS.md")
+    path.join(workspacePath, "SOUL.md"),
+    path.join(workspacePath, "AGENTS.md")
   ]);
 }
 
@@ -164,23 +162,11 @@ async function addDiscordEndpoint(options: CommandOptions): Promise<void> {
   const endpoint: Endpoint = {
     id,
     provider: "discord",
-    name: id,
-    enabled: true,
-    workspacePath: endpointWorkspacePath(home, id),
-    routing: {
-      mode: "mention_only",
-      server: "",
-      channel: ""
-    },
-    permissions: {
-      requireApprovalForShell: true,
-      requireApprovalForWrites: true,
-      restrictToEndpointWorkspace: true
-    }
+    enabled: true
   };
 
   endpoints.push(endpoint);
-  ensureEndpointWorkspace(endpoint);
+  ensureEndpointWorkspace(home, endpoint);
   writeEndpoints(home, endpoints);
 
   if (answers.token) {
@@ -189,7 +175,7 @@ async function addDiscordEndpoint(options: CommandOptions): Promise<void> {
   }
 
   console.log(`Discord endpoint ${id} created.`);
-  console.log(`Workspace ${displayPath(endpoint.workspacePath)}`);
+  console.log(`Workspace ${displayPath(endpointWorkspace(home, endpoint))}`);
   console.log("");
   console.log(nextStepsGuide());
 }
@@ -266,10 +252,6 @@ async function setEndpointEnabled(id: string, options: CommandOptions, enabled: 
   };
   writeEndpoints(home, endpoints);
   console.log(`${enabled ? "Resumed" : "Paused"} endpoint ${id}.`);
-}
-
-function routeLabel(endpoint: Endpoint): string {
-  return endpoint.routing.channel || "Discord permissions";
 }
 
 function discordPreparationGuide(): string {

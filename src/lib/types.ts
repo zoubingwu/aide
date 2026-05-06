@@ -1,5 +1,4 @@
 export type Provider = "discord";
-export type RoutingMode = "mention_only";
 export type RuntimeStatus = "running" | "stopped";
 
 export interface RuntimeConfig {
@@ -13,26 +12,10 @@ export interface AideConfig {
   runtime: RuntimeConfig;
 }
 
-export interface EndpointRouting {
-  mode: RoutingMode;
-  server: string;
-  channel: string;
-}
-
-export interface EndpointPermissions {
-  requireApprovalForShell: boolean;
-  requireApprovalForWrites: boolean;
-  restrictToEndpointWorkspace: boolean;
-}
-
 export interface Endpoint {
   id: string;
   provider: Provider;
-  name: string;
   enabled: boolean;
-  workspacePath: string;
-  routing: EndpointRouting;
-  permissions: EndpointPermissions;
 }
 
 export interface EndpointsFile {

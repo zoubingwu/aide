@@ -1,5 +1,4 @@
 import {
-  ChannelType,
   Client,
   Events,
   GatewayIntentBits,
@@ -34,16 +33,12 @@ export async function startDiscordEndpoint(home: string, endpoint: Endpoint): Pr
   });
 
   await waitForReady(client, token);
-  appendActivityLog(home, endpointActivity(endpoint, "discord_connected", { route: endpoint.routing.channel }));
+  appendActivityLog(home, endpointActivity(home, endpoint, "discord_connected"));
   return client;
 }
 
 async function handleDiscordMessage(home: string, endpoint: Endpoint, message: Message): Promise<void> {
   if (!endpoint.enabled || message.author.bot || !message.client.user) {
-    return;
-  }
-
-  if (!matchesRoute(endpoint, message)) {
     return;
   }
 
@@ -59,7 +54,7 @@ async function handleDiscordMessage(home: string, endpoint: Endpoint, message: M
     return;
   }
 
-  appendActivityLog(home, endpointActivity(endpoint, "discord_message_received", { author: message.author.username }));
+  appendActivityLog(home, endpointActivity(home, endpoint, "discord_message_received", { author: message.author.username }));
 
   if ("sendTyping" in message.channel && typeof message.channel.sendTyping === "function") {
     await message.channel.sendTyping();
@@ -68,54 +63,11 @@ async function handleDiscordMessage(home: string, endpoint: Endpoint, message: M
   const result = await handleAssistantRequest(home, endpoint, content, message.author.username);
 
   if (result.exitCode !== 0) {
-    appendActivityLog(home, endpointActivity(endpoint, "discord_delivery_failed", { exitCode: result.exitCode }));
+    appendActivityLog(home, endpointActivity(home, endpoint, "discord_delivery_failed", { exitCode: result.exitCode }));
   }
 
   await sendResponse(message, result.response);
-  appendActivityLog(home, endpointActivity(endpoint, "discord_response_delivered", { exitCode: result.exitCode }));
-}
-
-function matchesRoute(endpoint: Endpoint, message: Message): boolean {
-  if (endpoint.routing.mode !== "mention_only") {
-    return false;
-  }
-
-  if (endpoint.routing.server) {
-    const server = normalizeRoute(endpoint.routing.server);
-    const guildName = message.guild?.name ? normalizeRoute(message.guild.name) : "";
-    const guildId = message.guild?.id ?? "";
-
-    if (server !== guildName && server !== guildId) {
-      return false;
-    }
-  }
-
-  if (endpoint.routing.channel) {
-    const expected = normalizeRoute(endpoint.routing.channel);
-    const actual = channelName(message);
-
-    if (expected !== actual && endpoint.routing.channel !== message.channel.id) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-function channelName(message: Message): string {
-  if (message.channel.type === ChannelType.DM) {
-    return "dm";
-  }
-
-  if ("name" in message.channel && typeof message.channel.name === "string") {
-    return normalizeRoute(message.channel.name);
-  }
-
-  return "";
-}
-
-function normalizeRoute(value: string): string {
-  return value.trim().replace(/^#/, "").toLowerCase();
+  appendActivityLog(home, endpointActivity(home, endpoint, "discord_response_delivered", { exitCode: result.exitCode }));
 }
 
 function stripMention(content: string, botUserId: string): string {

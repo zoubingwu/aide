@@ -50,11 +50,11 @@ export async function statusCommand(options: CommandOptions): Promise<void> {
     console.log("No endpoints configured.");
   } else {
     const rows = endpoints.map((endpoint) => [
+      endpoint.id,
       endpoint.provider === "discord" ? "Discord" : endpoint.provider,
-      endpoint.routing.channel || "Discord permissions",
       statusLabel(endpoint.enabled)
     ]);
-    console.log(printTable(["Provider", "Route", "Status"], rows));
+    console.log(printTable(["Endpoint", "Provider", "Status"], rows));
   }
 
   console.log("\nTokens");
@@ -130,7 +130,7 @@ async function runDoctorChecks(home: string): Promise<DoctorCheck[]> {
     const endpoints = loadEndpoints(home);
 
     for (const endpoint of endpoints) {
-      const workspace = inspectEndpointWorkspace(endpoint);
+      const workspace = inspectEndpointWorkspace(home, endpoint);
       checks.push({
         status: workspace.exists ? "ok" : "fail",
         label: `${endpoint.id} workspace`,
@@ -157,11 +157,6 @@ async function runDoctorChecks(home: string): Promise<DoctorCheck[]> {
       });
     }
 
-    checks.push({
-      status: "warn",
-      label: "permission enforcement",
-      detail: "configured per endpoint; Codex CLI hooks are limited in MVP"
-    });
     checks.push({ status: "warn", label: "token usage", detail: "estimated" });
   }
 

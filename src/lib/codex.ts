@@ -37,7 +37,6 @@ export function buildFreshCodexArgs(prompt: string): string[] {
 export function makeAssistantPrompt(endpoint: Endpoint, message: string, author: string): string {
   return `Endpoint: ${endpoint.id}
 Provider: ${endpoint.provider}
-Route: ${endpoint.routing.channel}
 Author: ${author}
 
 ${message}`;
@@ -45,10 +44,11 @@ ${message}`;
 
 export async function runCodex(
   config: AideConfig,
+  workspace: string,
   endpoint: Endpoint,
   prompt: string
 ): Promise<CodexRunResult> {
-  const resumed = await runCodexOnce(config.runtime.command, buildCodexArgs(config.runtime.args, prompt), endpoint.workspacePath);
+  const resumed = await runCodexOnce(config.runtime.command, buildCodexArgs(config.runtime.args, prompt), workspace);
 
   if (resumed.exitCode === 0) {
     return {
@@ -58,7 +58,7 @@ export async function runCodex(
     };
   }
 
-  const fresh = await runCodexOnce(config.runtime.command, buildFreshCodexArgs(prompt), endpoint.workspacePath);
+  const fresh = await runCodexOnce(config.runtime.command, buildFreshCodexArgs(prompt), workspace);
 
   return {
     ...fresh,

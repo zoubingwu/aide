@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { displayPath } from "./paths.js";
+import { displayPath, endpointWorkspacePath } from "./paths.js";
 import type { Endpoint } from "./types.js";
 
 export interface WorkspaceStatus {
@@ -10,16 +10,20 @@ export interface WorkspaceStatus {
   agentsExists: boolean;
 }
 
-export function ensureEndpointWorkspace(endpoint: Endpoint): void {
-  const workspacePath = endpoint.workspacePath;
+export function endpointWorkspace(home: string, endpoint: Endpoint): string {
+  return endpointWorkspacePath(home, endpoint.id);
+}
+
+export function ensureEndpointWorkspace(home: string, endpoint: Endpoint): void {
+  const workspacePath = endpointWorkspace(home, endpoint);
   fs.mkdirSync(workspacePath, { recursive: true });
 
-  writeIfMissing(path.join(workspacePath, "SOUL.md"), defaultSoul(endpoint));
+  writeIfMissing(path.join(workspacePath, "SOUL.md"), defaultSoul(home, endpoint));
   writeIfMissing(path.join(workspacePath, "AGENTS.md"), defaultAgents(endpoint));
 }
 
-export function inspectEndpointWorkspace(endpoint: Endpoint): WorkspaceStatus {
-  const workspacePath = endpoint.workspacePath;
+export function inspectEndpointWorkspace(home: string, endpoint: Endpoint): WorkspaceStatus {
+  const workspacePath = endpointWorkspace(home, endpoint);
 
   return {
     path: workspacePath,
@@ -29,8 +33,8 @@ export function inspectEndpointWorkspace(endpoint: Endpoint): WorkspaceStatus {
   };
 }
 
-export function assertEndpointWorkspace(endpoint: Endpoint): void {
-  const status = inspectEndpointWorkspace(endpoint);
+export function assertEndpointWorkspace(home: string, endpoint: Endpoint): void {
+  const status = inspectEndpointWorkspace(home, endpoint);
 
   if (!status.exists) {
     throw new Error(`Endpoint workspace is missing: ${displayPath(status.path)}`);
@@ -41,7 +45,7 @@ export function assertEndpointWorkspace(endpoint: Endpoint): void {
   }
 }
 
-function defaultSoul(endpoint: Endpoint): string {
+function defaultSoul(home: string, endpoint: Endpoint): string {
   return `# SOUL
 
 You are the personal assistant behind endpoint ${endpoint.id}.
@@ -53,8 +57,7 @@ Be concise, useful, and direct. Prefer concrete next actions and durable notes w
 ## Endpoint Context
 
 - Provider: ${endpoint.provider}
-- Route: ${endpoint.routing.channel}
-- Workspace: ${displayPath(endpoint.workspacePath)}
+- Workspace: ${displayPath(endpointWorkspace(home, endpoint))}
 `;
 }
 
