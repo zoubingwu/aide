@@ -40,6 +40,49 @@ describe("scheduler execution", () => {
     expect(loadSchedules(home)).toEqual([]);
   });
 
+  it("removes a delivered once schedule when another entry is invalid", async () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = onceSchedule();
+    writeEndpoints(home, [endpoint]);
+    fs.writeFileSync(
+      schedulesPath(home),
+      `[[schedules]]
+id = "pay-rent"
+endpoint = "discord-main"
+enabled = true
+kind = "once"
+runAt = "2026-05-10T10:00:00+08:00"
+target = "user:987"
+message = "Remind me to pay rent."
+
+[[schedules]]
+id = "bad-timezone"
+endpoint = "discord-main"
+enabled = true
+kind = "daily"
+time = "09:00"
+timezone = "Europe/Lnodon"
+target = "channel:123"
+message = "Generate my daily brief."
+`
+    );
+
+    await executeScheduleOnce({
+      home,
+      schedule,
+      endpoints: [endpoint],
+      clients: new Map([["discord-main", {}]]),
+      handleRequest: vi.fn().mockResolvedValue({ response: "done", stdout: "", stderr: "", exitCode: 0, resumed: true }),
+      deliver: vi.fn().mockResolvedValue(undefined)
+    });
+
+    const content = fs.readFileSync(schedulesPath(home), "utf8");
+    expect(content).not.toContain('id = "pay-rent"');
+    expect(content).toContain('id = "bad-timezone"');
+  });
+
   it("keeps a once schedule after delivery failure", async () => {
     const home = tempHome();
     ensureAideHome(home);
@@ -119,6 +162,51 @@ describe("scheduler execution", () => {
 
     await vi.advanceTimersByTimeAsync(1);
     expect(handleRequest).toHaveBeenCalledTimes(2);
+    scheduler.stop();
+  });
+
+  it("does not arm a stale one-shot retry when reload skips a running job", async () => {
+    vi.useFakeTimers({ now: new Date("2026-05-10T10:02:00.000Z") });
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule: Schedule = {
+      ...onceSchedule(),
+      runAt: "2026-05-10T10:00:00.000Z"
+    };
+    let resolveRequest: ((value: { response: string; stdout: string; stderr: string; exitCode: number; resumed: boolean }) => void) | undefined;
+    const handleRequest = vi.fn(
+      () =>
+        new Promise<{ response: string; stdout: string; stderr: string; exitCode: number; resumed: boolean }>((resolve) => {
+          resolveRequest = resolve;
+        })
+    );
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([["discord-main", {} as never]]),
+      handleRequest,
+      deliver
+    });
+
+    scheduler.reload();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+
+    scheduler.reload();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+
+    resolveRequest?.({ response: "done", stdout: "", stderr: "", exitCode: 0, resumed: true });
+    await vi.runOnlyPendingTimersAsync();
+    expect(loadSchedules(home)).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(handleRequest).toHaveBeenCalledTimes(1);
     scheduler.stop();
   });
 

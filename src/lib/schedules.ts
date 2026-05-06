@@ -142,6 +142,19 @@ export function removeSchedule(home: string, id: string): void {
   writeSchedules(home, next);
 }
 
+export function removeRuntimeSchedule(home: string, id: string): void {
+  assertInitialized(home);
+  const raw = readToml(schedulesPath(home));
+  const file = looseSchedulesFileSchema.parse(raw);
+  const next = file.schedules.filter((schedule) => scheduleId(schedule) !== id);
+
+  if (next.length === file.schedules.length) {
+    throw new Error(`Schedule not found: ${id}`);
+  }
+
+  fs.writeFileSync(schedulesPath(home), stringifyToml({ schedules: next }));
+}
+
 function setScheduleEnabled(home: string, id: string, enabled: boolean): void {
   const schedules = loadSchedules(home);
   const index = schedules.findIndex((schedule) => schedule.id === id);

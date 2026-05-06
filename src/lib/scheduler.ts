@@ -4,7 +4,7 @@ import { handleAssistantRequest } from "./assistant.js";
 import { deliverDiscordMessage } from "./discord-delivery.js";
 import { appendRuntimeLog } from "./logging.js";
 import { buildSchedulePlan, isBiweeklyOccurrence } from "./schedule-plan.js";
-import { loadRuntimeSchedules, removeSchedule } from "./schedules.js";
+import { loadRuntimeSchedules, removeRuntimeSchedule } from "./schedules.js";
 import type { AgentRunResult, Endpoint, Schedule } from "./types.js";
 
 const ONCE_RETRY_MS = 60_000;
@@ -31,6 +31,8 @@ export interface RuntimeSchedulerOptions {
 interface RunningJob {
   stop(): void;
 }
+
+type ScheduleRunStatus = "ran" | "skipped";
 
 export async function executeScheduleOnce(execution: ScheduleExecution): Promise<void> {
   const endpoint = execution.endpoints.find((candidate) => candidate.id === execution.schedule.endpoint);
@@ -101,7 +103,7 @@ export async function executeScheduleOnce(execution: ScheduleExecution): Promise
   });
 
   if (execution.schedule.kind === "once") {
-    removeSchedule(execution.home, execution.schedule.id);
+    removeRuntimeSchedule(execution.home, execution.schedule.id);
     appendRuntimeLog(execution.home, "schedule_once_removed", {
       schedule: execution.schedule.id
     });
@@ -192,8 +194,13 @@ export class RuntimeScheduler {
 
   private createOnceJob(schedule: Schedule, runAt: string): RunningJob {
     let timer: NodeJS.Timeout | undefined;
+    let stopped = false;
 
     const scheduleNext = () => {
+      if (stopped) {
+        return;
+      }
+
       const targetAt = Math.max(new Date(runAt).getTime(), this.onceRetryAt.get(schedule.id) ?? 0);
       const delay = Math.max(0, targetAt - Date.now());
 
@@ -203,7 +210,15 @@ export class RuntimeScheduler {
       }
 
       timer = setTimeout(async () => {
-        await this.run(schedule);
+        if (stopped) {
+          return;
+        }
+
+        const status = await this.run(schedule);
+
+        if (stopped || status === "skipped") {
+          return;
+        }
 
         if (this.scheduleExists(schedule.id)) {
           this.onceRetryAt.set(schedule.id, Date.now() + ONCE_RETRY_MS);
@@ -218,6 +233,8 @@ export class RuntimeScheduler {
 
     return {
       stop: () => {
+        stopped = true;
+
         if (timer) {
           clearTimeout(timer);
         }
@@ -225,10 +242,10 @@ export class RuntimeScheduler {
     };
   }
 
-  private async run(schedule: Schedule): Promise<void> {
+  private async run(schedule: Schedule): Promise<ScheduleRunStatus> {
     if (this.running.has(schedule.id)) {
       appendRuntimeLog(this.options.home, "schedule_skipped_running", { schedule: schedule.id });
-      return;
+      return "skipped";
     }
 
     if (
@@ -236,7 +253,7 @@ export class RuntimeScheduler {
       schedule.startDate &&
       !isBiweeklyOccurrence(schedule.startDate, new Date(), schedule.timezone)
     ) {
-      return;
+      return "skipped";
     }
 
     this.running.add(schedule.id);
@@ -259,6 +276,8 @@ export class RuntimeScheduler {
     } finally {
       this.running.delete(schedule.id);
     }
+
+    return "ran";
   }
 
   private scheduleExists(id: string): boolean {

@@ -10,6 +10,7 @@ import {
   loadSchedules,
   loadRuntimeSchedules,
   pauseSchedule,
+  removeRuntimeSchedule,
   removeSchedule,
   resumeSchedule,
   writeSchedules
@@ -121,6 +122,43 @@ message = "Generate my daily brief."
     expect(loadRuntimeSchedules(home)).toMatchObject({
       schedules: [{ id: "daily-brief" }],
       issues: [{ index: 1, id: "bad-timezone", error: expect.stringContaining("Invalid IANA timezone") }]
+    });
+  });
+
+  it("removes a runtime schedule while preserving invalid peer entries", () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    fs.writeFileSync(
+      schedulesPath(home),
+      `[[schedules]]
+id = "pay-rent"
+endpoint = "discord-main"
+enabled = true
+kind = "once"
+runAt = "2026-05-10T10:00:00+08:00"
+target = "user:987"
+message = "Remind me to pay rent."
+
+[[schedules]]
+id = "bad-timezone"
+endpoint = "discord-main"
+enabled = true
+kind = "daily"
+time = "09:00"
+timezone = "Europe/Lnodon"
+target = "channel:123"
+message = "Generate my daily brief."
+`
+    );
+
+    removeRuntimeSchedule(home, "pay-rent");
+
+    const content = fs.readFileSync(schedulesPath(home), "utf8");
+    expect(content).not.toContain('id = "pay-rent"');
+    expect(content).toContain('id = "bad-timezone"');
+    expect(loadRuntimeSchedules(home)).toMatchObject({
+      schedules: [],
+      issues: [{ id: "bad-timezone" }]
     });
   });
 
