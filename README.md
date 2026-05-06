@@ -1,90 +1,79 @@
 # Aide
 
-Turn an agentic CLI into your personal assistant.
+Turn the coding agent you already use into an always-available assistant.
 
-Aide connects an agentic CLI to assistant endpoints. The MVP supports Discord endpoints, creates a private workspace per endpoint, and runs Codex by default inside the matching workspace when a message arrives.
+Aide gives long-lived coding agents a home outside the terminal. Point it at the Codex, Claude Code, opencode, or similar setup you have already tuned: skills, tools, auth, working directories, memory, and operating habits.
+
+The core idea is simple: your coding agent is already a strong general-purpose agent. Aide lets you bring that agent into chat, scheduled work, and context-specific workspaces, so the same assistant can help with engineering tasks, research, operations, writing, planning, and daily briefs.
+
+Aide's bet is that mature coding-agent CLIs already contain the hard parts of useful agents. The product layer should stay thin: route requests, run the CLI, deliver the result.
+
+## Why
+
+Use Aide when you want:
+
+- A personal assistant powered by your existing coding agent configuration.
+- Chat-based access to the agent that already knows your tools and preferences.
+- Separate workspaces for different projects, teams, bots, or roles.
+- Scheduled prompts for briefs, reminders, checks, and recurring workflows.
+- A thin and stable runtime that keeps the agent close to the CLI you already trust.
+
+Many agent platforms add orchestration layers, custom planners, tool wrappers, memory systems, and hosting assumptions. Aide keeps the operating model direct:
+
+```text
+assistant surface -> agent CLI -> response
+```
 
 ## Install
 
 ```bash
-bun install
-bun run build
+npm install -g @inksphere/aide
 ```
 
-`bun run build` creates a bundled CLI at `dist/cli.js`. Use it directly during development:
+Requirements:
+
+- Node.js 20+
+- A supported agent CLI installed and authenticated
+- A bot token for Discord or other IM apps
+
+Check the CLI:
 
 ```bash
-node dist/cli.js --help
+aide --help
 ```
 
-## Initialize
+## Quick Start With Discord
 
 ```bash
 aide init
-```
-
-This creates:
-
-```text
-~/.aide/
-  config.toml
-  endpoints.toml
-  runtime.json
-  usage.jsonl
-  logs/
-    runtime.log
-    activity.jsonl
-  workspace/
-```
-
-Use `AIDE_HOME=/path/to/home` or `--home /path/to/home` for isolated local testing.
-
-## Add A Discord Endpoint
-
-Interactive:
-
-```bash
 aide endpoint add discord
-```
-
-The interactive flow first shows Discord setup links, then prompts for an endpoint id and a Discord bot token.
-
-Scripted:
-
-```bash
-aide endpoint add discord \
-  --id discord-agent-ops \
-  --token "$DISCORD_BOT_TOKEN"
-```
-
-The endpoint id is used for the token key and workspace path. Aide stores endpoint tokens in `~/.aide/.env.local` using endpoint-specific keys such as `AIDE_DISCORD_TOKEN_DISCORD_AGENT_OPS`.
-
-Discord setup happens in Discord:
-
-1. Create or open an application in the [Discord Developer Portal](https://discord.com/developers/applications).
-2. Copy the bot token from the Bot page.
-3. Install the app to a server with the `bot` scope from [Discord install settings](https://docs.discord.com/developers/quick-start/getting-started#adding-scopes-and-bot-permissions).
-4. Grant the bot `View Channel` and `Send Messages` in channels where it should respond. See [Discord permissions](https://docs.discord.com/developers/topics/permissions).
-
-After Aide saves the endpoint, run `aide start` and mention the bot in an allowed channel. See [Message Content Intent rules](https://docs.discord.com/developers/events/gateway#message-content-intent).
-
-## Run
-
-```bash
 aide start
 ```
 
-The runtime starts in the background, stores its PID in `runtime.json`, listens for Discord mentions, runs the configured agent CLI from the endpoint workspace, and posts the final response back to Discord.
+The setup asks for:
 
-Stop it from another terminal:
+- An endpoint id, used for the workspace path and token key.
+- A Discord bot token, stored in `~/.aide/.env.local`.
 
-```bash
-aide stop
+After `aide start`, mention the bot in a Discord channel where it has access.
+
+## Workspace
+
+Each assistant context gets its own workspace under `~/.aide/workspace/`.
+
+```text
+~/.aide/workspace/<endpoint-id>/
+  SOUL.md
+  AGENTS.md
 ```
 
-## Agent CLI Invocation
+Use `SOUL.md` for stable assistant personality and preferences.
 
-The default agent provider is Codex:
+Use `AGENTS.md` for context-specific rules, project notes, commands, and workflows. The agent runs from this workspace, so it can keep durable context just like a normal coding-agent session.
+
+## Runtime Config
+
+Codex works out of the box:
 
 ```toml
 [runtime]
@@ -95,32 +84,24 @@ model = "gpt-5.5"
 reasoningEffort = "medium"
 ```
 
-Aide dispatches execution through the configured provider adapter and runs the process with `cwd` set to the endpoint workspace. For Codex, `model` maps to `--model`, and `reasoningEffort` maps to `-c model_reasoning_effort=...`. The current provider is `codex`; the adapter boundary is ready for additional CLIs such as Claude Code or OpenCode.
+Edit `~/.aide/config.toml` to change the Codex command, model, or args.
 
-## Commands
+## Useful Commands
 
 ```bash
 aide status
 aide logs
-aide logs --activity
 aide tokens
 aide doctor
 
 aide endpoint list
 aide endpoint show <id>
-aide endpoint pause <id>
-aide endpoint resume <id>
-aide endpoint remove <id>
 aide endpoint test <id> --message "hello"
 aide endpoint open <id>
-aide endpoint config list <id>
 aide endpoint config open <id>
-```
 
-## Development
+aide schedule add daily --id daily-brief --endpoint <id> --target channel:<channel-id> --time 09:00 --message "Daily brief"
+aide schedule list
 
-```bash
-bun run typecheck
-bun run test
-bun run build
+aide stop
 ```
