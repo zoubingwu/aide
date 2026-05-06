@@ -21,7 +21,7 @@ export const CONFIG_EXAMPLES = [
   "aide config get runtime.model",
   "aide config set runtime.model gpt-5.5",
   "aide config set runtime.reasoningEffort high",
-  "aide config set runtime.args '[\"exec\",\"resume\",\"--last\",\"--json\",\"--skip-git-repo-check\"]'"
+  "aide config set runtime.args '[\"exec\",\"resume\",\"--last\",\"--json\",\"--skip-git-repo-check\",\"--dangerously-bypass-approvals-and-sandbox\"]'"
 ];
 
 export const SCHEDULE_ADD_EXAMPLES = [

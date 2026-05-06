@@ -20,7 +20,14 @@ vi.mock("execa", () => ({
 const runtimeConfig: RuntimeConfig = {
   provider: "codex",
   command: "codex",
-  args: ["exec", "resume", "--last", "--json", "--skip-git-repo-check"],
+  args: [
+    "exec",
+    "resume",
+    "--last",
+    "--json",
+    "--skip-git-repo-check",
+    "--dangerously-bypass-approvals-and-sandbox"
+  ],
   model: "gpt-5.5",
   reasoningEffort: "medium",
   startupTimeoutMs: 30_000
@@ -52,6 +59,7 @@ describe("codex", () => {
       "--last",
       "--json",
       "--skip-git-repo-check",
+      "--dangerously-bypass-approvals-and-sandbox",
       "hello"
     ]);
   });
@@ -65,6 +73,7 @@ describe("codex", () => {
       "model_reasoning_effort=\"medium\"",
       "--json",
       "--skip-git-repo-check",
+      "--dangerously-bypass-approvals-and-sandbox",
       "hello"
     ]);
   });

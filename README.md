@@ -79,7 +79,7 @@ Codex works out of the box:
 [runtime]
 provider = "codex"
 command = "codex"
-args = ["exec", "resume", "--last", "--json", "--skip-git-repo-check"]
+args = ["exec", "resume", "--last", "--json", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox"]
 model = "gpt-5.5"
 reasoningEffort = "medium"
 ```

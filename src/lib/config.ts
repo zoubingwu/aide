@@ -14,7 +14,14 @@ import {
 } from "./paths.js";
 import type { AideConfig, Endpoint, EndpointsFile, RuntimeConfig, RuntimeState } from "./types.js";
 
-const DEFAULT_RUNTIME_ARGS = ["exec", "resume", "--last", "--json", "--skip-git-repo-check"];
+const DEFAULT_RUNTIME_ARGS = [
+  "exec",
+  "resume",
+  "--last",
+  "--json",
+  "--skip-git-repo-check",
+  "--dangerously-bypass-approvals-and-sandbox"
+];
 
 const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   provider: "codex",

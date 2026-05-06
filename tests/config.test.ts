@@ -34,7 +34,8 @@ describe("config", () => {
       "resume",
       "--last",
       "--json",
-      "--skip-git-repo-check"
+      "--skip-git-repo-check",
+      "--dangerously-bypass-approvals-and-sandbox"
     ]);
     expect(loadEndpoints(home)).toEqual([]);
   });
