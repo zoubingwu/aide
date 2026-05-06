@@ -18,7 +18,9 @@
     "dev": "tsx src/cli.ts",
     "build": "rm -rf dist && bun build src/cli.ts --target node --format esm --outdir dist --entry-naming cli.js && chmod +x dist/cli.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "release:minor": "bun pm version minor && git push --follow-tags",
+    "release:patch": "bun pm version patch && git push --follow-tags"
   },
   "engines": {
     "node": ">=20"
