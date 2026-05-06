@@ -1,11 +1,14 @@
 export type Provider = "discord";
 export type AgentProvider = "codex";
+export type CodexReasoningEffort = "low" | "medium" | "high" | "xhigh";
 export type RuntimeStatus = "running" | "stopped";
 
 export interface RuntimeConfig {
   provider: AgentProvider;
   command: string;
   args: string[];
+  model: string;
+  reasoningEffort: CodexReasoningEffort;
   startupTimeoutMs: number;
 }
 

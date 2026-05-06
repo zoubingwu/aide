@@ -1,29 +1,50 @@
 import { execa } from "execa";
-import type { AgentRunResult, AideConfig, Endpoint } from "./types.js";
+import type { AgentRunResult, AideConfig, Endpoint, RuntimeConfig } from "./types.js";
 
-export function buildCodexArgs(runtimeArgs: string[], prompt: string): string[] {
-  const args = runtimeArgs.length > 0 ? runtimeArgs : ["exec", "resume", "--last", "--json", "--skip-git-repo-check"];
-  const promptIndex = args.indexOf("{prompt}");
+const DEFAULT_RESUME_ARGS = ["exec", "resume", "--last", "--json", "--skip-git-repo-check"];
+
+export function buildCodexArgs(runtime: RuntimeConfig, prompt: string): string[] {
+  const runtimeArgs = runtime.args.length > 0 ? runtime.args : DEFAULT_RESUME_ARGS;
+  return withCodexRuntimeConfig(buildPromptArgs(runtimeArgs, prompt), runtime);
+}
+
+export function buildFreshCodexArgs(runtime: RuntimeConfig, prompt: string): string[] {
+  return withCodexRuntimeConfig(["exec", "--json", "--skip-git-repo-check", prompt], runtime);
+}
+
+function buildPromptArgs(runtimeArgs: string[], prompt: string): string[] {
+  const promptIndex = runtimeArgs.indexOf("{prompt}");
 
   if (promptIndex !== -1) {
-    const result = [...args];
+    const result = [...runtimeArgs];
     result[promptIndex] = prompt;
     return result;
   }
 
-  if (args[0] === "exec" && args[1] === "resume") {
-    return [...args, prompt];
+  if (runtimeArgs[0] === "exec" && runtimeArgs[1] === "resume") {
+    return [...runtimeArgs, prompt];
   }
 
-  if (args[0] === "exec") {
-    return ["exec", prompt, ...args.slice(1)];
+  if (runtimeArgs[0] === "exec") {
+    return ["exec", prompt, ...runtimeArgs.slice(1)];
   }
 
-  return [...args, prompt];
+  return [...runtimeArgs, prompt];
 }
 
-export function buildFreshCodexArgs(prompt: string): string[] {
-  return ["exec", "--json", "--skip-git-repo-check", prompt];
+function withCodexRuntimeConfig(args: string[], runtime: RuntimeConfig): string[] {
+  const codexConfigArgs = [
+    "--model",
+    runtime.model,
+    "-c",
+    `model_reasoning_effort=${JSON.stringify(runtime.reasoningEffort)}`
+  ];
+
+  if (args[0] === "exec") {
+    return ["exec", ...codexConfigArgs, ...args.slice(1)];
+  }
+
+  return [...codexConfigArgs, ...args];
 }
 
 export async function runCodex(
@@ -32,7 +53,7 @@ export async function runCodex(
   endpoint: Endpoint,
   prompt: string
 ): Promise<AgentRunResult> {
-  const resumed = await runCodexOnce(config.runtime.command, buildCodexArgs(config.runtime.args, prompt), workspace);
+  const resumed = await runCodexOnce(config.runtime.command, buildCodexArgs(config.runtime, prompt), workspace);
 
   if (resumed.exitCode === 0) {
     return {
@@ -42,7 +63,7 @@ export async function runCodex(
     };
   }
 
-  const fresh = await runCodexOnce(config.runtime.command, buildFreshCodexArgs(prompt), workspace);
+  const fresh = await runCodexOnce(config.runtime.command, buildFreshCodexArgs(config.runtime, prompt), workspace);
 
   return {
     ...fresh,

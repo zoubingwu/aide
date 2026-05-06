@@ -4,11 +4,25 @@ import {
   buildFreshCodexArgs,
   extractFinalResponse
 } from "../src/lib/codex.js";
+import type { RuntimeConfig } from "../src/lib/types.js";
+
+const runtimeConfig: RuntimeConfig = {
+  provider: "codex",
+  command: "codex",
+  args: ["exec", "resume", "--last", "--json", "--skip-git-repo-check"],
+  model: "gpt-5.5",
+  reasoningEffort: "medium",
+  startupTimeoutMs: 30_000
+};
 
 describe("codex", () => {
   it("builds resume-last exec args with prompt at the end", () => {
-    expect(buildCodexArgs(["exec", "resume", "--last", "--json", "--skip-git-repo-check"], "hello")).toEqual([
+    expect(buildCodexArgs(runtimeConfig, "hello")).toEqual([
       "exec",
+      "--model",
+      "gpt-5.5",
+      "-c",
+      "model_reasoning_effort=\"medium\"",
       "resume",
       "--last",
       "--json",
@@ -18,7 +32,16 @@ describe("codex", () => {
   });
 
   it("builds fresh exec args for first-run fallback", () => {
-    expect(buildFreshCodexArgs("hello")).toEqual(["exec", "--json", "--skip-git-repo-check", "hello"]);
+    expect(buildFreshCodexArgs(runtimeConfig, "hello")).toEqual([
+      "exec",
+      "--model",
+      "gpt-5.5",
+      "-c",
+      "model_reasoning_effort=\"medium\"",
+      "--json",
+      "--skip-git-repo-check",
+      "hello"
+    ]);
   });
 
   it("extracts final text from JSONL output", () => {

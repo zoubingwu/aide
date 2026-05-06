@@ -91,9 +91,11 @@ The default agent provider is Codex:
 provider = "codex"
 command = "codex"
 args = ["exec", "resume", "--last", "--json", "--skip-git-repo-check"]
+model = "gpt-5.5"
+reasoningEffort = "medium"
 ```
 
-Aide dispatches execution through the configured provider adapter and runs the process with `cwd` set to the endpoint workspace. The current provider is `codex`; the adapter boundary is ready for additional CLIs such as Claude Code or OpenCode.
+Aide dispatches execution through the configured provider adapter and runs the process with `cwd` set to the endpoint workspace. For Codex, `model` maps to `--model`, and `reasoningEffort` maps to `-c model_reasoning_effort=...`. The current provider is `codex`; the adapter boundary is ready for additional CLIs such as Claude Code or OpenCode.
 
 ## Commands
 
