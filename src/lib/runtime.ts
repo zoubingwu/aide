@@ -33,16 +33,22 @@ export async function startRuntimeInBackground(home: string): Promise<void> {
     stdio: "ignore",
     env: process.env
   });
-  let childExited = false;
-  let childError: Error | undefined;
+  const childExit: {
+    exited: boolean;
+    code?: number | null;
+    signal?: NodeJS.Signals | null;
+    error?: string;
+  } = { exited: false };
 
-  child.once("exit", () => {
-    childExited = true;
+  child.once("exit", (code, signal) => {
+    childExit.exited = true;
+    childExit.code = code;
+    childExit.signal = signal;
   });
 
   child.once("error", (error) => {
-    childExited = true;
-    childError = error;
+    childExit.exited = true;
+    childExit.error = error.message;
   });
 
   child.unref();
@@ -52,7 +58,7 @@ export async function startRuntimeInBackground(home: string): Promise<void> {
     home,
     child.pid,
     Math.min(config.runtime.startupTimeoutMs, START_WAIT_MS),
-    () => childExited
+    () => childExit.exited
   );
 
   if (result === "started") {
@@ -61,9 +67,15 @@ export async function startRuntimeInBackground(home: string): Promise<void> {
   }
 
   if (result === "exited" || !isPidAlive(child.pid)) {
-    appendRuntimeLog(home, "runtime_background_start_failed", { pid: child.pid });
-    const message = childError
-      ? `Aide runtime failed to start: ${childError.message}`
+    appendRuntimeLog(home, "runtime_background_start_failed", {
+      pid: child.pid,
+      exitCode: childExit.code,
+      signal: childExit.signal,
+      error: childExit.error
+    });
+    const detail = childExit.error ?? exitDetail(childExit.code, childExit.signal);
+    const message = detail
+      ? `Aide runtime failed to start: ${detail}. Run \`aide logs\` for details.`
       : "Aide runtime failed to start. Run `aide logs` for details.";
     throw new Error(message);
   }
@@ -161,6 +173,18 @@ export function stopRuntime(home: string): void {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function exitDetail(code: number | null | undefined, signal: NodeJS.Signals | null | undefined): string | undefined {
+  if (code !== undefined && code !== null) {
+    return `child exited with code ${code}`;
+  }
+
+  if (signal) {
+    return `child exited from signal ${signal}`;
+  }
+
+  return undefined;
 }
 
 async function waitForRuntimeStart(

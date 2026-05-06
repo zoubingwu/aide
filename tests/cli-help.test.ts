@@ -75,6 +75,23 @@ describe("CLI help", () => {
       stderr: expect.stringContaining("Missing endpoint id. Provide --id <id>.")
     });
   });
+
+  it("logs hidden runtime startup errors", async () => {
+    const home = tempHome();
+    await runCli("--home", home, "init");
+    await runCli("--home", home, "endpoint", "add", "discord", "--id", "broken", "--token", "test-token");
+    fs.rmSync(path.join(home, "workspace", "broken"), { recursive: true, force: true });
+
+    await expect(runCli("--home", home, "start")).rejects.toMatchObject({
+      stderr: expect.stringContaining("child exited with code 1")
+    });
+
+    const log = fs.readFileSync(path.join(home, "logs", "runtime.log"), "utf8");
+    expect(log).toContain("runtime_internal_error");
+    expect(log).toContain("Endpoint workspace is missing");
+    expect(log).toContain("runtime_background_start_failed");
+    expect(log).toContain("\"exitCode\":1");
+  });
 });
 
 function runCli(...args: string[]) {

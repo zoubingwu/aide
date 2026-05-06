@@ -25,6 +25,8 @@ import {
   showEndpointCommand,
   testEndpointCommand
 } from "./commands/endpoints.js";
+import { appendRuntimeLog } from "./lib/logging.js";
+import { homeFromOptions } from "./commands/options.js";
 
 const runArgv = subcommandArgv(process.argv, "__run", "aide __run");
 const endpointArgv = subcommandArgv(process.argv, "endpoint", "aide endpoint");
@@ -110,7 +112,19 @@ async function runInternalRuntimeCli(argv: string[]): Promise<void> {
   const cli = cac("aide __run");
   cli.option("--home <path>", "Aide home directory");
   const parsed = cli.parse(argv, { run: false });
-  await runCommand(parsed.options);
+  const home = homeFromOptions(parsed.options);
+
+  try {
+    appendRuntimeLog(home, "runtime_internal_starting", { pid: process.pid });
+    await runCommand(parsed.options);
+  } catch (error) {
+    appendRuntimeLog(home, "runtime_internal_error", {
+      pid: process.pid,
+      error: errorMessage(error),
+      stack: errorStack(error)
+    });
+    throw error;
+  }
 }
 
 function subcommandArgv(argv: string[], command: string, displayName: string): string[] | undefined {
@@ -170,4 +184,12 @@ function wrap<T extends unknown[]>(handler: (...args: T) => Promise<void> | void
       process.exitCode = 1;
     }
   };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function errorStack(error: unknown): string | undefined {
+  return error instanceof Error ? error.stack : undefined;
 }
