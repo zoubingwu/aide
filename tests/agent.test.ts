@@ -22,4 +22,20 @@ describe("agent", () => {
     expect(prompt).toContain("Author: alice");
     expect(prompt).toContain("hello");
   });
+
+  it("includes the request source when provided", () => {
+    const prompt = makeAssistantPrompt(
+      {
+        id: "discord-agent-ops",
+        provider: "discord",
+        enabled: true
+      },
+      "schedule this daily",
+      "alice",
+      { source: "channel:123" }
+    );
+
+    expect(prompt).toContain("Source: channel:123");
+    expect(prompt).toContain("schedule this daily");
+  });
 });

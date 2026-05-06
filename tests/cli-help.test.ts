@@ -198,6 +198,7 @@ describe("CLI help", () => {
     const { stdout } = await runCli("help", "agent");
 
     expect(stdout).toContain("Aide Agent Guide");
+    expect(stdout).toContain("Source: channel:<id>");
     expect(stdout).toContain("aide config set runtime.model gpt-5.5");
     expect(stdout).toContain("aide schedule add <prompt>");
     expect(stdout).toContain("Schedule changes are reloaded by the runtime within 30 seconds.");

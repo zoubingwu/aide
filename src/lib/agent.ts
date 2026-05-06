@@ -1,10 +1,17 @@
 import type { AideConfig, AgentProvider, AgentRunResult, Endpoint } from "./types.js";
 import { runCodex } from "./codex.js";
 
-export function makeAssistantPrompt(endpoint: Endpoint, message: string, author: string): string {
+export interface AssistantPromptContext {
+  source?: string | undefined;
+}
+
+export function makeAssistantPrompt(endpoint: Endpoint, message: string, author: string, context: AssistantPromptContext = {}): string {
+  const source = context.source ? `Source: ${context.source}\n` : "";
+
   return `Endpoint: ${endpoint.id}
 Provider: ${endpoint.provider}
 Author: ${author}
+${source}
 
 ${message}`;
 }

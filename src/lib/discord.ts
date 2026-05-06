@@ -60,7 +60,9 @@ async function handleDiscordMessage(home: string, endpoint: Endpoint, message: M
     await message.channel.sendTyping();
   }
 
-  const result = await handleAssistantRequest(home, endpoint, content, message.author.username);
+  const result = await handleAssistantRequest(home, endpoint, content, message.author.username, {
+    source: discordMessageSource(message)
+  });
 
   if (result.exitCode !== 0) {
     appendActivityLog(home, endpointActivity(home, endpoint, "discord_delivery_failed", { exitCode: result.exitCode }));
@@ -96,6 +98,10 @@ export function chunkDiscordMessage(response: string): string[] {
   }
 
   return chunks;
+}
+
+export function discordMessageSource(message: Pick<Message, "author" | "channelId" | "guildId">): string {
+  return message.guildId ? `channel:${message.channelId}` : `user:${message.author.id}`;
 }
 
 function waitForReady(client: Client, token: string): Promise<void> {

@@ -48,6 +48,8 @@ function agentHelpText(): string {
 
 Use the aide CLI when asked to inspect or change Aide settings. Prefer exact commands over editing TOML directly.
 
+When the prompt includes Source: channel:<id> or Source: user:<id>, use that source as the default schedule --target unless the user asks for another target.
+
 Config
 - Get all runtime config: aide config get
 - Get one value: aide config get <path>
