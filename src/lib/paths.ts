@@ -45,6 +45,10 @@ export function endpointsPath(home: string): string {
   return path.join(home, "endpoints.toml");
 }
 
+export function schedulesPath(home: string): string {
+  return path.join(home, "schedules.toml");
+}
+
 export function runtimePath(home: string): string {
   return path.join(home, "runtime.json");
 }

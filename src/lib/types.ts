@@ -24,6 +24,37 @@ export interface EndpointsFile {
   endpoints: Endpoint[];
 }
 
+export type ScheduleKind = "hourly" | "daily" | "weekly" | "biweekly" | "monthly" | "once";
+
+export type Weekday =
+  | "sunday"
+  | "monday"
+  | "tuesday"
+  | "wednesday"
+  | "thursday"
+  | "friday"
+  | "saturday";
+
+export interface Schedule {
+  id: string;
+  endpoint: string;
+  enabled: boolean;
+  kind: ScheduleKind;
+  target: string;
+  message: string;
+  timezone?: string | undefined;
+  time?: string | undefined;
+  weekday?: Weekday | undefined;
+  day?: number | undefined;
+  minute?: number | undefined;
+  startDate?: string | undefined;
+  runAt?: string | undefined;
+}
+
+export interface SchedulesFile {
+  schedules: Schedule[];
+}
+
 export interface RuntimeState {
   status: RuntimeStatus;
   home: string;
