@@ -48,6 +48,52 @@ describe("CLI help", () => {
     expect(stdout).toContain("open <id>  Open endpoint config files");
   });
 
+  it("shows schedule subcommands", async () => {
+    const { stdout } = await runCli("schedule", "--help");
+
+    expect(stdout).toContain("add <kind>   Add a schedule");
+    expect(stdout).toContain("list         List schedules");
+    expect(stdout).toContain("config       Manage schedule config");
+  });
+
+  it("adds and lists a daily schedule", async () => {
+    const home = tempHome();
+    await runCli("--home", home, "init");
+
+    await runCli(
+      "--home",
+      home,
+      "schedule",
+      "add",
+      "daily",
+      "--id",
+      "daily-brief",
+      "--endpoint",
+      "discord-main",
+      "--time",
+      "09:00",
+      "--timezone",
+      "Asia/Shanghai",
+      "--target",
+      "channel:123",
+      "--message",
+      "Generate my daily brief."
+    );
+
+    const { stdout } = await runCli("--home", home, "schedule", "list");
+    expect(stdout).toContain("daily-brief");
+    expect(stdout).toContain("daily");
+    expect(stdout).toContain("discord-main");
+  });
+
+  it("shows service subcommands", async () => {
+    const { stdout } = await runCli("service", "--help");
+
+    expect(stdout).toContain("install    Install runtime service");
+    expect(stdout).toContain("uninstall  Uninstall runtime service");
+    expect(stdout).toContain("status     Show service status");
+  });
+
   it("supports global options before endpoint", async () => {
     const home = tempHome();
     await runCli("--home", home, "init");
