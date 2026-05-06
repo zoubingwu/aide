@@ -12,6 +12,7 @@ export function makeAssistantPrompt(endpoint: Endpoint, message: string, author:
 Provider: ${endpoint.provider}
 Author: ${author}
 ${source}
+Scheduling: Use aide schedule commands for delayed reminders, relative-time reminders, recurring work, and timed follow-ups. For short delays such as "in 3 minutes", create a one-shot schedule with --kind once and --run-at. Shell sleeps and long-running waits are unsuitable for reminder requests.
 
 ${message}`;
 }

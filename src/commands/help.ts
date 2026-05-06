@@ -71,11 +71,13 @@ Schedules
 - Remove: aide schedule remove --id <id>
 - Kinds: ${SCHEDULE_KIND_LIST}
 - Agents should prefer --kind cron with --cron for exact schedules.
+- Agents should use --kind once with --run-at for delayed reminders, relative-time reminders, and timed follow-ups.
 - Cron uses 5 fields: minute hour day-of-month month day-of-week.
 - High-level kinds are available for human-friendly daily, weekly, monthly, and one-shot schedules.
 - Weekdays: ${WEEKDAY_LIST}
 - Targets: channel:<id> or user:<id>
 - Schedule changes reload the running runtime immediately and still have a 30-second polling fallback.
+- Shell sleeps and long-running waits are unsuitable for reminder requests.
 
 Schedule examples
 ${SCHEDULE_ADD_EXAMPLES.map((example) => `- ${example}`).join("\n")}

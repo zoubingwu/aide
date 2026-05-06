@@ -20,6 +20,9 @@ describe("agent", () => {
     expect(prompt).toContain("Endpoint: discord-agent-ops");
     expect(prompt).toContain("Provider: discord");
     expect(prompt).toContain("Author: alice");
+    expect(prompt).toContain("Scheduling: Use aide schedule commands");
+    expect(prompt).toContain("--kind once");
+    expect(prompt).toContain("--run-at");
     expect(prompt).toContain("hello");
   });
 

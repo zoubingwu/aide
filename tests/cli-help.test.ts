@@ -260,6 +260,8 @@ describe("CLI help", () => {
     expect(stdout).toContain("aide config set runtime.model gpt-5.5");
     expect(stdout).toContain("aide schedule add <prompt>");
     expect(stdout).toContain("Agents should prefer --kind cron with --cron for exact schedules.");
+    expect(stdout).toContain("Agents should use --kind once with --run-at for delayed reminders");
+    expect(stdout).toContain("Shell sleeps and long-running waits are unsuitable for reminder requests.");
     expect(stdout).toContain("Schedule changes reload the running runtime immediately");
   });
 
