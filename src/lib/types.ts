@@ -27,7 +27,7 @@ export interface EndpointsFile {
   endpoints: Endpoint[];
 }
 
-export type ScheduleKind = "hourly" | "daily" | "weekly" | "biweekly" | "monthly" | "once";
+export type ScheduleKind = "cron" | "hourly" | "daily" | "weekly" | "biweekly" | "monthly" | "once";
 
 export type Weekday =
   | "sunday"
@@ -45,6 +45,7 @@ export interface Schedule {
   kind: ScheduleKind;
   target: string;
   message: string;
+  cron?: string | undefined;
   timezone?: string | undefined;
   time?: string | undefined;
   weekday?: Weekday | undefined;

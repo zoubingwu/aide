@@ -104,6 +104,7 @@ aide endpoint test <id> --message "hello"
 aide endpoint open <id>
 aide endpoint config open <id>
 
+aide schedule add "Check failed jobs" --id failed-jobs --kind cron --cron "*/15 * * * *" --endpoint <id> --target channel:<channel-id>
 aide schedule add "Daily brief" --id daily-brief --kind daily --endpoint <id> --target channel:<channel-id> --time 09:00
 aide schedule list
 aide schedule pause --id daily-brief

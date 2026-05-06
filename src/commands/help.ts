@@ -1,7 +1,7 @@
 import type { Command } from "cac";
 import type { ScheduleKind, Weekday } from "../lib/types.js";
 
-export const SCHEDULE_KINDS = ["hourly", "daily", "weekly", "biweekly", "monthly", "once"] as const satisfies readonly ScheduleKind[];
+export const SCHEDULE_KINDS = ["cron", "hourly", "daily", "weekly", "biweekly", "monthly", "once"] as const satisfies readonly ScheduleKind[];
 export const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"] as const satisfies readonly Weekday[];
 
 export const CONFIG_PATHS = [
@@ -25,6 +25,7 @@ export const CONFIG_EXAMPLES = [
 ];
 
 export const SCHEDULE_ADD_EXAMPLES = [
+  'aide schedule add "Check failed jobs." --id failed-jobs --kind cron --cron "*/15 * * * *" --endpoint discord --target channel:123 --timezone Asia/Shanghai',
   'aide schedule add "Generate my daily brief." --id daily-brief --kind daily --endpoint discord --target channel:123 --time 09:00',
   'aide schedule add "Check failed jobs." --id hourly-check --kind hourly --endpoint discord --target channel:123 --minute 0',
   'aide schedule add "Weekly planning notes." --id weekly-plan --kind weekly --endpoint discord --target channel:123 --weekday monday --time 10:00',
@@ -69,6 +70,9 @@ Schedules
 - Resume: aide schedule resume --id <id>
 - Remove: aide schedule remove --id <id>
 - Kinds: ${SCHEDULE_KIND_LIST}
+- Agents should prefer --kind cron with --cron for exact schedules.
+- Cron uses 5 fields: minute hour day-of-month month day-of-week.
+- High-level kinds are available for human-friendly daily, weekly, monthly, and one-shot schedules.
 - Weekdays: ${WEEKDAY_LIST}
 - Targets: channel:<id> or user:<id>
 - Schedule changes are reloaded by the runtime within 30 seconds.

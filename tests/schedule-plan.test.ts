@@ -3,6 +3,14 @@ import { buildSchedulePlan, isBiweeklyOccurrence } from "../src/lib/schedule-pla
 import type { Schedule } from "../src/lib/types.js";
 
 describe("schedule plans", () => {
+  it("builds a raw cron plan", () => {
+    expect(buildSchedulePlan(schedule({ kind: "cron", cron: "*/15 * * * *", timezone: "Asia/Shanghai" }))).toEqual({
+      kind: "cron",
+      expression: "*/15 * * * *",
+      timezone: "Asia/Shanghai"
+    });
+  });
+
   it("builds an hourly cron plan", () => {
     expect(buildSchedulePlan(schedule({ kind: "hourly", minute: 15, timezone: "Asia/Shanghai" }))).toEqual({
       kind: "cron",

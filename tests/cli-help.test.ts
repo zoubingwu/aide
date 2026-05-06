@@ -87,10 +87,44 @@ describe("CLI help", () => {
   it("shows schedule add examples and enum values", async () => {
     const { stdout } = await runCli("schedule", "add", "--help");
 
-    expect(stdout).toContain("hourly | daily | weekly | biweekly | monthly | once");
+    expect(stdout).toContain("cron | hourly | daily | weekly | biweekly | monthly | once");
+    expect(stdout).toContain("Cron: 5 fields, minute hour day-of-month month day-of-week");
     expect(stdout).toContain("sunday | monday | tuesday | wednesday | thursday | friday | saturday");
-    expect(stdout).toContain('aide schedule add "Generate my daily brief."');
+    expect(stdout).toContain('aide schedule add "Check failed jobs."');
     expect(stdout).toContain("--kind <kind>");
+    expect(stdout).toContain("--cron <expression>");
+  });
+
+  it("adds and lists a cron schedule", async () => {
+    const home = tempHome();
+    await runCli("--home", home, "init");
+
+    await runCli(
+      "--home",
+      home,
+      "schedule",
+      "add",
+      "Check failed jobs.",
+      "--id",
+      "failed-jobs",
+      "--kind",
+      "cron",
+      "--cron",
+      "*/15 * * * *",
+      "--endpoint",
+      "discord-main",
+      "--timezone",
+      "Asia/Shanghai",
+      "--target",
+      "channel:123"
+    );
+
+    const { stdout } = await runCli("--home", home, "schedule", "show", "--id", "failed-jobs");
+    const schedules = fs.readFileSync(path.join(home, "schedules.toml"), "utf8");
+
+    expect(stdout).toContain("Kind       cron");
+    expect(stdout).toContain("Cron       */15 * * * *");
+    expect(schedules).toContain('cron = "*/15 * * * *"');
   });
 
   it("adds and lists a daily schedule", async () => {
@@ -201,6 +235,7 @@ describe("CLI help", () => {
     expect(stdout).toContain("Source: channel:<id>");
     expect(stdout).toContain("aide config set runtime.model gpt-5.5");
     expect(stdout).toContain("aide schedule add <prompt>");
+    expect(stdout).toContain("Agents should prefer --kind cron with --cron for exact schedules.");
     expect(stdout).toContain("Schedule changes are reloaded by the runtime within 30 seconds.");
   });
 

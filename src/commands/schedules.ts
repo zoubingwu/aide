@@ -53,6 +53,10 @@ export function showScheduleCommand(options: CommandOptions): void {
     console.log(`Time       ${schedule.time}`);
   }
 
+  if (schedule.cron) {
+    console.log(`Cron       ${schedule.cron}`);
+  }
+
   if (schedule.timezone) {
     console.log(`Timezone   ${schedule.timezone}`);
   }
@@ -121,6 +125,12 @@ function buildSchedule(prompt: string, options: CommandOptions): Schedule {
   };
 
   switch (kind) {
+    case "cron":
+      return {
+        ...base,
+        cron: requiredOption(options, "cron").trim(),
+        timezone: timezoneOption(options)
+      };
     case "hourly":
       return {
         ...base,

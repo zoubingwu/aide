@@ -53,6 +53,44 @@ describe("schedules", () => {
     expect(fs.readFileSync(schedulesPath(home), "utf8")).toContain('id = "daily-brief"');
   });
 
+  it("writes and loads cron schedules", () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const schedule: Schedule = {
+      id: "failed-jobs",
+      endpoint: "discord-main",
+      enabled: true,
+      kind: "cron",
+      cron: "*/15 * * * *",
+      timezone: "Asia/Shanghai",
+      target: "channel:123",
+      message: "Check failed jobs."
+    };
+
+    writeSchedules(home, [schedule]);
+
+    expect(loadSchedules(home)).toEqual([schedule]);
+    expect(fs.readFileSync(schedulesPath(home), "utf8")).toContain('cron = "*/15 * * * *"');
+  });
+
+  it("rejects cron schedules with six fields", () => {
+    const home = tempHome();
+    ensureAideHome(home);
+
+    expect(() =>
+      addSchedule(home, {
+        id: "bad-cron",
+        endpoint: "discord-main",
+        enabled: true,
+        kind: "cron",
+        cron: "0 */15 * * * *",
+        timezone: "Asia/Shanghai",
+        target: "channel:123",
+        message: "Check failed jobs."
+      })
+    ).toThrow("Invalid 5-field cron expression");
+  });
+
   it("rejects schedules with missing fields", () => {
     const home = tempHome();
     ensureAideHome(home);

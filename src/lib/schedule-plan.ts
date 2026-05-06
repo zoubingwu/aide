@@ -16,6 +16,8 @@ const WEEKDAY_TO_CRON: Record<Weekday, number> = {
 
 export function buildSchedulePlan(schedule: Schedule): SchedulePlan {
   switch (schedule.kind) {
+    case "cron":
+      return cronPlan(requiredString(schedule.cron, "cron"), schedule);
     case "hourly":
       return cronPlan(`${requiredNumber(schedule.minute, "minute")} * * * *`, schedule);
     case "daily": {

@@ -188,10 +188,12 @@ function runScheduleCli(argv: string[]): void {
       .usage(`add <prompt> --id <id> --kind <kind> --endpoint <id> --target <target> [options]
 
 Kinds: ${SCHEDULE_KIND_LIST}
+Cron: 5 fields, minute hour day-of-month month day-of-week
 Weekdays: ${WEEKDAY_LIST}
 Targets: channel:<id> or user:<id>`)
       .option("--id <id>", "Schedule id")
       .option("--kind <kind>", `Schedule kind: ${SCHEDULE_KIND_LIST}`)
+      .option("--cron <expression>", "5-field cron expression")
       .option("--endpoint <id>", "Endpoint id")
       .option("--target <target>", "Delivery target: channel:<id> or user:<id>")
       .option("--timezone <timezone>", "IANA timezone")

@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { CronPattern } from "croner";
 import { z } from "zod";
 import { assertInitialized, readToml, stringifyToml } from "./config.js";
 import { schedulesPath } from "./paths.js";
@@ -6,6 +7,7 @@ import type { Schedule, SchedulesFile, Weekday } from "./types.js";
 
 const idSchema = z.string().min(1).regex(/^[a-z0-9][a-z0-9-]*$/);
 const timeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+const cronExpressionSchema = z.string().trim().min(1).refine(isValidCronExpression, { message: "Invalid 5-field cron expression" });
 const targetSchema = z.string().refine(isValidScheduleTarget, { message: "Unsupported schedule target. Use channel:<id> or user:<id>." });
 const timezoneSchema = z.string().min(1).refine(isValidTimeZone, { message: "Invalid IANA timezone" });
 const weekdaySchema = z.enum(["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]);
@@ -27,6 +29,11 @@ const baseScheduleSchema = z.object({
 });
 
 const rawScheduleSchema = z.discriminatedUnion("kind", [
+  baseScheduleSchema.extend({
+    kind: z.literal("cron"),
+    cron: cronExpressionSchema,
+    timezone: timezoneSchema
+  }),
   baseScheduleSchema.extend({
     kind: z.literal("hourly"),
     minute: z.number().int().min(0).max(59).default(0),
@@ -224,6 +231,15 @@ function setScheduleEnabled(home: string, id: string, enabled: boolean): void {
 function isValidTimeZone(value: string): boolean {
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isValidCronExpression(value: string): boolean {
+  try {
+    new CronPattern(value, "UTC", { mode: "5-part" });
     return true;
   } catch {
     return false;
