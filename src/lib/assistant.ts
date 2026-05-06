@@ -24,7 +24,7 @@ export async function handleAssistantRequest(
   appendActivityLog(home, endpointActivity(home, endpoint, "message_received", { author }));
   appendActivityLog(home, endpointActivity(home, endpoint, "agent_request", { provider: config.runtime.provider, workspace }));
 
-  const result = await runAgent(config, workspace, endpoint, prompt);
+  const result = await runAgent(config, home, workspace, endpoint, prompt);
   const tokens = estimateTokens(prompt) + estimateTokens(result.response);
 
   addEstimatedUsage(home, endpoint, tokens);

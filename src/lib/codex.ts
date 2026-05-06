@@ -1,4 +1,5 @@
 import { execa } from "execa";
+import { appendActivityLog, endpointActivity } from "./logging.js";
 import type { AgentRunResult, AideConfig, Endpoint, RuntimeConfig } from "./types.js";
 
 const DEFAULT_RESUME_ARGS = ["exec", "resume", "--last", "--json", "--skip-git-repo-check"];
@@ -49,11 +50,20 @@ function withCodexRuntimeConfig(args: string[], runtime: RuntimeConfig): string[
 
 export async function runCodex(
   config: AideConfig,
+  home: string,
   workspace: string,
   endpoint: Endpoint,
   prompt: string
 ): Promise<AgentRunResult> {
-  const resumed = await runCodexOnce(config.runtime.command, buildCodexArgs(config.runtime, prompt), workspace);
+  const resumed = await runCodexOnce({
+    home,
+    endpoint,
+    command: config.runtime.command,
+    args: buildCodexArgs(config.runtime, prompt),
+    cwd: workspace,
+    prompt,
+    attempt: "resume"
+  });
 
   if (resumed.exitCode === 0) {
     return {
@@ -63,7 +73,15 @@ export async function runCodex(
     };
   }
 
-  const fresh = await runCodexOnce(config.runtime.command, buildFreshCodexArgs(config.runtime, prompt), workspace);
+  const fresh = await runCodexOnce({
+    home,
+    endpoint,
+    command: config.runtime.command,
+    args: buildFreshCodexArgs(config.runtime, prompt),
+    cwd: workspace,
+    prompt,
+    attempt: "fresh"
+  });
 
   return {
     ...fresh,
@@ -106,22 +124,74 @@ export function extractFinalResponse(stdout: string, stderr = ""): string {
   return error.length > 0 ? error : "Codex finished without a text response.";
 }
 
-async function runCodexOnce(command: string, args: string[], cwd: string): Promise<Omit<AgentRunResult, "response" | "resumed">> {
-  const result = await execa(command, args, {
-    cwd,
-    reject: false,
-    all: false,
-    env: {
-      ...process.env,
-      AIDE_ENDPOINT_WORKSPACE: cwd
-    }
-  });
+interface CodexExecution {
+  home: string;
+  endpoint: Endpoint;
+  command: string;
+  args: string[];
+  cwd: string;
+  prompt: string;
+  attempt: "resume" | "fresh";
+}
 
-  return {
-    stdout: result.stdout,
-    stderr: result.stderr,
-    exitCode: result.exitCode ?? 1
-  };
+async function runCodexOnce(execution: CodexExecution): Promise<Omit<AgentRunResult, "response" | "resumed">> {
+  appendActivityLog(
+    execution.home,
+    endpointActivity(execution.home, execution.endpoint, "codex_cli_started", {
+      attempt: execution.attempt,
+      command: execution.command,
+      args: sanitizeArgs(execution.args, execution.prompt),
+      cwd: execution.cwd
+    })
+  );
+
+  let runResult: Omit<AgentRunResult, "response" | "resumed">;
+
+  try {
+    const result = await execa(execution.command, execution.args, {
+      cwd: execution.cwd,
+      reject: false,
+      all: false,
+      env: {
+        ...process.env,
+        AIDE_ENDPOINT_WORKSPACE: execution.cwd
+      }
+    });
+    runResult = {
+      stdout: result.stdout,
+      stderr: result.stderr,
+      exitCode: result.exitCode ?? 1
+    };
+  } catch (error) {
+    appendActivityLog(
+      execution.home,
+      endpointActivity(execution.home, execution.endpoint, "codex_cli_failed", {
+        attempt: execution.attempt,
+        error: errorMessage(error)
+      })
+    );
+    throw error;
+  }
+
+  appendActivityLog(
+    execution.home,
+    endpointActivity(execution.home, execution.endpoint, "codex_cli_finished", {
+      attempt: execution.attempt,
+      exitCode: runResult.exitCode,
+      stdout: runResult.stdout,
+      stderr: runResult.stderr
+    })
+  );
+
+  return runResult;
+}
+
+function sanitizeArgs(args: string[], prompt: string): string[] {
+  return args.map((arg) => (arg === prompt ? "{prompt}" : arg));
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function parseJsonLine(line: string): unknown | undefined {

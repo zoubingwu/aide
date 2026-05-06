@@ -18,13 +18,14 @@ ${message}`;
 
 export async function runAgent(
   config: AideConfig,
+  home: string,
   workspace: string,
   endpoint: Endpoint,
   prompt: string
 ): Promise<AgentRunResult> {
   switch (config.runtime.provider) {
     case "codex":
-      return runCodex(config, workspace, endpoint, prompt);
+      return runCodex(config, home, workspace, endpoint, prompt);
   }
 }
 
