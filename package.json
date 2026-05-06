@@ -1,8 +1,12 @@
 {
-  "name": "aide-cli",
+  "name": "@inksphere/aide",
   "version": "0.1.0",
   "description": "Turn an agentic CLI into your personal assistant.",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zoubingwu/aide.git"
+  },
   "bin": {
     "aide": "./dist/cli.js"
   },

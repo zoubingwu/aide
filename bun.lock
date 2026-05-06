@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "aide-cli",
+      "name": "@inksphere/aide",
       "devDependencies": {
         "@iarna/toml": "2.2.5",
         "@types/node": "25.6.0",
