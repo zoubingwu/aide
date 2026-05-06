@@ -11,15 +11,17 @@ import {
   usagePath,
   workspaceDir
 } from "./paths.js";
-import type { AideConfig, Endpoint, EndpointsFile, RuntimeState } from "./types.js";
+import type { AideConfig, Endpoint, EndpointsFile, RuntimeConfig, RuntimeState } from "./types.js";
 
-const DEFAULT_RUNTIME_CONFIG = {
+const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
+  provider: "codex",
   command: "codex",
   args: ["exec", "resume", "--last", "--json", "--skip-git-repo-check"],
   startupTimeoutMs: 30_000
 };
 
 const runtimeConfigSchema = z.object({
+  provider: z.literal("codex").default("codex"),
   command: z.string().min(1).default("codex"),
   args: z.array(z.string()).default(["exec", "resume", "--last", "--json", "--skip-git-repo-check"]),
   startupTimeoutMs: z.number().int().positive().default(30_000)

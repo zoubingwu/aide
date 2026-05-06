@@ -1,7 +1,7 @@
 {
   "name": "aide-cli",
   "version": "0.1.0",
-  "description": "Turn Codex into your personal assistant.",
+  "description": "Turn an agentic CLI into your personal assistant.",
   "type": "module",
   "bin": {
     "aide": "./dist/cli.js"

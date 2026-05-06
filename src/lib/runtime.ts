@@ -101,7 +101,11 @@ export async function startRuntime(home: string): Promise<void> {
     assertEndpointWorkspace(home, endpoint);
   }
 
-  appendRuntimeLog(home, "runtime_starting", { pid: process.pid, command: config.runtime.command });
+  appendRuntimeLog(home, "runtime_starting", {
+    pid: process.pid,
+    provider: config.runtime.provider,
+    command: config.runtime.command
+  });
 
   const clients: Client[] = [];
 

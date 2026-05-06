@@ -1,7 +1,9 @@
 export type Provider = "discord";
+export type AgentProvider = "codex";
 export type RuntimeStatus = "running" | "stopped";
 
 export interface RuntimeConfig {
+  provider: AgentProvider;
   command: string;
   args: string[];
   startupTimeoutMs: number;
@@ -27,6 +29,14 @@ export interface RuntimeState {
   home: string;
   pid?: number | undefined;
   startedAt?: string | undefined;
+}
+
+export interface AgentRunResult {
+  response: string;
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  resumed: boolean;
 }
 
 export interface UsageEntry {

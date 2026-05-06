@@ -89,7 +89,7 @@ function runEndpointCli(argv: string[]): void {
     .option("--delete-workspace", "Delete endpoint workspace")
     .action(wrap(removeEndpointCommand));
   cli
-    .command("test <id>", "Run a local Codex request through an endpoint")
+    .command("test <id>", "Run a local agent request through an endpoint")
     .option("--message <message>", "Message to send")
     .action(wrap(testEndpointCommand));
   cli.command("open <id>", "Open endpoint workspace").action(wrap(openEndpointCommand));

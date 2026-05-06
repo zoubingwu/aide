@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execa } from "execa";
+import { agentProviderLabel } from "../lib/agent.js";
 import {
   configPath,
   displayPath,
@@ -19,7 +20,7 @@ import { formatTokenCount, summarizeUsage } from "../lib/usage.js";
 import { inspectEndpointWorkspace } from "../lib/workspace.js";
 import type { CommandOptions } from "./options.js";
 import { homeFromOptions } from "./options.js";
-import type { DoctorCheck } from "../lib/types.js";
+import type { AgentProvider, DoctorCheck } from "../lib/types.js";
 
 export async function initCommand(options: CommandOptions): Promise<void> {
   const home = homeFromOptions(options);
@@ -33,7 +34,8 @@ export async function statusCommand(options: CommandOptions): Promise<void> {
   const endpoints = loadEndpoints(home);
   const runtime = runtimeDisplayStatus(home);
   const usage = summarizeUsage(home);
-  const codexVersion = await readCodexVersion(config.runtime.command);
+  const agentLabel = agentProviderLabel(config.runtime.provider);
+  const agentVersion = await readAgentVersion(config.runtime.command);
 
   console.log("Aide\n");
   console.log(`Home        ${displayPath(home)}`);
@@ -43,7 +45,7 @@ export async function statusCommand(options: CommandOptions): Promise<void> {
     console.log(`PID         ${runtime.pid}`);
   }
 
-  console.log(`Codex       ${codexVersion}`);
+  console.log(`Agent       ${agentLabel} (${agentVersion})`);
   console.log("\nEndpoints");
 
   if (endpoints.length === 0) {
@@ -123,8 +125,9 @@ async function runDoctorChecks(home: string): Promise<DoctorCheck[]> {
   checks.push({ status: fs.existsSync(workspaceDir(home)) ? "ok" : "fail", label: "workspace directory" });
 
   const config = configExists && endpointsExists ? loadConfig(home) : undefined;
-  const codexCommand = config?.runtime.command ?? "codex";
-  checks.push(await codexCheck(codexCommand));
+  const agentProvider = config?.runtime.provider ?? "codex";
+  const agentCommand = config?.runtime.command ?? "codex";
+  checks.push(await agentCheck(agentProvider, agentCommand));
 
   if (configExists && endpointsExists) {
     const endpoints = loadEndpoints(home);
@@ -163,21 +166,22 @@ async function runDoctorChecks(home: string): Promise<DoctorCheck[]> {
   return checks;
 }
 
-async function codexCheck(command: string): Promise<DoctorCheck> {
+async function agentCheck(provider: AgentProvider, command: string): Promise<DoctorCheck> {
+  const label = `${agentProviderLabel(provider)} CLI`;
   const result = await execa(command, ["--version"], { reject: false });
 
   if (result.exitCode === 0) {
-    return { status: "ok", label: "Codex", detail: result.stdout.trim() };
+    return { status: "ok", label, detail: result.stdout.trim() };
   }
 
   return {
     status: "fail",
-    label: "Codex",
-    detail: "Install Codex and run `aide doctor` again."
+    label,
+    detail: `Install ${agentProviderLabel(provider)} and run \`aide doctor\` again.`
   };
 }
 
-async function readCodexVersion(command: string): Promise<string> {
+async function readAgentVersion(command: string): Promise<string> {
   const result = await execa(command, ["--version"], { reject: false });
   return result.exitCode === 0 ? result.stdout.trim() : "missing";
 }

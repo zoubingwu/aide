@@ -14,7 +14,8 @@ Aide is a TypeScript CLI package. Runtime code targets Node-compatible APIs and 
 - `src/lib/paths.ts`: Aide home, display paths, endpoint id helpers.
 - `src/lib/workspace.ts`: endpoint workspace creation and validation.
 - `src/lib/secrets.ts`: Discord token fallback in env and `.env.local`.
-- `src/lib/codex.ts`: Codex process args, execution, JSONL response extraction.
+- `src/lib/agent.ts`: agent provider dispatch and shared prompt construction.
+- `src/lib/codex.ts`: Codex provider args, execution, JSONL response extraction.
 - `src/lib/assistant.ts`: shared assistant request flow.
 - `src/lib/discord.ts`: Discord listener and message delivery.
 - `src/lib/runtime.ts`: background process launch and runtime lifecycle.

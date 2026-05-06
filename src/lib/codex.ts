@@ -1,13 +1,5 @@
 import { execa } from "execa";
-import type { AideConfig, Endpoint } from "./types.js";
-
-export interface CodexRunResult {
-  response: string;
-  stdout: string;
-  stderr: string;
-  exitCode: number;
-  resumed: boolean;
-}
+import type { AgentRunResult, AideConfig, Endpoint } from "./types.js";
 
 export function buildCodexArgs(runtimeArgs: string[], prompt: string): string[] {
   const args = runtimeArgs.length > 0 ? runtimeArgs : ["exec", "resume", "--last", "--json", "--skip-git-repo-check"];
@@ -34,20 +26,12 @@ export function buildFreshCodexArgs(prompt: string): string[] {
   return ["exec", "--json", "--skip-git-repo-check", prompt];
 }
 
-export function makeAssistantPrompt(endpoint: Endpoint, message: string, author: string): string {
-  return `Endpoint: ${endpoint.id}
-Provider: ${endpoint.provider}
-Author: ${author}
-
-${message}`;
-}
-
 export async function runCodex(
   config: AideConfig,
   workspace: string,
   endpoint: Endpoint,
   prompt: string
-): Promise<CodexRunResult> {
+): Promise<AgentRunResult> {
   const resumed = await runCodexOnce(config.runtime.command, buildCodexArgs(config.runtime.args, prompt), workspace);
 
   if (resumed.exitCode === 0) {
@@ -101,7 +85,7 @@ export function extractFinalResponse(stdout: string, stderr = ""): string {
   return error.length > 0 ? error : "Codex finished without a text response.";
 }
 
-async function runCodexOnce(command: string, args: string[], cwd: string): Promise<Omit<CodexRunResult, "response" | "resumed">> {
+async function runCodexOnce(command: string, args: string[], cwd: string): Promise<Omit<AgentRunResult, "response" | "resumed">> {
   const result = await execa(command, args, {
     cwd,
     reject: false,

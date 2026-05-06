@@ -1,8 +1,8 @@
 # Aide
 
-Turn Codex into your personal assistant.
+Turn an agentic CLI into your personal assistant.
 
-Aide is a CLI that connects Codex to assistant endpoints. The MVP supports Discord endpoints, creates a private workspace per endpoint, and runs Codex inside the matching workspace when a message arrives.
+Aide connects an agentic CLI to assistant endpoints. The MVP supports Discord endpoints, creates a private workspace per endpoint, and runs Codex by default inside the matching workspace when a message arrives.
 
 ## Install
 
@@ -74,7 +74,7 @@ After Aide saves the endpoint, run `aide start` and mention the bot in an allowe
 aide start
 ```
 
-The runtime starts in the background, stores its PID in `runtime.json`, listens for Discord mentions, runs Codex from the endpoint workspace, and posts the final response back to Discord.
+The runtime starts in the background, stores its PID in `runtime.json`, listens for Discord mentions, runs the configured agent CLI from the endpoint workspace, and posts the final response back to Discord.
 
 Stop it from another terminal:
 
@@ -82,17 +82,18 @@ Stop it from another terminal:
 aide stop
 ```
 
-## Codex Invocation
+## Agent CLI Invocation
 
-The default runtime args are:
+The default agent provider is Codex:
 
 ```toml
 [runtime]
+provider = "codex"
 command = "codex"
 args = ["exec", "resume", "--last", "--json", "--skip-git-repo-check"]
 ```
 
-Aide appends the prompt to those args and runs the process with `cwd` set to the endpoint workspace. If resume has no usable session, Aide runs a fresh `codex exec --json --skip-git-repo-check` request.
+Aide dispatches execution through the configured provider adapter and runs the process with `cwd` set to the endpoint workspace. The current provider is `codex`; the adapter boundary is ready for additional CLIs such as Claude Code or OpenCode.
 
 ## Commands
 
