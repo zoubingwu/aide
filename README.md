@@ -91,7 +91,7 @@ Edit `~/.aide/config.toml` to change the Codex command, model, or args.
 ```bash
 aide status
 aide logs
-aide tokens
+aide usage
 aide doctor
 
 aide endpoint list

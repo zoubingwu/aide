@@ -5,7 +5,7 @@ import {
   initCommand,
   logsCommand,
   statusCommand,
-  tokensCommand
+  usageCommand
 } from "./commands/system.js";
 import {
   restartCommand,
@@ -87,7 +87,7 @@ function runRootCli(argv: string[]): void {
     .option("--activity", "Show activity log")
     .option("--lines <count>", "Number of lines to show", { default: 80 })
     .action(wrap(logsCommand));
-  cli.command("tokens", "Show token usage").action(wrap(tokensCommand));
+  cli.command("usage", "Show usage").action(wrap(usageCommand));
   cli.command("doctor", "Validate local setup").action(wrap(doctorCommand));
   cli.command("endpoint", "Manage endpoints").action(() => runEndpointCli(["node", "aide endpoint"]));
   cli.command("schedule", "Manage schedules").action(() => runScheduleCli(["node", "aide schedule"]));

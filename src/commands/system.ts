@@ -81,11 +81,11 @@ export async function logsCommand(options: CommandOptions): Promise<void> {
   console.log(lines.join("\n"));
 }
 
-export async function tokensCommand(options: CommandOptions): Promise<void> {
+export async function usageCommand(options: CommandOptions): Promise<void> {
   const home = homeFromOptions(options);
   const usage = summarizeUsage(home);
 
-  console.log("Token Usage\n");
+  console.log("Usage\n");
   console.log(`Today        ${formatTokenCount(usage.today)}`);
   console.log(`Total        ${formatTokenCount(usage.total)}`);
   console.log(`Source       ${usage.source}`);
