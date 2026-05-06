@@ -13,6 +13,8 @@ const cleanupPaths: string[] = [];
 
 describe("scheduler execution", () => {
   afterEach(() => {
+    vi.useRealTimers();
+
     for (const target of cleanupPaths.splice(0)) {
       fs.rmSync(target, { recursive: true, force: true });
     }
@@ -56,6 +58,68 @@ describe("scheduler execution", () => {
     });
 
     expect(loadSchedules(home)).toEqual([schedule]);
+  });
+
+  it("logs agent request exceptions and keeps the schedule", async () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = onceSchedule();
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+
+    await executeScheduleOnce({
+      home,
+      schedule,
+      endpoints: [endpoint],
+      clients: new Map([["discord-main", {}]]),
+      handleRequest: vi.fn().mockRejectedValue(new Error("missing runtime command")),
+      deliver: vi.fn()
+    });
+
+    const log = fs.readFileSync(path.join(logsDir(home), RUNTIME_LOG_FILE), "utf8");
+    expect(log).toContain("schedule_agent_failed");
+    expect(log).toContain("missing runtime command");
+    expect(loadSchedules(home)).toEqual([schedule]);
+  });
+
+  it("preserves one-shot retry delays across reloads", async () => {
+    vi.useFakeTimers({ now: new Date("2026-05-10T10:02:00.000Z") });
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule: Schedule = {
+      ...onceSchedule(),
+      runAt: "2026-05-10T10:00:00.000Z"
+    };
+    const handleRequest = vi.fn().mockResolvedValue({ response: "done", stdout: "", stderr: "", exitCode: 0, resumed: true });
+    const deliver = vi.fn().mockRejectedValue(new Error("send failed"));
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([["discord-main", {} as never]]),
+      handleRequest,
+      deliver
+    });
+
+    scheduler.reload();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    scheduler.reload();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(handleRequest).toHaveBeenCalledTimes(2);
+    scheduler.stop();
   });
 
   it("skips schedules that reference disabled endpoints", async () => {

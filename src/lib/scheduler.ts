@@ -16,14 +16,16 @@ export interface ScheduleExecution {
   schedule: Schedule;
   endpoints: Endpoint[];
   clients: ReadonlyMap<string, unknown>;
-  handleRequest?: (home: string, endpoint: Endpoint, message: string, author: string) => Promise<AgentRunResult>;
-  deliver?: (endpoint: Endpoint, client: unknown, target: string, response: string) => Promise<void>;
+  handleRequest?: ((home: string, endpoint: Endpoint, message: string, author: string) => Promise<AgentRunResult>) | undefined;
+  deliver?: ((endpoint: Endpoint, client: unknown, target: string, response: string) => Promise<void>) | undefined;
 }
 
 export interface RuntimeSchedulerOptions {
   home: string;
   endpoints: Endpoint[];
   clients: ReadonlyMap<string, Client>;
+  handleRequest?: ((home: string, endpoint: Endpoint, message: string, author: string) => Promise<AgentRunResult>) | undefined;
+  deliver?: ((endpoint: Endpoint, client: unknown, target: string, response: string) => Promise<void>) | undefined;
 }
 
 interface RunningJob {
@@ -58,7 +60,18 @@ export async function executeScheduleOnce(execution: ScheduleExecution): Promise
   });
 
   const request = execution.handleRequest ?? handleAssistantRequest;
-  const result = await request(execution.home, endpoint, execution.schedule.message, `schedule:${execution.schedule.id}`);
+  let result: AgentRunResult;
+
+  try {
+    result = await request(execution.home, endpoint, execution.schedule.message, `schedule:${execution.schedule.id}`);
+  } catch (error) {
+    appendRuntimeLog(execution.home, "schedule_agent_failed", {
+      schedule: execution.schedule.id,
+      endpoint: endpoint.id,
+      error: errorMessage(error)
+    });
+    return;
+  }
 
   if (result.exitCode !== 0) {
     appendRuntimeLog(execution.home, "schedule_agent_failed", {
@@ -98,6 +111,7 @@ export async function executeScheduleOnce(execution: ScheduleExecution): Promise
 export class RuntimeScheduler {
   private readonly jobs = new Map<string, RunningJob>();
   private readonly running = new Set<string>();
+  private readonly onceRetryAt = new Map<string, number>();
   private reloadTimer: NodeJS.Timeout | undefined;
 
   constructor(private readonly options: RuntimeSchedulerOptions) {}
@@ -180,7 +194,8 @@ export class RuntimeScheduler {
     let timer: NodeJS.Timeout | undefined;
 
     const scheduleNext = () => {
-      const delay = Math.max(0, new Date(runAt).getTime() - Date.now());
+      const targetAt = Math.max(new Date(runAt).getTime(), this.onceRetryAt.get(schedule.id) ?? 0);
+      const delay = Math.max(0, targetAt - Date.now());
 
       if (delay > MAX_TIMEOUT_MS) {
         timer = setTimeout(scheduleNext, MAX_TIMEOUT_MS);
@@ -191,7 +206,10 @@ export class RuntimeScheduler {
         await this.run(schedule);
 
         if (this.scheduleExists(schedule.id)) {
+          this.onceRetryAt.set(schedule.id, Date.now() + ONCE_RETRY_MS);
           timer = setTimeout(scheduleNext, ONCE_RETRY_MS);
+        } else {
+          this.onceRetryAt.delete(schedule.id);
         }
       }, Math.min(delay, MAX_TIMEOUT_MS));
     };
@@ -229,7 +247,14 @@ export class RuntimeScheduler {
         home: this.options.home,
         schedule,
         endpoints: this.options.endpoints,
-        clients: this.options.clients
+        clients: this.options.clients,
+        handleRequest: this.options.handleRequest,
+        deliver: this.options.deliver
+      });
+    } catch (error) {
+      appendRuntimeLog(this.options.home, "schedule_run_failed", {
+        schedule: schedule.id,
+        error: errorMessage(error)
       });
     } finally {
       this.running.delete(schedule.id);
@@ -237,7 +262,12 @@ export class RuntimeScheduler {
   }
 
   private scheduleExists(id: string): boolean {
-    return loadRuntimeSchedules(this.options.home).schedules.some((schedule) => schedule.id === id);
+    try {
+      return loadRuntimeSchedules(this.options.home).schedules.some((schedule) => schedule.id === id);
+    } catch (error) {
+      appendRuntimeLog(this.options.home, "schedule_load_failed", { error: errorMessage(error) });
+      return false;
+    }
   }
 }
 
