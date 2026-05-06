@@ -71,14 +71,7 @@ function runEndpointCli(argv: string[]): void {
   cli
     .command("add <provider>", "Add an endpoint")
     .option("--id <id>", "Endpoint id")
-    .option("--name <name>", "Display name")
     .option("--token <token>", "Provider token")
-    .option("--server <server>", "Discord server name or id")
-    .option("--channel <channel>", "Discord channel name or id")
-    .option("--approval-shell", "Require approval for shell commands")
-    .option("--no-approval-shell", "Allow shell commands without endpoint approval flag")
-    .option("--approval-writes", "Require approval for file writes")
-    .option("--no-approval-writes", "Allow file writes without endpoint approval flag")
     .action(wrap(addEndpointCommand));
   cli.command("list", "List endpoints").action(wrap(listEndpointsCommand));
   cli.command("show <id>", "Show endpoint details").action(wrap(showEndpointCommand));

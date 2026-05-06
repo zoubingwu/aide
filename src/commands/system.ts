@@ -51,7 +51,7 @@ export async function statusCommand(options: CommandOptions): Promise<void> {
   } else {
     const rows = endpoints.map((endpoint) => [
       endpoint.provider === "discord" ? "Discord" : endpoint.provider,
-      endpoint.routing.channel,
+      endpoint.routing.channel || "Discord permissions",
       statusLabel(endpoint.enabled)
     ]);
     console.log(printTable(["Provider", "Route", "Status"], rows));

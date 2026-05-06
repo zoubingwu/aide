@@ -47,20 +47,26 @@ Interactive:
 aide endpoint add discord
 ```
 
+The interactive flow first shows Discord setup links, then prompts for an endpoint id and a Discord bot token.
+
 Scripted:
 
 ```bash
 aide endpoint add discord \
   --id discord-agent-ops \
-  --name "Discord #agent-ops" \
-  --token "$DISCORD_BOT_TOKEN" \
-  --server agent-lab \
-  --channel "#agent-ops" \
-  --approval-shell \
-  --approval-writes
+  --token "$DISCORD_BOT_TOKEN"
 ```
 
-Aide stores endpoint tokens in `~/.aide/.env.local` using endpoint-specific keys such as `AIDE_DISCORD_TOKEN_DISCORD_AGENT_OPS`.
+The endpoint id is used for the token key and workspace path. Aide stores endpoint tokens in `~/.aide/.env.local` using endpoint-specific keys such as `AIDE_DISCORD_TOKEN_DISCORD_AGENT_OPS`.
+
+Discord setup happens in Discord:
+
+1. Create or open an application in the [Discord Developer Portal](https://discord.com/developers/applications).
+2. Copy the bot token from the Bot page.
+3. Install the app to a server with the `bot` scope from [Discord install settings](https://docs.discord.com/developers/quick-start/getting-started#adding-scopes-and-bot-permissions).
+4. Grant the bot `View Channel` and `Send Messages` in channels where it should respond. See [Discord permissions](https://docs.discord.com/developers/topics/permissions).
+
+After Aide saves the endpoint, run `aide start` and mention the bot in an allowed channel. See [Message Content Intent rules](https://docs.discord.com/developers/events/gateway#message-content-intent).
 
 ## Run
 

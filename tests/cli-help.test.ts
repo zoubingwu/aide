@@ -25,8 +25,13 @@ describe("CLI help", () => {
     const { stdout } = await runCli("endpoint", "add", "--help");
 
     expect(stdout).toContain("$ aide endpoint add <provider>");
-    expect(stdout).toContain("--server <server>");
-    expect(stdout).toContain("--approval-writes");
+    expect(stdout).toContain("--token <token>");
+    expect(stdout).toContain("--id <id>");
+    expect(stdout).not.toContain("--name <name>");
+    expect(stdout).not.toContain("--server <server>");
+    expect(stdout).not.toContain("--channel <channel>");
+    expect(stdout).not.toContain("--approval-shell");
+    expect(stdout).not.toContain("--approval-writes");
   });
 
   it("shows endpoint config subcommands", async () => {
@@ -49,15 +54,20 @@ describe("CLI help", () => {
       "--id",
       "discord-agent-ops",
       "--token",
-      "test-token",
-      "--server",
-      "agent-lab",
-      "--channel",
-      "agent-ops"
+      "test-token"
     );
 
     const { stdout } = await runCli("--home", home, "endpoint", "list");
     expect(stdout).toContain("discord-agent-ops");
+  });
+
+  it("requires endpoint id for scripted Discord add", async () => {
+    const home = tempHome();
+    await runCli("--home", home, "init");
+
+    await expect(runCli("--home", home, "endpoint", "add", "discord", "--token", "test-token")).rejects.toMatchObject({
+      stderr: expect.stringContaining("Missing endpoint id. Provide --id <id>.")
+    });
   });
 });
 

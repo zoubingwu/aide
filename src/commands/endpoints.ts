@@ -19,7 +19,9 @@ import { resolveDiscordToken, writeDiscordToken } from "../lib/secrets.js";
 import { inspectEndpointWorkspace, ensureEndpointWorkspace } from "../lib/workspace.js";
 import type { Endpoint } from "../lib/types.js";
 import type { CommandOptions } from "./options.js";
-import { booleanOption, homeFromOptions, stringOption } from "./options.js";
+import { homeFromOptions, stringOption } from "./options.js";
+
+const DEFAULT_DISCORD_ENDPOINT_ID = "discord";
 
 export async function addEndpointCommand(provider: string, options: CommandOptions): Promise<void> {
   if (provider !== "discord") {
@@ -47,7 +49,7 @@ export async function listEndpointsCommand(options: CommandOptions): Promise<voi
         endpoint.id,
         endpoint.provider === "discord" ? "Discord" : endpoint.provider,
         statusLabel(endpoint.enabled),
-        endpoint.routing.channel
+        routeLabel(endpoint)
       ])
     )
   );
@@ -60,10 +62,8 @@ export async function showEndpointCommand(id: string, options: CommandOptions): 
 
   console.log(`Endpoint ${endpoint.id}\n`);
   console.log(`Provider    ${endpoint.provider}`);
-  console.log(`Name        ${endpoint.name}`);
   console.log(`Status      ${statusLabel(endpoint.enabled)}`);
-  console.log(`Server      ${endpoint.routing.server || "-"}`);
-  console.log(`Channel     ${endpoint.routing.channel || "-"}`);
+  console.log(`Route       ${routeLabel(endpoint)}`);
   console.log(`Workspace   ${displayPath(endpoint.workspacePath)}`);
   console.log(`SOUL.md     ${workspace.soulExists ? "exists" : "missing"}`);
   console.log(`AGENTS.md   ${workspace.agentsExists ? "exists" : "missing"}`);
@@ -154,28 +154,27 @@ async function addDiscordEndpoint(options: CommandOptions): Promise<void> {
   const id = slugifyId(answers.id);
 
   if (id.length === 0) {
-    throw new Error("Endpoint name must contain at least one letter or number.");
+    throw new Error("Endpoint id must contain at least one letter or number.");
   }
 
   if (endpoints.some((endpoint) => endpoint.id === id)) {
-    throw new Error(`Endpoint already exists: ${id}`);
+    throw new Error(`Endpoint already exists: ${id}. Use --id <id> for another Discord endpoint.`);
   }
 
-  const channel = normalizeChannel(answers.channel);
   const endpoint: Endpoint = {
     id,
     provider: "discord",
-    name: answers.name || `Discord ${channel}`,
+    name: id,
     enabled: true,
     workspacePath: endpointWorkspacePath(home, id),
     routing: {
       mode: "mention_only",
-      server: answers.server,
-      channel
+      server: "",
+      channel: ""
     },
     permissions: {
-      requireApprovalForShell: answers.requireApprovalForShell,
-      requireApprovalForWrites: answers.requireApprovalForWrites,
+      requireApprovalForShell: true,
+      requireApprovalForWrites: true,
       restrictToEndpointWorkspace: true
     }
   };
@@ -191,93 +190,63 @@ async function addDiscordEndpoint(options: CommandOptions): Promise<void> {
 
   console.log(`Discord endpoint ${id} created.`);
   console.log(`Workspace ${displayPath(endpoint.workspacePath)}`);
+  console.log("");
+  console.log(nextStepsGuide());
 }
 
 async function collectDiscordEndpointAnswers(options: CommandOptions): Promise<{
   id: string;
-  name: string;
   token: string | undefined;
-  server: string;
-  channel: string;
-  requireApprovalForShell: boolean;
-  requireApprovalForWrites: boolean;
 }> {
   const id = stringOption(options, "id");
-  const name = stringOption(options, "name");
   const token = stringOption(options, "token");
-  const server = stringOption(options, "server");
-  const channel = stringOption(options, "channel");
-  const shell = booleanOption(options, "approvalShell");
-  const writes = booleanOption(options, "approvalWrites");
+  const envToken = process.env.DISCORD_BOT_TOKEN;
+  const needsPrompt = process.stdin.isTTY && (!id || (!token && !envToken));
 
-  if (id && channel && server) {
+  if (!process.stdin.isTTY) {
+    if (!id) {
+      throw new Error("Missing endpoint id. Provide --id <id>.");
+    }
+
+    if (!token && !envToken) {
+      throw new Error("Missing Discord bot token. Provide --token or set DISCORD_BOT_TOKEN.");
+    }
+
     return {
       id,
-      name: name ?? `Discord ${normalizeChannel(channel)}`,
-      token,
-      server,
-      channel,
-      requireApprovalForShell: shell ?? true,
-      requireApprovalForWrites: writes ?? true
+      token: token ?? envToken
     };
   }
 
-  if (!process.stdin.isTTY) {
-    throw new Error("Missing endpoint options. Provide --id, --server, and --channel.");
+  if (needsPrompt) {
+    console.log(discordPreparationGuide());
+    console.log("");
   }
 
   const response = await prompts([
     {
       type: id ? null : "text",
       name: "id",
-      message: "Endpoint name",
-      initial: "discord-agent-ops"
+      message: "Endpoint id",
+      initial: DEFAULT_DISCORD_ENDPOINT_ID
     },
     {
-      type: name ? null : "text",
-      name: "name",
-      message: "Display name",
-      initial: "Discord #agent-ops"
-    },
-    {
-      type: token ? null : "password",
+      type: token || envToken ? null : "password",
       name: "token",
       message: "Discord bot token"
-    },
-    {
-      type: server ? null : "text",
-      name: "server",
-      message: "Server",
-      initial: "agent-lab"
-    },
-    {
-      type: channel ? null : "text",
-      name: "channel",
-      message: "Channel",
-      initial: "#agent-ops"
-    },
-    {
-      type: shell === undefined ? "confirm" : null,
-      name: "requireApprovalForShell",
-      message: "Require approval for shell commands?",
-      initial: true
-    },
-    {
-      type: writes === undefined ? "confirm" : null,
-      name: "requireApprovalForWrites",
-      message: "Require approval for file writes?",
-      initial: true
     }
   ]);
 
+  const resolvedId = (id ?? String(response.id ?? "").trim()) || DEFAULT_DISCORD_ENDPOINT_ID;
+  const resolvedToken = token ?? envToken ?? response.token;
+
+  if (!resolvedToken) {
+    throw new Error("Discord bot token is required.");
+  }
+
   return {
-    id: id ?? response.id,
-    name: name ?? response.name,
-    token: token ?? response.token,
-    server: server ?? response.server,
-    channel: channel ?? response.channel,
-    requireApprovalForShell: shell ?? response.requireApprovalForShell,
-    requireApprovalForWrites: writes ?? response.requireApprovalForWrites
+    id: resolvedId,
+    token: resolvedToken
   };
 }
 
@@ -299,7 +268,27 @@ async function setEndpointEnabled(id: string, options: CommandOptions, enabled: 
   console.log(`${enabled ? "Resumed" : "Paused"} endpoint ${id}.`);
 }
 
-function normalizeChannel(value: string): string {
-  const trimmed = value.trim();
-  return trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
+function routeLabel(endpoint: Endpoint): string {
+  return endpoint.routing.channel || "Discord permissions";
+}
+
+function discordPreparationGuide(): string {
+  return `Discord setup before continuing:
+1. Open Discord Developer Portal: https://discord.com/developers/applications
+2. Create or open an app, then copy the bot token from the Bot page.
+3. Install the app to a server with the bot scope: https://docs.discord.com/developers/quick-start/getting-started#adding-scopes-and-bot-permissions
+4. Grant View Channel and Send Messages in target channels: https://docs.discord.com/developers/topics/permissions
+
+Aide will ask for:
+- Endpoint id: used for the workspace path and token env key.
+- Discord bot token: stored in ~/.aide/.env.local.
+`;
+}
+
+function nextStepsGuide(): string {
+  return `Next Aide steps:
+1. Run \`aide start\`.
+2. Mention the bot in a Discord channel where it has access.
+3. Use \`aide status\` and \`aide logs\` to inspect runtime activity.
+`;
 }

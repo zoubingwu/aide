@@ -8,22 +8,23 @@ import {
 } from "discord.js";
 import { handleAssistantRequest } from "./assistant.js";
 import { appendActivityLog, endpointActivity } from "./logging.js";
-import { resolveDiscordToken } from "./secrets.js";
+import { discordTokenEnvKey, resolveDiscordToken } from "./secrets.js";
 import type { Endpoint } from "./types.js";
 
 export async function startDiscordEndpoint(home: string, endpoint: Endpoint): Promise<Client> {
   const token = resolveDiscordToken(home, endpoint);
 
   if (!token) {
-    throw new Error(`Discord token is missing for endpoint ${endpoint.id}. Set ${endpoint.id} token with \`aide endpoint add discord\`.`);
+    throw new Error(
+      `Discord token is missing for endpoint ${endpoint.id}. Set ${discordTokenEnvKey(endpoint.id)} or DISCORD_BOT_TOKEN.`
+    );
   }
 
   const client = new Client({
     intents: [
       GatewayIntentBits.Guilds,
       GatewayIntentBits.GuildMessages,
-      GatewayIntentBits.DirectMessages,
-      GatewayIntentBits.MessageContent
+      GatewayIntentBits.DirectMessages
     ],
     partials: [Partials.Channel]
   });
