@@ -27,6 +27,8 @@ describe("config", () => {
     expect(fs.existsSync(logsDir(home))).toBe(true);
     expect(fs.existsSync(workspaceDir(home))).toBe(true);
     expect(loadConfig(home).runtime.provider).toBe("codex");
+    expect(loadConfig(home).runtime.model).toBe("gpt-5.5");
+    expect(loadConfig(home).runtime.reasoningEffort).toBe("medium");
     expect(loadConfig(home).runtime.args).toEqual([
       "exec",
       "resume",
