@@ -8,6 +8,7 @@ import {
   addSchedule,
   findSchedule,
   loadSchedules,
+  loadRuntimeSchedules,
   pauseSchedule,
   removeSchedule,
   resumeSchedule,
@@ -68,6 +69,59 @@ message = "Generate my daily brief."
     );
 
     expect(() => loadSchedules(home)).toThrow();
+  });
+
+  it("rejects schedules with invalid timezones", () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    fs.writeFileSync(
+      schedulesPath(home),
+      `[[schedules]]
+id = "bad-timezone"
+endpoint = "discord-main"
+enabled = true
+kind = "daily"
+time = "09:00"
+timezone = "Europe/Lnodon"
+target = "channel:123"
+message = "Generate my daily brief."
+`
+    );
+
+    expect(() => loadSchedules(home)).toThrow("Invalid IANA timezone");
+  });
+
+  it("loads valid runtime schedules and reports invalid ones", () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    fs.writeFileSync(
+      schedulesPath(home),
+      `[[schedules]]
+id = "daily-brief"
+endpoint = "discord-main"
+enabled = true
+kind = "daily"
+time = "09:00"
+timezone = "Asia/Shanghai"
+target = "channel:123"
+message = "Generate my daily brief."
+
+[[schedules]]
+id = "bad-timezone"
+endpoint = "discord-main"
+enabled = true
+kind = "daily"
+time = "09:00"
+timezone = "Europe/Lnodon"
+target = "channel:123"
+message = "Generate my daily brief."
+`
+    );
+
+    expect(loadRuntimeSchedules(home)).toMatchObject({
+      schedules: [{ id: "daily-brief" }],
+      issues: [{ index: 1, id: "bad-timezone", error: expect.stringContaining("Invalid IANA timezone") }]
+    });
   });
 
   it("adds, finds, pauses, resumes, and removes a schedule", () => {

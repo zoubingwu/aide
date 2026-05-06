@@ -4,7 +4,7 @@ import { handleAssistantRequest } from "./assistant.js";
 import { deliverDiscordMessage } from "./discord-delivery.js";
 import { appendRuntimeLog } from "./logging.js";
 import { buildSchedulePlan, isBiweeklyOccurrence } from "./schedule-plan.js";
-import { loadSchedules, removeSchedule } from "./schedules.js";
+import { loadRuntimeSchedules, removeSchedule } from "./schedules.js";
 import type { AgentRunResult, Endpoint, Schedule } from "./types.js";
 
 const ONCE_RETRY_MS = 60_000;
@@ -126,8 +126,32 @@ export class RuntimeScheduler {
     }
     this.jobs.clear();
 
-    for (const schedule of loadSchedules(this.options.home).filter((candidate) => candidate.enabled)) {
-      this.jobs.set(schedule.id, this.createJob(schedule));
+    let loaded: ReturnType<typeof loadRuntimeSchedules>;
+
+    try {
+      loaded = loadRuntimeSchedules(this.options.home);
+    } catch (error) {
+      appendRuntimeLog(this.options.home, "schedule_load_failed", { error: errorMessage(error) });
+      return;
+    }
+
+    for (const issue of loaded.issues) {
+      appendRuntimeLog(this.options.home, "schedule_invalid", {
+        schedule: issue.id,
+        index: issue.index,
+        error: issue.error
+      });
+    }
+
+    for (const schedule of loaded.schedules.filter((candidate) => candidate.enabled)) {
+      try {
+        this.jobs.set(schedule.id, this.createJob(schedule));
+      } catch (error) {
+        appendRuntimeLog(this.options.home, "schedule_invalid", {
+          schedule: schedule.id,
+          error: errorMessage(error)
+        });
+      }
     }
   }
 
@@ -166,7 +190,7 @@ export class RuntimeScheduler {
       timer = setTimeout(async () => {
         await this.run(schedule);
 
-        if (loadSchedules(this.options.home).some((candidate) => candidate.id === schedule.id)) {
+        if (this.scheduleExists(schedule.id)) {
           timer = setTimeout(scheduleNext, ONCE_RETRY_MS);
         }
       }, Math.min(delay, MAX_TIMEOUT_MS));
@@ -210,6 +234,10 @@ export class RuntimeScheduler {
     } finally {
       this.running.delete(schedule.id);
     }
+  }
+
+  private scheduleExists(id: string): boolean {
+    return loadRuntimeSchedules(this.options.home).schedules.some((schedule) => schedule.id === id);
   }
 }
 

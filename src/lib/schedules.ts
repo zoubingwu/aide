@@ -7,7 +7,7 @@ import type { Schedule, SchedulesFile } from "./types.js";
 const idSchema = z.string().min(1).regex(/^[a-z0-9][a-z0-9-]*$/);
 const timeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const targetSchema = z.string().min(3);
-const timezoneSchema = z.string().min(1);
+const timezoneSchema = z.string().min(1).refine(isValidTimeZone, { message: "Invalid IANA timezone" });
 const weekdaySchema = z.enum(["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]);
 const baseScheduleSchema = z.object({
   id: idSchema,
@@ -56,10 +56,46 @@ const scheduleSchema = z.discriminatedUnion("kind", [
 const schedulesFileSchema = z.object({
   schedules: z.array(scheduleSchema).default([])
 });
+const looseSchedulesFileSchema = z.object({
+  schedules: z.array(z.unknown()).default([])
+});
+
+export interface RuntimeSchedules {
+  schedules: Schedule[];
+  issues: Array<{
+    index: number;
+    id?: string | undefined;
+    error: string;
+  }>;
+}
 
 export function loadSchedules(home: string): Schedule[] {
   assertInitialized(home);
   return schedulesFileSchema.parse(readToml(schedulesPath(home))).schedules;
+}
+
+export function loadRuntimeSchedules(home: string): RuntimeSchedules {
+  assertInitialized(home);
+  const rawSchedules = looseSchedulesFileSchema.parse(readToml(schedulesPath(home))).schedules;
+  const schedules: Schedule[] = [];
+  const issues: RuntimeSchedules["issues"] = [];
+
+  for (const [index, rawSchedule] of rawSchedules.entries()) {
+    const result = scheduleSchema.safeParse(rawSchedule);
+
+    if (result.success) {
+      schedules.push(result.data);
+      continue;
+    }
+
+    issues.push({
+      index,
+      id: scheduleId(rawSchedule),
+      error: formatZodError(result.error)
+    });
+  }
+
+  return { schedules, issues };
 }
 
 export function writeSchedules(home: string, schedules: Schedule[]): void {
@@ -120,4 +156,30 @@ function setScheduleEnabled(home: string, id: string, enabled: boolean): void {
     enabled
   };
   writeSchedules(home, schedules);
+}
+
+function isValidTimeZone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function scheduleId(value: unknown): string | undefined {
+  if (value && typeof value === "object" && "id" in value && typeof value.id === "string") {
+    return value.id;
+  }
+
+  return undefined;
+}
+
+function formatZodError(error: z.ZodError): string {
+  return error.issues
+    .map((issue) => {
+      const path = issue.path.length > 0 ? `${issue.path.join(".")}: ` : "";
+      return `${path}${issue.message}`;
+    })
+    .join("; ");
 }

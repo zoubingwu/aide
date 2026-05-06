@@ -3,7 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ensureAideHome, writeEndpoints } from "../src/lib/config.js";
-import { executeScheduleOnce } from "../src/lib/scheduler.js";
+import { RUNTIME_LOG_FILE } from "../src/lib/logging.js";
+import { logsDir, schedulesPath } from "../src/lib/paths.js";
+import { executeScheduleOnce, RuntimeScheduler } from "../src/lib/scheduler.js";
 import { loadSchedules, writeSchedules } from "../src/lib/schedules.js";
 import type { Endpoint, Schedule } from "../src/lib/types.js";
 
@@ -75,6 +77,32 @@ describe("scheduler execution", () => {
     });
 
     expect(handleRequest).toHaveBeenCalledTimes(0);
+  });
+
+  it("skips invalid runtime schedule entries during reload", () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    fs.writeFileSync(
+      schedulesPath(home),
+      `[[schedules]]
+id = "bad-timezone"
+endpoint = "discord-main"
+enabled = true
+kind = "daily"
+time = "09:00"
+timezone = "Europe/Lnodon"
+target = "channel:123"
+message = "Generate my daily brief."
+`
+    );
+
+    const scheduler = new RuntimeScheduler({ home, endpoints: [discordEndpoint()], clients: new Map() });
+
+    expect(() => scheduler.reload()).not.toThrow();
+
+    const log = fs.readFileSync(path.join(logsDir(home), RUNTIME_LOG_FILE), "utf8");
+    expect(log).toContain("schedule_invalid");
+    expect(log).toContain("Invalid IANA timezone");
   });
 });
 
