@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ensureAideHome } from "../src/lib/config.js";
-import { addEstimatedUsage, estimateTokens, readUsageEntries, summarizeUsage } from "../src/lib/usage.js";
+import { addCodexUsage, addEstimatedUsage, estimateTokens, readUsageEntries, summarizeUsage } from "../src/lib/usage.js";
 import type { Endpoint } from "../src/lib/types.js";
 
 const cleanupPaths: string[] = [];
@@ -29,6 +29,17 @@ describe("usage", () => {
     expect(summary.today).toBe(25);
     expect(summary.total).toBe(25);
     expect(summary.byEndpoint).toEqual([{ endpoint: endpoint.id, tokens: 25 }]);
+  });
+
+  it("records Codex usage as exact usage", () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = makeEndpoint();
+
+    addCodexUsage(home, endpoint, 13, new Date("2026-05-06T00:00:00.000Z"));
+
+    expect(readUsageEntries(home)).toMatchObject([{ tokens: 13, source: "codex" }]);
+    expect(summarizeUsage(home, new Date("2026-05-06T02:00:00.000Z")).source).toBe("codex");
   });
 });
 

@@ -6,6 +6,7 @@ import { execa } from "execa";
 import {
   buildCodexArgs,
   buildFreshCodexArgs,
+  extractCodexUsageTokens,
   extractFinalResponse,
   runCodex
 } from "../src/lib/codex.js";
@@ -75,6 +76,30 @@ describe("codex", () => {
     expect(extractFinalResponse(output)).toBe("done");
   });
 
+  it("extracts agent_message text from Codex item events", () => {
+    const output = [
+      JSON.stringify({ type: "item.completed", item: { id: "item_0", type: "user_message", text: "ignore me" } }),
+      JSON.stringify({ type: "item.completed", item: { id: "item_1", type: "agent_message", text: "done" } }),
+      JSON.stringify({ type: "turn.completed", usage: { input_tokens: 10, output_tokens: 2 } })
+    ].join("\n");
+
+    expect(extractFinalResponse(output)).toBe("done");
+  });
+
+  it("extracts token usage from Codex turn completion", () => {
+    const output = JSON.stringify({
+      type: "turn.completed",
+      usage: {
+        input_tokens: 10,
+        cached_input_tokens: 4,
+        output_tokens: 3,
+        reasoning_output_tokens: 2
+      }
+    });
+
+    expect(extractCodexUsageTokens(output)).toBe(13);
+  });
+
   it("uses stderr when stdout has no text", () => {
     expect(extractFinalResponse("", "missing session")).toBe("missing session");
   });
@@ -99,6 +124,7 @@ describe("codex", () => {
     const events = readActivityEvents(home);
 
     expect(result.response).toBe("done");
+    expect(result.usageTokens).toBe(12);
     expect(events).toHaveLength(6);
     expect(events[0]).toMatchObject({
       endpoint: "yaya",
@@ -158,7 +184,8 @@ describe("codex", () => {
     expect(result).toMatchObject({
       response: "fresh done",
       exitCode: 0,
-      resumed: false
+      resumed: false,
+      usageTokens: undefined
     });
     expect(events.map((event) => [event.event, event.metadata?.attempt])).toEqual([
       ["codex_cli_started", "resume"],

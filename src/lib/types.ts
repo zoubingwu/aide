@@ -72,6 +72,7 @@ export interface AgentRunResult {
   stderr: string;
   exitCode: number;
   resumed: boolean;
+  usageTokens?: number | undefined;
 }
 
 export interface UsageEntry {

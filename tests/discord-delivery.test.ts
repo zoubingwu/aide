@@ -1,8 +1,30 @@
-import { describe, expect, it } from "vitest";
-import { discordMessageSource } from "../src/lib/discord.js";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import type { Message } from "discord.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { handleAssistantRequest } from "../src/lib/assistant.js";
+import { discordMessageSource, handleDiscordMessage } from "../src/lib/discord.js";
 import { parseDiscordTarget } from "../src/lib/discord-delivery.js";
+import { ACTIVITY_LOG_FILE } from "../src/lib/logging.js";
+import { logsDir } from "../src/lib/paths.js";
+import type { Endpoint } from "../src/lib/types.js";
+
+vi.mock("../src/lib/assistant.js", () => ({
+  handleAssistantRequest: vi.fn()
+}));
+
+const cleanupPaths: string[] = [];
 
 describe("discord delivery", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+
+    for (const target of cleanupPaths.splice(0)) {
+      fs.rmSync(target, { recursive: true, force: true });
+    }
+  });
+
   it("parses channel targets", () => {
     expect(parseDiscordTarget("channel:123")).toEqual({ kind: "channel", id: "123" });
   });
@@ -22,6 +44,51 @@ describe("discord delivery", () => {
   it("uses user targets for direct messages", () => {
     expect(discordMessageSource(messageSource({ channelId: "dm-123", guildId: null, authorId: "987" }))).toBe("user:987");
   });
+
+  it("logs agent failures separately from Discord delivery", async () => {
+    const home = tempHome();
+    const message = fakeMessage();
+    mockHandleAssistantRequest().mockResolvedValueOnce({
+      response: "agent failed",
+      stdout: "",
+      stderr: "failed",
+      exitCode: 1,
+      resumed: true
+    });
+
+    await handleDiscordMessage(home, endpoint, message);
+
+    expect(message.reply).toHaveBeenCalledWith({ content: "agent failed" });
+    expect(readActivityEvents(home).map((event) => [event.event, event.metadata?.exitCode])).toEqual([
+      ["discord_message_received", undefined],
+      ["agent_response_failed", 1],
+      ["discord_response_delivered", 1]
+    ]);
+  });
+
+  it("logs Discord delivery failures when replies fail", async () => {
+    const home = tempHome();
+    const message = fakeMessage({
+      reply: vi.fn().mockRejectedValue(new Error("missing access"))
+    });
+    mockHandleAssistantRequest().mockResolvedValueOnce({
+      response: "hello",
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+      resumed: true
+    });
+
+    await expect(handleDiscordMessage(home, endpoint, message)).rejects.toThrow("missing access");
+
+    expect(readActivityEvents(home).at(-1)).toMatchObject({
+      event: "discord_delivery_failed",
+      metadata: {
+        exitCode: 0,
+        error: "missing access"
+      }
+    });
+  });
 });
 
 function messageSource(input: { channelId: string; guildId: string | null; authorId: string }) {
@@ -30,4 +97,54 @@ function messageSource(input: { channelId: string; guildId: string | null; autho
     guildId: input.guildId,
     author: { id: input.authorId }
   };
+}
+
+const endpoint: Endpoint = {
+  id: "discord-agent-ops",
+  provider: "discord",
+  enabled: true
+};
+
+function tempHome(): string {
+  const target = fs.mkdtempSync(path.join(os.tmpdir(), "aide-discord-"));
+  cleanupPaths.push(target);
+  return target;
+}
+
+function mockHandleAssistantRequest(): {
+  mockResolvedValueOnce(value: unknown): ReturnType<typeof mockHandleAssistantRequest>;
+} {
+  return handleAssistantRequest as unknown as ReturnType<typeof mockHandleAssistantRequest>;
+}
+
+function fakeMessage(options: { reply?: ReturnType<typeof vi.fn> } = {}): Message & { reply: ReturnType<typeof vi.fn> } {
+  return {
+    author: {
+      bot: false,
+      id: "user-1",
+      username: "alice"
+    },
+    channel: {
+      sendTyping: vi.fn()
+    },
+    channelId: "channel-1",
+    client: {
+      user: {
+        id: "bot-1"
+      }
+    },
+    content: "<@bot-1> hello",
+    guildId: "guild-1",
+    mentions: {
+      users: {
+        has: vi.fn((id: string) => id === "bot-1")
+      }
+    },
+    reply: options.reply ?? vi.fn().mockResolvedValue(undefined)
+  } as unknown as Message & { reply: ReturnType<typeof vi.fn> };
+}
+
+function readActivityEvents(home: string): Array<{ event: string; metadata?: Record<string, unknown> }> {
+  const content = fs.readFileSync(path.join(logsDir(home), ACTIVITY_LOG_FILE), "utf8");
+  return content.trim().split(/\r?\n/).map((line) => JSON.parse(line));
 }

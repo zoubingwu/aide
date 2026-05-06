@@ -20,12 +20,20 @@ export function todayKey(date = new Date()): string {
 }
 
 export function addEstimatedUsage(home: string, endpoint: Endpoint, tokens: number, date = new Date()): void {
+  addUsage(home, endpoint, tokens, "estimated", date);
+}
+
+export function addCodexUsage(home: string, endpoint: Endpoint, tokens: number, date = new Date()): void {
+  addUsage(home, endpoint, tokens, "codex", date);
+}
+
+function addUsage(home: string, endpoint: Endpoint, tokens: number, source: UsageEntry["source"], date: Date): void {
   const entry: UsageEntry = {
     day: todayKey(date),
     endpoint: endpoint.id,
     provider: endpoint.provider,
     tokens,
-    source: "estimated"
+    source
   };
 
   appendUsageEntry(home, entry);

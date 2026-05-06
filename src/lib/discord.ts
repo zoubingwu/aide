@@ -37,7 +37,7 @@ export async function startDiscordEndpoint(home: string, endpoint: Endpoint): Pr
   return client;
 }
 
-async function handleDiscordMessage(home: string, endpoint: Endpoint, message: Message): Promise<void> {
+export async function handleDiscordMessage(home: string, endpoint: Endpoint, message: Message): Promise<void> {
   if (!endpoint.enabled || message.author.bot || !message.client.user) {
     return;
   }
@@ -65,10 +65,22 @@ async function handleDiscordMessage(home: string, endpoint: Endpoint, message: M
   });
 
   if (result.exitCode !== 0) {
-    appendActivityLog(home, endpointActivity(home, endpoint, "discord_delivery_failed", { exitCode: result.exitCode }));
+    appendActivityLog(home, endpointActivity(home, endpoint, "agent_response_failed", { exitCode: result.exitCode }));
   }
 
-  await sendResponse(message, result.response);
+  try {
+    await sendResponse(message, result.response);
+  } catch (error) {
+    appendActivityLog(
+      home,
+      endpointActivity(home, endpoint, "discord_delivery_failed", {
+        exitCode: result.exitCode,
+        error: errorMessage(error)
+      })
+    );
+    throw error;
+  }
+
   appendActivityLog(home, endpointActivity(home, endpoint, "discord_response_delivered", { exitCode: result.exitCode }));
 }
 
@@ -100,7 +112,7 @@ export function chunkDiscordMessage(response: string): string[] {
   return chunks;
 }
 
-export function discordMessageSource(message: Pick<Message, "author" | "channelId" | "guildId">): string {
+export function discordMessageSource(message: { author: { id: string }; channelId: string; guildId: string | null }): string {
   return message.guildId ? `channel:${message.channelId}` : `user:${message.author.id}`;
 }
 
@@ -125,4 +137,8 @@ function waitForReady(client: Client, token: string): Promise<void> {
       reject(error);
     });
   });
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

@@ -68,6 +68,7 @@ export async function runCodex(
     return {
       ...resumed,
       response: extractFinalResponse(resumed.stdout, resumed.stderr),
+      usageTokens: extractCodexUsageTokens(resumed.stdout),
       resumed: true
     };
   }
@@ -85,6 +86,7 @@ export async function runCodex(
   return {
     ...fresh,
     response: extractFinalResponse(fresh.stdout, fresh.stderr),
+    usageTokens: extractCodexUsageTokens(fresh.stdout),
     resumed: false
   };
 }
@@ -106,7 +108,7 @@ export function extractFinalResponse(stdout: string, stderr = ""): string {
       continue;
     }
 
-    const extracted = extractStringCandidate(parsed);
+    const extracted = extractCodexResponseCandidate(parsed);
 
     if (extracted) {
       candidates.push(extracted);
@@ -121,6 +123,26 @@ export function extractFinalResponse(stdout: string, stderr = ""): string {
 
   const error = stderr.trim();
   return error.length > 0 ? error : "Codex finished without a text response.";
+}
+
+export function extractCodexUsageTokens(stdout: string): number | undefined {
+  let tokens: number | undefined;
+
+  for (const line of stdout.split(/\r?\n/)) {
+    const payload = parseJsonObjectLine(line);
+
+    if (payload?.type !== "turn.completed") {
+      continue;
+    }
+
+    const usageTokens = codexUsageTokens(payload.usage);
+
+    if (usageTokens !== undefined) {
+      tokens = usageTokens;
+    }
+  }
+
+  return tokens;
 }
 
 interface CodexExecution {
@@ -234,6 +256,64 @@ function parseJsonObjectLine(line: string): Record<string, unknown> | undefined 
   }
 
   return parsed as Record<string, unknown>;
+}
+
+function extractCodexResponseCandidate(value: unknown): string | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  if (record.type === "item.completed") {
+    return extractAgentMessage(record.item);
+  }
+
+  if (record.type === "final" || record.final_response !== undefined || record.finalResponse !== undefined) {
+    return extractStringCandidate(record);
+  }
+
+  return undefined;
+}
+
+function extractAgentMessage(value: unknown): string | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  if (record.type !== "agent_message") {
+    return undefined;
+  }
+
+  return stringifyContent(record.text) ?? stringifyContent(record.content) ?? stringifyContent(record.output);
+}
+
+function codexUsageTokens(value: unknown): number | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  const total = tokenCount(record.total_tokens);
+
+  if (total !== undefined) {
+    return total;
+  }
+
+  const input = tokenCount(record.input_tokens);
+  const output = tokenCount(record.output_tokens);
+
+  if (input === undefined && output === undefined) {
+    return undefined;
+  }
+
+  return (input ?? 0) + (output ?? 0);
+}
+
+function tokenCount(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
 function extractStringCandidate(value: unknown): string | undefined {
