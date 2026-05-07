@@ -11,7 +11,3 @@ export function defaultCodexResumeArgs(): string[] {
 export function defaultCodexFreshArgs(): string[] {
   return ["exec", ...DEFAULT_CODEX_EXEC_FLAGS];
 }
-
-export function defaultCodexResumeArgsJson(): string {
-  return JSON.stringify(defaultCodexResumeArgs());
-}

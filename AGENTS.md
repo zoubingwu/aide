@@ -14,7 +14,7 @@ Aide is a TypeScript CLI package. Runtime code targets Node-compatible APIs and 
 - `src/commands/runtime.ts`: `start`, `stop`, `restart`, and foreground runtime dispatch.
 - `src/commands/schedules.ts`: schedule CRUD and schedule config commands.
 - `src/commands/service.ts`: OS service install, uninstall, and status commands.
-- `src/lib/config.ts`: TOML user config, JSON runtime state, and schema validation.
+- `src/lib/config.ts`: TOML config, JSON runtime state, JSON schedules data, and schema validation.
 - `src/lib/paths.ts`: Aide home, display paths, endpoint id helpers.
 - `src/lib/workspace.ts`: endpoint workspace creation and validation.
 - `src/lib/secrets.ts`: Discord token fallback in env and `.env.local`.
@@ -24,7 +24,7 @@ Aide is a TypeScript CLI package. Runtime code targets Node-compatible APIs and 
 - `src/lib/assistant.ts`: shared assistant request flow.
 - `src/lib/discord.ts`: Discord listener and message delivery.
 - `src/lib/discord-delivery.ts`: Discord target parsing and scheduled message delivery.
-- `src/lib/schedules.ts`: TOML schedule config validation and mutations.
+- `src/lib/schedules.ts`: JSON schedule data validation and mutations.
 - `src/lib/schedule-plan.ts`: user schedule kind normalization into cron or one-shot plans.
 - `src/lib/schedule-reload.ts`: signal running runtime to reload schedule jobs after schedule config mutations.
 - `src/lib/scheduler.ts`: runtime schedule jobs, overlap handling, and one-shot cleanup.
@@ -38,7 +38,7 @@ Aide is a TypeScript CLI package. Runtime code targets Node-compatible APIs and 
 
 ## Development Rules
 
-Keep endpoint as the public concept and workspace as implementation detail. Prefer small command handlers and focused helpers over broad service classes. Use TOML helpers for config changes and keep secrets out of `endpoints.toml`.
+Keep endpoint as the public concept and workspace as implementation detail. Prefer small command handlers and focused helpers over broad service classes. Use TOML helpers for config changes and keep secrets out of `config.toml`.
 
 Run these checks before handoff:
 

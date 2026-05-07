@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { CronPattern } from "croner";
 import { z } from "zod";
-import { assertInitialized, readToml, stringifyToml } from "./config.js";
+import { assertInitialized, readJson, stringifyJson } from "./config.js";
 import { schedulesPath } from "./paths.js";
 import type { Schedule, SchedulesFile, Weekday } from "./types.js";
 
@@ -117,12 +117,12 @@ export interface RuntimeSchedules {
 
 export function loadSchedules(home: string): Schedule[] {
   assertInitialized(home);
-  return schedulesFileSchema.parse(readToml(schedulesPath(home))).schedules;
+  return schedulesFileSchema.parse(readJson(schedulesPath(home), { schedules: [] })).schedules;
 }
 
 export function loadRuntimeSchedules(home: string): RuntimeSchedules {
   assertInitialized(home);
-  const rawSchedules = looseSchedulesFileSchema.parse(readToml(schedulesPath(home))).schedules;
+  const rawSchedules = looseSchedulesFileSchema.parse(readJson(schedulesPath(home), { schedules: [] })).schedules;
   const schedules: Schedule[] = [];
   const issues: RuntimeSchedules["issues"] = [];
   const seen = new Set<string>();
@@ -157,7 +157,7 @@ export function loadRuntimeSchedules(home: string): RuntimeSchedules {
 
 export function writeSchedules(home: string, schedules: Schedule[]): void {
   const body: SchedulesFile = { schedules };
-  fs.writeFileSync(schedulesPath(home), stringifyToml(schedulesFileSchema.parse(body)));
+  fs.writeFileSync(schedulesPath(home), stringifyJson(schedulesFileSchema.parse(body)));
 }
 
 export function findSchedule(home: string, id: string): Schedule {
@@ -201,7 +201,7 @@ export function removeSchedule(home: string, id: string): void {
 
 export function removeRuntimeSchedule(home: string, id: string): void {
   assertInitialized(home);
-  const raw = readToml(schedulesPath(home));
+  const raw = readJson(schedulesPath(home), { schedules: [] });
   const file = looseSchedulesFileSchema.parse(raw);
   const next = file.schedules.filter((schedule) => scheduleId(schedule) !== id);
 
@@ -209,7 +209,7 @@ export function removeRuntimeSchedule(home: string, id: string): void {
     throw new Error(`Schedule not found: ${id}`);
   }
 
-  fs.writeFileSync(schedulesPath(home), stringifyToml({ schedules: next }));
+  fs.writeFileSync(schedulesPath(home), stringifyJson({ schedules: next }));
 }
 
 function setScheduleEnabled(home: string, id: string, enabled: boolean): void {

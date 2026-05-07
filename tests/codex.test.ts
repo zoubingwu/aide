@@ -10,28 +10,27 @@ import {
   extractFinalResponse,
   runCodex
 } from "../src/lib/codex.js";
+import { defaultCodexAgentConfig } from "../src/lib/config.js";
 import { defaultCodexFreshArgs, defaultCodexResumeArgs } from "../src/lib/codex-args.js";
 import { ACTIVITY_LOG_FILE } from "../src/lib/logging.js";
 import { logsDir } from "../src/lib/paths.js";
-import type { Endpoint, RuntimeConfig } from "../src/lib/types.js";
+import type { CodexAgentConfig, Endpoint } from "../src/lib/types.js";
 
 vi.mock("execa", () => ({
   execa: vi.fn()
 }));
 
-const runtimeConfig: RuntimeConfig = {
-  provider: "codex",
-  command: "codex",
-  args: defaultCodexResumeArgs(),
+const agentConfig: CodexAgentConfig = {
+  ...defaultCodexAgentConfig(),
   model: "gpt-5.5",
-  reasoningEffort: "medium",
-  startupTimeoutMs: 30_000
+  reasoningEffort: "medium"
 };
 
 const endpoint: Endpoint = {
   id: "yaya",
   provider: "discord",
-  enabled: true
+  enabled: true,
+  agent: agentConfig
 };
 
 describe("codex", () => {
@@ -44,7 +43,7 @@ describe("codex", () => {
   });
 
   it("builds resume-last exec args with prompt at the end", () => {
-    expect(buildCodexArgs(runtimeConfig, "hello")).toEqual([
+    expect(buildCodexArgs(agentConfig, "hello")).toEqual([
       "exec",
       "--model",
       "gpt-5.5",
@@ -56,7 +55,7 @@ describe("codex", () => {
   });
 
   it("builds fresh exec args for first-run fallback", () => {
-    expect(buildFreshCodexArgs(runtimeConfig, "hello")).toEqual([
+    expect(buildFreshCodexArgs(agentConfig, "hello")).toEqual([
       "exec",
       "--model",
       "gpt-5.5",
@@ -120,7 +119,7 @@ describe("codex", () => {
       exitCode: 0
     } as never);
 
-    const result = await runCodex({ home, runtime: runtimeConfig }, home, workspace, endpoint, "hello");
+    const result = await runCodex(home, workspace, endpoint, "hello");
     const events = readActivityEvents(home);
 
     expect(result.response).toBe("done");
@@ -178,7 +177,7 @@ describe("codex", () => {
         exitCode: 0
       } as never);
 
-    const result = await runCodex({ home, runtime: runtimeConfig }, home, workspace, endpoint, "hello");
+    const result = await runCodex(home, workspace, endpoint, "hello");
     const events = readActivityEvents(home);
 
     expect(result).toMatchObject({
@@ -216,7 +215,7 @@ describe("codex", () => {
 
     mockExeca().mockRejectedValueOnce(new Error("spawn codex ENOENT"));
 
-    await expect(runCodex({ home, runtime: runtimeConfig }, home, workspace, endpoint, "hello")).rejects.toThrow(
+    await expect(runCodex(home, workspace, endpoint, "hello")).rejects.toThrow(
       "spawn codex ENOENT"
     );
 

@@ -111,7 +111,7 @@ function runRootCli(argv: string[]): void {
     .command("doctor", "Validate local setup")
     .option("--fix", "Create missing Aide base files and directories")
     .action(wrap(doctorCommand));
-  cli.command("config", "Manage runtime config").action(() => runConfigCli(["node", "aide config"]));
+  cli.command("config", "Manage config").action(() => runConfigCli(["node", "aide config"]));
   cli.command("endpoint", "Manage endpoints").action(() => runEndpointCli(["node", "aide endpoint"]));
   cli.command("help", "Show detailed help").action(() => runHelpCli(["node", "aide help"]));
   cli.command("schedule", "Manage schedules").action(() => runScheduleCli(["node", "aide schedule"]));
@@ -126,14 +126,14 @@ function runConfigCli(argv: string[]): void {
   cli.option("--home <path>", "Aide home directory").help();
   addExamples(
     cli
-      .command("get [path]", "Show runtime config")
+      .command("get [path]", "Show config")
       .usage(`get [path]\n\nPaths: ${CONFIG_PATH_LIST}`)
       .action(wrap(getConfigCommand)),
     CONFIG_EXAMPLES.slice(0, 2)
   );
   addExamples(
     cli
-      .command("set <path> <value>", "Set runtime config")
+      .command("set <path> <value>", "Set config")
       .usage(`set <path> <value>\n\nPaths: ${CONFIG_PATH_LIST}`)
       .action(wrap(setConfigCommand)),
     CONFIG_EXAMPLES.slice(2)
@@ -151,6 +151,10 @@ function runEndpointCli(argv: string[]): void {
     .command("add <provider>", "Add an endpoint")
     .option("--id <id>", "Endpoint id")
     .option("--token <token>", "Provider token")
+    .option("--agent <provider>", "CLI agent provider")
+    .option("--agent-command <command>", "CLI agent command")
+    .option("--model <model>", "Agent model")
+    .option("--reasoning-effort <effort>", "Codex reasoning effort")
     .action(wrap(addEndpointCommand));
   cli.command("list", "List endpoints").action(wrap(listEndpointsCommand));
   cli.command("show <id>", "Show endpoint details").action(wrap(showEndpointCommand));

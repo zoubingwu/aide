@@ -1,11 +1,15 @@
 import { loadConfig, writeConfig } from "../lib/config.js";
 import { printTable } from "../lib/format.js";
-import type { AideConfig, CodexReasoningEffort } from "../lib/types.js";
+import type { AideConfig, CodexReasoningEffort, Endpoint } from "../lib/types.js";
 import type { CommandOptions } from "./options.js";
 import { homeFromOptions } from "./options.js";
-import { CONFIG_PATHS } from "./help.js";
+import { CONFIG_PATH_LIST } from "./help.js";
 
-type ConfigPath = (typeof CONFIG_PATHS)[number];
+type ConfigPath =
+  | { kind: "runtimeStartupTimeout" }
+  | { kind: "endpointAgent"; id: string; field: EndpointAgentField };
+
+type EndpointAgentField = "provider" | "command" | "model" | "reasoningEffort";
 
 const REASONING_EFFORTS: CodexReasoningEffort[] = ["low", "medium", "high", "xhigh"];
 
@@ -15,7 +19,8 @@ export function getConfigCommand(pathOrOptions?: string | CommandOptions, maybeO
   const config = loadConfig(homeFromOptions(options));
 
   if (path) {
-    console.log(`${path} = ${formatAssignmentValue(readConfigValue(config, parseConfigPath(path)))}`);
+    const parsed = parseConfigPath(path);
+    console.log(`${formatConfigPath(parsed)} = ${formatAssignmentValue(readConfigValue(config, parsed))}`);
     return;
   }
 
@@ -29,68 +34,109 @@ export function setConfigCommand(path: string, value: string, options: CommandOp
   const config = loadConfig(home);
   const next: AideConfig = {
     ...config,
-    runtime: { ...config.runtime }
+    runtime: { ...config.runtime },
+    endpoints: config.endpoints.map((endpoint) => ({
+      ...endpoint,
+      agent: { ...endpoint.agent }
+    }))
   };
 
-  switch (key) {
-    case "runtime.command":
-      next.runtime.command = nonEmptyValue(key, value);
+  switch (key.kind) {
+    case "runtimeStartupTimeout":
+      next.runtime.startupTimeoutMs = parsePositiveInteger(formatConfigPath(key), value);
       break;
-    case "runtime.args":
-      next.runtime.args = parseArgs(value);
+    case "endpointAgent": {
+      const endpoint = findEndpointConfig(next, key.id);
+
+      switch (key.field) {
+        case "command":
+          endpoint.agent.command = nonEmptyValue(formatConfigPath(key), value);
+          break;
+        case "model":
+          endpoint.agent.model = nonEmptyValue(formatConfigPath(key), value);
+          break;
+        case "reasoningEffort":
+          endpoint.agent.reasoningEffort = parseReasoningEffort(value);
+          break;
+        case "provider":
+          throw new Error(`${formatConfigPath(key)} is managed by endpoint creation.`);
+      }
       break;
-    case "runtime.model":
-      next.runtime.model = nonEmptyValue(key, value);
-      break;
-    case "runtime.reasoningEffort":
-      next.runtime.reasoningEffort = parseReasoningEffort(value);
-      break;
-    case "runtime.startupTimeoutMs":
-      next.runtime.startupTimeoutMs = parsePositiveInteger(key, value);
-      break;
+    }
   }
 
   writeConfig(home, next);
-  console.log(`Updated ${key} = ${formatAssignmentValue(readConfigValue(next, key))}.`);
+  console.log(`Updated ${formatConfigPath(key)} = ${formatAssignmentValue(readConfigValue(next, key))}.`);
   console.log(applyNote(key));
 }
 
 function configRows(config: AideConfig): string[][] {
-  return [
+  const rows = [
     ["home", config.home],
-    ["runtime.provider", config.runtime.provider],
-    ["runtime.command", config.runtime.command],
-    ["runtime.args", JSON.stringify(config.runtime.args)],
-    ["runtime.model", config.runtime.model],
-    ["runtime.reasoningEffort", config.runtime.reasoningEffort],
     ["runtime.startupTimeoutMs", String(config.runtime.startupTimeoutMs)]
   ];
+
+  for (const endpoint of config.endpoints) {
+    rows.push(
+      [`endpoints.${endpoint.id}.agent.provider`, endpoint.agent.provider],
+      [`endpoints.${endpoint.id}.agent.command`, endpoint.agent.command],
+      [`endpoints.${endpoint.id}.agent.model`, endpoint.agent.model],
+      [`endpoints.${endpoint.id}.agent.reasoningEffort`, endpoint.agent.reasoningEffort]
+    );
+  }
+
+  return rows;
 }
 
 function parseConfigPath(path: string): ConfigPath {
-  if ((CONFIG_PATHS as readonly string[]).includes(path)) {
-    return path as ConfigPath;
+  if (path === "runtime.startupTimeoutMs") {
+    return { kind: "runtimeStartupTimeout" };
   }
 
-  throw new Error(`Unsupported config path: ${path}. Use ${CONFIG_PATHS.join(", ")}.`);
+  const match = /^endpoints\.([a-z0-9][a-z0-9-]*)\.agent\.(provider|command|model|reasoningEffort)$/.exec(path);
+
+  if (match?.[1] && match[2]) {
+    return {
+      kind: "endpointAgent",
+      id: match[1],
+      field: match[2] as EndpointAgentField
+    };
+  }
+
+  throw new Error(`Unsupported config path: ${path}. Use ${CONFIG_PATH_LIST}.`);
 }
 
-function readConfigValue(config: AideConfig, path: ConfigPath): string | string[] | number {
-  switch (path) {
-    case "runtime.command":
-      return config.runtime.command;
-    case "runtime.args":
-      return config.runtime.args;
-    case "runtime.model":
-      return config.runtime.model;
-    case "runtime.reasoningEffort":
-      return config.runtime.reasoningEffort;
-    case "runtime.startupTimeoutMs":
+function readConfigValue(config: AideConfig, path: ConfigPath): string | number {
+  switch (path.kind) {
+    case "runtimeStartupTimeout":
       return config.runtime.startupTimeoutMs;
+    case "endpointAgent": {
+      const endpoint = findEndpointConfig(config, path.id);
+      return endpoint.agent[path.field];
+    }
   }
 }
 
-function nonEmptyValue(path: ConfigPath, value: string): string {
+function findEndpointConfig(config: AideConfig, id: string): Endpoint {
+  const endpoint = config.endpoints.find((candidate) => candidate.id === id);
+
+  if (!endpoint) {
+    throw new Error(`Endpoint not found: ${id}`);
+  }
+
+  return endpoint;
+}
+
+function formatConfigPath(path: ConfigPath): string {
+  switch (path.kind) {
+    case "runtimeStartupTimeout":
+      return "runtime.startupTimeoutMs";
+    case "endpointAgent":
+      return `endpoints.${path.id}.agent.${path.field}`;
+  }
+}
+
+function nonEmptyValue(path: string, value: string): string {
   if (value.length > 0) {
     return value;
   }
@@ -98,31 +144,15 @@ function nonEmptyValue(path: ConfigPath, value: string): string {
   throw new Error(`${path} must be non-empty.`);
 }
 
-function parseArgs(value: string): string[] {
-  let parsed: unknown;
-
-  try {
-    parsed = JSON.parse(value);
-  } catch {
-    throw new Error("runtime.args must be a JSON array of strings.");
-  }
-
-  if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) {
-    return parsed;
-  }
-
-  throw new Error("runtime.args must be a JSON array of strings.");
-}
-
 function parseReasoningEffort(value: string): CodexReasoningEffort {
   if (REASONING_EFFORTS.includes(value as CodexReasoningEffort)) {
     return value as CodexReasoningEffort;
   }
 
-  throw new Error(`runtime.reasoningEffort must be one of: ${REASONING_EFFORTS.join(", ")}.`);
+  throw new Error(`reasoningEffort must be one of: ${REASONING_EFFORTS.join(", ")}.`);
 }
 
-function parsePositiveInteger(path: ConfigPath, value: string): number {
+function parsePositiveInteger(path: string, value: string): number {
   const parsed = Number(value);
 
   if (Number.isInteger(parsed) && parsed > 0) {
@@ -132,12 +162,12 @@ function parsePositiveInteger(path: ConfigPath, value: string): number {
   throw new Error(`${path} must be a positive integer.`);
 }
 
-function formatAssignmentValue(value: string | string[] | number): string {
+function formatAssignmentValue(value: string | number): string {
   return typeof value === "number" ? String(value) : JSON.stringify(value);
 }
 
 function applyNote(path: ConfigPath): string {
-  if (path === "runtime.startupTimeoutMs") {
+  if (path.kind === "runtimeStartupTimeout") {
     return "Applies on the next start or restart.";
   }
 

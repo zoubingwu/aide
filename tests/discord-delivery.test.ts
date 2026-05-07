@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { Message } from "discord.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { defaultCodexAgentConfig } from "../src/lib/config.js";
 import { handleAssistantRequest } from "../src/lib/assistant.js";
 import { discordMessageSource, handleDiscordMessage } from "../src/lib/discord.js";
 import { parseDiscordTarget } from "../src/lib/discord-delivery.js";
@@ -102,7 +103,8 @@ function messageSource(input: { channelId: string; guildId: string | null; autho
 const endpoint: Endpoint = {
   id: "discord-agent-ops",
   provider: "discord",
-  enabled: true
+  enabled: true,
+  agent: defaultCodexAgentConfig()
 };
 
 function tempHome(): string {

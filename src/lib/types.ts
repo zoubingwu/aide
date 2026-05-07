@@ -4,27 +4,29 @@ export type CodexReasoningEffort = "low" | "medium" | "high" | "xhigh";
 export type RuntimeStatus = "running" | "stopped";
 
 export interface RuntimeConfig {
-  provider: AgentProvider;
-  command: string;
-  args: string[];
-  model: string;
-  reasoningEffort: CodexReasoningEffort;
   startupTimeoutMs: number;
 }
+
+export interface CodexAgentConfig {
+  provider: "codex";
+  command: string;
+  model: string;
+  reasoningEffort: CodexReasoningEffort;
+}
+
+export type AgentConfig = CodexAgentConfig;
 
 export interface AideConfig {
   home: string;
   runtime: RuntimeConfig;
+  endpoints: Endpoint[];
 }
 
 export interface Endpoint {
   id: string;
   provider: Provider;
   enabled: boolean;
-}
-
-export interface EndpointsFile {
-  endpoints: Endpoint[];
+  agent: AgentConfig;
 }
 
 export type ScheduleKind = "cron" | "hourly" | "daily" | "weekly" | "biweekly" | "monthly" | "once";

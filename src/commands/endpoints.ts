@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import prompts from "prompts";
 import {
+  defaultCodexAgentConfig,
   findEndpoint,
   loadEndpoints,
   requireEndpointIndex,
@@ -16,11 +17,12 @@ import {
 } from "../lib/paths.js";
 import { resolveDiscordToken, writeDiscordToken } from "../lib/secrets.js";
 import { inspectEndpointWorkspace, ensureEndpointWorkspace, endpointWorkspace } from "../lib/workspace.js";
-import type { Endpoint } from "../lib/types.js";
+import type { CodexAgentConfig, CodexReasoningEffort, Endpoint } from "../lib/types.js";
 import type { CommandOptions } from "./options.js";
 import { homeFromOptions, stringOption } from "./options.js";
 
 const DEFAULT_DISCORD_ENDPOINT_ID = "discord";
+const REASONING_EFFORTS: CodexReasoningEffort[] = ["low", "medium", "high", "xhigh"];
 
 export async function addEndpointCommand(provider: string, options: CommandOptions): Promise<void> {
   if (provider !== "discord") {
@@ -43,10 +45,11 @@ export async function listEndpointsCommand(options: CommandOptions): Promise<voi
 
   console.log(
     printTable(
-      ["ID", "Provider", "Status"],
+      ["ID", "Provider", "Agent", "Status"],
       endpoints.map((endpoint) => [
         endpoint.id,
         endpoint.provider === "discord" ? "Discord" : endpoint.provider,
+        endpoint.agent.provider,
         statusLabel(endpoint.enabled)
       ])
     )
@@ -61,6 +64,10 @@ export async function showEndpointCommand(id: string, options: CommandOptions): 
   console.log(`Endpoint ${endpoint.id}\n`);
   console.log(`Provider    ${endpoint.provider}`);
   console.log(`Status      ${statusLabel(endpoint.enabled)}`);
+  console.log(`Agent       ${endpoint.agent.provider}`);
+  console.log(`Command     ${endpoint.agent.command}`);
+  console.log(`Model       ${endpoint.agent.model}`);
+  console.log(`Reasoning   ${endpoint.agent.reasoningEffort}`);
   console.log(`Workspace   ${displayPath(workspace.path)}`);
   console.log(`SOUL.md     ${workspace.soulExists ? "exists" : "missing"}`);
   console.log(`AGENTS.md   ${workspace.agentsExists ? "exists" : "missing"}`);
@@ -150,6 +157,7 @@ async function addDiscordEndpoint(options: CommandOptions): Promise<void> {
   const endpoints = loadEndpoints(home);
   const answers = await collectDiscordEndpointAnswers(options);
   const id = slugifyId(answers.id);
+  const agent = codexAgentFromOptions(options);
 
   if (id.length === 0) {
     throw new Error("Endpoint id must contain at least one letter or number.");
@@ -162,7 +170,8 @@ async function addDiscordEndpoint(options: CommandOptions): Promise<void> {
   const endpoint: Endpoint = {
     id,
     provider: "discord",
-    enabled: true
+    enabled: true,
+    agent
   };
 
   endpoints.push(endpoint);
@@ -178,6 +187,30 @@ async function addDiscordEndpoint(options: CommandOptions): Promise<void> {
   console.log(`Workspace ${displayPath(endpointWorkspace(home, endpoint))}`);
   console.log("");
   console.log(nextStepsGuide());
+}
+
+function codexAgentFromOptions(options: CommandOptions): CodexAgentConfig {
+  const provider = stringOption(options, "agent") ?? "codex";
+
+  if (provider !== "codex") {
+    throw new Error(`Agent provider ${provider} is not supported yet.`);
+  }
+
+  const defaults = defaultCodexAgentConfig();
+  return {
+    provider: "codex",
+    command: stringOption(options, "agentCommand") ?? defaults.command,
+    model: stringOption(options, "model") ?? defaults.model,
+    reasoningEffort: parseReasoningEffort(stringOption(options, "reasoningEffort") ?? defaults.reasoningEffort)
+  };
+}
+
+function parseReasoningEffort(value: string): CodexReasoningEffort {
+  if (REASONING_EFFORTS.includes(value as CodexReasoningEffort)) {
+    return value as CodexReasoningEffort;
+  }
+
+  throw new Error(`Codex reasoning effort must be one of: ${REASONING_EFFORTS.join(", ")}.`);
 }
 
 async function collectDiscordEndpointAnswers(options: CommandOptions): Promise<{

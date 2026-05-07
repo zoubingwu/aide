@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { defaultCodexAgentConfig } from "../src/lib/config.js";
 import { discordTokenEnvKey, resolveDiscordToken, writeDiscordToken } from "../src/lib/secrets.js";
 import type { Endpoint } from "../src/lib/types.js";
 
@@ -35,6 +36,7 @@ function makeEndpoint(): Endpoint {
   return {
     id: "discord-agent-ops",
     provider: "discord",
-    enabled: true
+    enabled: true,
+    agent: defaultCodexAgentConfig()
   };
 }

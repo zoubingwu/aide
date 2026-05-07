@@ -50,7 +50,7 @@ describe("schedules", () => {
     writeSchedules(home, [schedule]);
 
     expect(loadSchedules(home)).toEqual([schedule]);
-    expect(fs.readFileSync(schedulesPath(home), "utf8")).toContain('id = "daily-brief"');
+    expect(fs.readFileSync(schedulesPath(home), "utf8")).toContain('"id": "daily-brief"');
   });
 
   it("writes and loads cron schedules", () => {
@@ -70,7 +70,7 @@ describe("schedules", () => {
     writeSchedules(home, [schedule]);
 
     expect(loadSchedules(home)).toEqual([schedule]);
-    expect(fs.readFileSync(schedulesPath(home), "utf8")).toContain('cron = "*/15 * * * *"');
+    expect(fs.readFileSync(schedulesPath(home), "utf8")).toContain('"cron": "*/15 * * * *"');
   });
 
   it("rejects cron schedules with six fields", () => {
@@ -94,18 +94,17 @@ describe("schedules", () => {
   it("rejects schedules with missing fields", () => {
     const home = tempHome();
     ensureAideHome(home);
-    fs.writeFileSync(
-      schedulesPath(home),
-      `[[schedules]]
-id = "bad"
-endpoint = "discord-main"
-enabled = true
-kind = "daily"
-timezone = "Asia/Shanghai"
-target = "channel:123"
-message = "Generate my daily brief."
-`
-    );
+    writeRawSchedules(home, [
+      {
+        id: "bad",
+        endpoint: "discord-main",
+        enabled: true,
+        kind: "daily",
+        timezone: "Asia/Shanghai",
+        target: "channel:123",
+        message: "Generate my daily brief."
+      }
+    ]);
 
     expect(() => loadSchedules(home)).toThrow();
   });
@@ -113,19 +112,18 @@ message = "Generate my daily brief."
   it("rejects schedules with invalid timezones", () => {
     const home = tempHome();
     ensureAideHome(home);
-    fs.writeFileSync(
-      schedulesPath(home),
-      `[[schedules]]
-id = "bad-timezone"
-endpoint = "discord-main"
-enabled = true
-kind = "daily"
-time = "09:00"
-timezone = "Europe/Lnodon"
-target = "channel:123"
-message = "Generate my daily brief."
-`
-    );
+    writeRawSchedules(home, [
+      {
+        id: "bad-timezone",
+        endpoint: "discord-main",
+        enabled: true,
+        kind: "daily",
+        time: "09:00",
+        timezone: "Europe/Lnodon",
+        target: "channel:123",
+        message: "Generate my daily brief."
+      }
+    ]);
 
     expect(() => loadSchedules(home)).toThrow("Invalid IANA timezone");
   });
@@ -151,29 +149,28 @@ message = "Generate my daily brief."
   it("rejects schedules with duplicate ids", () => {
     const home = tempHome();
     ensureAideHome(home);
-    fs.writeFileSync(
-      schedulesPath(home),
-      `[[schedules]]
-id = "daily-brief"
-endpoint = "discord-main"
-enabled = true
-kind = "daily"
-time = "09:00"
-timezone = "Asia/Shanghai"
-target = "channel:123"
-message = "Generate my daily brief."
-
-[[schedules]]
-id = "daily-brief"
-endpoint = "discord-main"
-enabled = true
-kind = "daily"
-time = "10:00"
-timezone = "Asia/Shanghai"
-target = "channel:456"
-message = "Generate my second brief."
-`
-    );
+    writeRawSchedules(home, [
+      {
+        id: "daily-brief",
+        endpoint: "discord-main",
+        enabled: true,
+        kind: "daily",
+        time: "09:00",
+        timezone: "Asia/Shanghai",
+        target: "channel:123",
+        message: "Generate my daily brief."
+      },
+      {
+        id: "daily-brief",
+        endpoint: "discord-main",
+        enabled: true,
+        kind: "daily",
+        time: "10:00",
+        timezone: "Asia/Shanghai",
+        target: "channel:456",
+        message: "Generate my second brief."
+      }
+    ]);
 
     expect(() => loadSchedules(home)).toThrow("Duplicate schedule id: daily-brief");
   });
@@ -201,21 +198,20 @@ message = "Generate my second brief."
   it("rejects biweekly schedules with mismatched weekdays", () => {
     const home = tempHome();
     ensureAideHome(home);
-    fs.writeFileSync(
-      schedulesPath(home),
-      `[[schedules]]
-id = "bad-biweekly"
-endpoint = "discord-main"
-enabled = true
-kind = "biweekly"
-weekday = "monday"
-startDate = "2026-05-05"
-time = "09:00"
-timezone = "Asia/Shanghai"
-target = "channel:123"
-message = "Generate my biweekly brief."
-`
-    );
+    writeRawSchedules(home, [
+      {
+        id: "bad-biweekly",
+        endpoint: "discord-main",
+        enabled: true,
+        kind: "biweekly",
+        weekday: "monday",
+        startDate: "2026-05-05",
+        time: "09:00",
+        timezone: "Asia/Shanghai",
+        target: "channel:123",
+        message: "Generate my biweekly brief."
+      }
+    ]);
 
     expect(() => loadSchedules(home)).toThrow("Biweekly startDate must match weekday");
   });
@@ -223,29 +219,28 @@ message = "Generate my biweekly brief."
   it("loads valid runtime schedules and reports invalid ones", () => {
     const home = tempHome();
     ensureAideHome(home);
-    fs.writeFileSync(
-      schedulesPath(home),
-      `[[schedules]]
-id = "daily-brief"
-endpoint = "discord-main"
-enabled = true
-kind = "daily"
-time = "09:00"
-timezone = "Asia/Shanghai"
-target = "channel:123"
-message = "Generate my daily brief."
-
-[[schedules]]
-id = "bad-timezone"
-endpoint = "discord-main"
-enabled = true
-kind = "daily"
-time = "09:00"
-timezone = "Europe/Lnodon"
-target = "channel:123"
-message = "Generate my daily brief."
-`
-    );
+    writeRawSchedules(home, [
+      {
+        id: "daily-brief",
+        endpoint: "discord-main",
+        enabled: true,
+        kind: "daily",
+        time: "09:00",
+        timezone: "Asia/Shanghai",
+        target: "channel:123",
+        message: "Generate my daily brief."
+      },
+      {
+        id: "bad-timezone",
+        endpoint: "discord-main",
+        enabled: true,
+        kind: "daily",
+        time: "09:00",
+        timezone: "Europe/Lnodon",
+        target: "channel:123",
+        message: "Generate my daily brief."
+      }
+    ]);
 
     expect(loadRuntimeSchedules(home)).toMatchObject({
       schedules: [{ id: "daily-brief" }],
@@ -256,21 +251,20 @@ message = "Generate my daily brief."
   it("reports invalid biweekly anchors during runtime load", () => {
     const home = tempHome();
     ensureAideHome(home);
-    fs.writeFileSync(
-      schedulesPath(home),
-      `[[schedules]]
-id = "bad-biweekly"
-endpoint = "discord-main"
-enabled = true
-kind = "biweekly"
-weekday = "monday"
-startDate = "2026-05-05"
-time = "09:00"
-timezone = "Asia/Shanghai"
-target = "channel:123"
-message = "Generate my biweekly brief."
-`
-    );
+    writeRawSchedules(home, [
+      {
+        id: "bad-biweekly",
+        endpoint: "discord-main",
+        enabled: true,
+        kind: "biweekly",
+        weekday: "monday",
+        startDate: "2026-05-05",
+        time: "09:00",
+        timezone: "Asia/Shanghai",
+        target: "channel:123",
+        message: "Generate my biweekly brief."
+      }
+    ]);
 
     expect(loadRuntimeSchedules(home)).toMatchObject({
       schedules: [],
@@ -281,19 +275,18 @@ message = "Generate my biweekly brief."
   it("reports unsupported targets during runtime load", () => {
     const home = tempHome();
     ensureAideHome(home);
-    fs.writeFileSync(
-      schedulesPath(home),
-      `[[schedules]]
-id = "bad-target"
-endpoint = "discord-main"
-enabled = true
-kind = "daily"
-time = "09:00"
-timezone = "Asia/Shanghai"
-target = "not-a-discord-target"
-message = "Generate my daily brief."
-`
-    );
+    writeRawSchedules(home, [
+      {
+        id: "bad-target",
+        endpoint: "discord-main",
+        enabled: true,
+        kind: "daily",
+        time: "09:00",
+        timezone: "Asia/Shanghai",
+        target: "not-a-discord-target",
+        message: "Generate my daily brief."
+      }
+    ]);
 
     expect(loadRuntimeSchedules(home)).toMatchObject({
       schedules: [],
@@ -304,29 +297,28 @@ message = "Generate my daily brief."
   it("reports duplicate schedule ids during runtime load", () => {
     const home = tempHome();
     ensureAideHome(home);
-    fs.writeFileSync(
-      schedulesPath(home),
-      `[[schedules]]
-id = "daily-brief"
-endpoint = "discord-main"
-enabled = true
-kind = "daily"
-time = "09:00"
-timezone = "Asia/Shanghai"
-target = "channel:123"
-message = "Generate my daily brief."
-
-[[schedules]]
-id = "daily-brief"
-endpoint = "discord-main"
-enabled = true
-kind = "daily"
-time = "10:00"
-timezone = "Asia/Shanghai"
-target = "channel:456"
-message = "Generate my second brief."
-`
-    );
+    writeRawSchedules(home, [
+      {
+        id: "daily-brief",
+        endpoint: "discord-main",
+        enabled: true,
+        kind: "daily",
+        time: "09:00",
+        timezone: "Asia/Shanghai",
+        target: "channel:123",
+        message: "Generate my daily brief."
+      },
+      {
+        id: "daily-brief",
+        endpoint: "discord-main",
+        enabled: true,
+        kind: "daily",
+        time: "10:00",
+        timezone: "Asia/Shanghai",
+        target: "channel:456",
+        message: "Generate my second brief."
+      }
+    ]);
 
     expect(loadRuntimeSchedules(home)).toMatchObject({
       schedules: [{ id: "daily-brief", time: "09:00" }],
@@ -337,34 +329,33 @@ message = "Generate my second brief."
   it("removes a runtime schedule while preserving invalid peer entries", () => {
     const home = tempHome();
     ensureAideHome(home);
-    fs.writeFileSync(
-      schedulesPath(home),
-      `[[schedules]]
-id = "pay-rent"
-endpoint = "discord-main"
-enabled = true
-kind = "once"
-runAt = "2026-05-10T10:00:00+08:00"
-target = "user:987"
-message = "Remind me to pay rent."
-
-[[schedules]]
-id = "bad-timezone"
-endpoint = "discord-main"
-enabled = true
-kind = "daily"
-time = "09:00"
-timezone = "Europe/Lnodon"
-target = "channel:123"
-message = "Generate my daily brief."
-`
-    );
+    writeRawSchedules(home, [
+      {
+        id: "pay-rent",
+        endpoint: "discord-main",
+        enabled: true,
+        kind: "once",
+        runAt: "2026-05-10T10:00:00+08:00",
+        target: "user:987",
+        message: "Remind me to pay rent."
+      },
+      {
+        id: "bad-timezone",
+        endpoint: "discord-main",
+        enabled: true,
+        kind: "daily",
+        time: "09:00",
+        timezone: "Europe/Lnodon",
+        target: "channel:123",
+        message: "Generate my daily brief."
+      }
+    ]);
 
     removeRuntimeSchedule(home, "pay-rent");
 
     const content = fs.readFileSync(schedulesPath(home), "utf8");
-    expect(content).not.toContain('id = "pay-rent"');
-    expect(content).toContain('id = "bad-timezone"');
+    expect(content).not.toContain('"id": "pay-rent"');
+    expect(content).toContain('"id": "bad-timezone"');
     expect(loadRuntimeSchedules(home)).toMatchObject({
       schedules: [],
       issues: [{ id: "bad-timezone" }]
@@ -402,4 +393,8 @@ function tempHome(): string {
   const target = fs.mkdtempSync(path.join(os.tmpdir(), "aide-schedules-"));
   cleanupPaths.push(target);
   return target;
+}
+
+function writeRawSchedules(home: string, schedules: unknown[]): void {
+  fs.writeFileSync(schedulesPath(home), JSON.stringify({ schedules }, null, 2));
 }

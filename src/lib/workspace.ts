@@ -82,7 +82,7 @@ Run work from this endpoint workspace by default. Keep secrets in Aide's secret 
 
 ## Aide Runtime Management
 
-When asked to inspect or change Aide settings or schedules, run \`aide help agent\` first to learn how to change settings or create schedules, then use the \`aide\` CLI. Prefer CLI commands over direct edits to Aide TOML files.
+When asked to inspect or change Aide settings or schedules, run \`aide help agent\` first to learn how to change settings or create schedules, then use the \`aide\` CLI. Prefer CLI commands over direct config edits.
 
 Use Aide schedules for delayed reminders, relative-time reminders, recurring work, and timed follow-ups. For short delays such as "in 3 minutes", create a one-shot schedule with \`--kind once\` and \`--run-at\`. Shell sleeps and long-running waits are unsuitable for reminder requests.
 
