@@ -10,6 +10,9 @@ import { appendActivityLog, endpointActivity } from "./logging.js";
 import type { Endpoint } from "./types.js";
 
 const DISCORD_TYPING_REFRESH_MS = 8_000;
+const DISCORD_MESSAGE_CONTENT_LIMIT = 2_000;
+const DISCORD_MESSAGE_CHUNK_BUFFER = 100;
+const DISCORD_MESSAGE_CHUNK_SIZE = DISCORD_MESSAGE_CONTENT_LIMIT - DISCORD_MESSAGE_CHUNK_BUFFER;
 
 export async function startDiscordEndpoint(home: string, endpoint: Endpoint): Promise<Client> {
   const token = endpoint.token;
@@ -124,16 +127,14 @@ async function sendResponse(message: Message, response: string): Promise<void> {
 }
 
 export function chunkDiscordMessage(response: string): string[] {
-  const max = 1900;
-
-  if (response.length <= max) {
+  if (response.length <= DISCORD_MESSAGE_CHUNK_SIZE) {
     return [response];
   }
 
   const chunks: string[] = [];
 
-  for (let index = 0; index < response.length; index += max) {
-    chunks.push(response.slice(index, index + max));
+  for (let index = 0; index < response.length; index += DISCORD_MESSAGE_CHUNK_SIZE) {
+    chunks.push(response.slice(index, index + DISCORD_MESSAGE_CHUNK_SIZE));
   }
 
   return chunks;

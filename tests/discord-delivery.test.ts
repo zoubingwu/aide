@@ -1,12 +1,12 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { Message } from "discord.js";
+import type { Client, Message } from "discord.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { defaultCodexAgentConfig } from "../src/lib/config.js";
 import { handleAssistantRequest } from "../src/lib/assistant.js";
-import { discordMessageSource, handleDiscordMessage } from "../src/lib/discord.js";
-import { parseDiscordTarget } from "../src/lib/discord-delivery.js";
+import { chunkDiscordMessage, discordMessageSource, handleDiscordMessage } from "../src/lib/discord.js";
+import { deliverDiscordMessage, parseDiscordTarget } from "../src/lib/discord-delivery.js";
 import { ACTIVITY_LOG_FILE } from "../src/lib/logging.js";
 import { logsDir } from "../src/lib/paths.js";
 import type { AgentRunResult, Endpoint } from "../src/lib/types.js";
@@ -45,6 +45,46 @@ describe("discord delivery", () => {
 
   it("uses user targets for direct messages", () => {
     expect(discordMessageSource(messageSource({ channelId: "dm-123", guildId: null, authorId: "987" }))).toBe("user:987");
+  });
+
+  it("splits long Discord messages below the API content limit", () => {
+    const response = "x".repeat(4_001);
+    const chunks = chunkDiscordMessage(response);
+
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.every((chunk) => chunk.length <= 2_000)).toBe(true);
+    expect(chunks.join("")).toBe(response);
+  });
+
+  it("replies once per long response chunk", async () => {
+    const home = tempHome();
+    const message = fakeMessage();
+    mockHandleAssistantRequest().mockResolvedValueOnce({
+      response: "x".repeat(4_001),
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+      resumed: true
+    });
+
+    await handleDiscordMessage(home, endpoint, message);
+
+    expect(message.reply).toHaveBeenCalledTimes(3);
+    expect(message.reply.mock.calls.every(([payload]) => payload.content.length <= 2_000)).toBe(true);
+  });
+
+  it("sends scheduled channel deliveries once per long response chunk", async () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    const client = {
+      channels: {
+        fetch: vi.fn().mockResolvedValue({ send })
+      }
+    } as unknown as Client;
+
+    await deliverDiscordMessage(client, "channel:123", "x".repeat(4_001));
+
+    expect(send).toHaveBeenCalledTimes(3);
+    expect(send.mock.calls.every(([payload]) => payload.content.length <= 2_000)).toBe(true);
   });
 
   it("logs agent failures separately from Discord delivery", async () => {
