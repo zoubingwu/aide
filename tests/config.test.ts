@@ -33,6 +33,20 @@ describe("config", () => {
     expect(loadConfig(home).endpoints).toEqual([]);
     expect(loadEndpoints(home)).toEqual([]);
   });
+
+  it("tightens an existing config file during initialization", () => {
+    if (process.platform === "win32") {
+      return;
+    }
+
+    const home = tempHome();
+    ensureAideHome(home);
+    fs.chmodSync(configPath(home), 0o644);
+
+    ensureAideHome(home);
+
+    expect(fs.statSync(configPath(home)).mode & 0o777).toBe(0o600);
+  });
 });
 
 function tempHome(): string {

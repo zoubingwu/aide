@@ -86,6 +86,7 @@ export function ensureAideHome(home: string): void {
   fs.mkdirSync(workspaceDir(home), { recursive: true });
 
   writeFileIfMissing(configPath(home), stringifyToml(defaultConfig(home)), 0o600);
+  secureConfigFile(home);
   writeFileIfMissing(schedulesPath(home), stringifyJson({ schedules: [] }));
   writeFileIfMissing(runtimePath(home), stringifyJson(defaultRuntimeState(home)));
   writeFileIfMissing(usagePath(home), "");
@@ -105,7 +106,7 @@ export function loadConfig(home: string): AideConfig {
 export function writeConfig(home: string, config: AideConfig): void {
   const filePath = configPath(home);
   fs.writeFileSync(filePath, stringifyToml(configSchema.parse(config)), { mode: 0o600 });
-  fs.chmodSync(filePath, 0o600);
+  secureConfigFile(home);
 }
 
 export function loadEndpoints(home: string): Endpoint[] {
@@ -188,4 +189,8 @@ function writeFileIfMissing(filePath: string, content: string, mode?: number): v
   if (!fs.existsSync(filePath)) {
     fs.writeFileSync(filePath, content, mode === undefined ? undefined : { mode });
   }
+}
+
+function secureConfigFile(home: string): void {
+  fs.chmodSync(configPath(home), 0o600);
 }
