@@ -9,6 +9,8 @@ import { handleAssistantRequest } from "./assistant.js";
 import { appendActivityLog, endpointActivity } from "./logging.js";
 import type { Endpoint } from "./types.js";
 
+const DISCORD_TYPING_REFRESH_MS = 8_000;
+
 export async function startDiscordEndpoint(home: string, endpoint: Endpoint): Promise<Client> {
   const token = endpoint.token;
 
@@ -55,13 +57,11 @@ export async function handleDiscordMessage(home: string, endpoint: Endpoint, mes
 
   appendActivityLog(home, endpointActivity(home, endpoint, "discord_message_received", { author: message.author.username }));
 
-  if ("sendTyping" in message.channel && typeof message.channel.sendTyping === "function") {
-    await message.channel.sendTyping();
-  }
-
-  const result = await handleAssistantRequest(home, endpoint, content, message.author.username, {
-    source: discordMessageSource(message)
-  });
+  const result = await withDiscordTyping(message.channel, () =>
+    handleAssistantRequest(home, endpoint, content, message.author.username, {
+      source: discordMessageSource(message)
+    })
+  );
 
   if (result.exitCode !== 0) {
     appendActivityLog(home, endpointActivity(home, endpoint, "agent_response_failed", { exitCode: result.exitCode }));
@@ -81,6 +81,34 @@ export async function handleDiscordMessage(home: string, endpoint: Endpoint, mes
   }
 
   appendActivityLog(home, endpointActivity(home, endpoint, "discord_response_delivered", { exitCode: result.exitCode }));
+}
+
+async function withDiscordTyping<T>(channel: Message["channel"], task: () => Promise<T>): Promise<T> {
+  const sendTyping = typingSender(channel);
+
+  if (!sendTyping) {
+    return task();
+  }
+
+  await sendTyping();
+
+  const timer = setInterval(() => {
+    void Promise.resolve(sendTyping()).catch(() => undefined);
+  }, DISCORD_TYPING_REFRESH_MS);
+
+  try {
+    return await task();
+  } finally {
+    clearInterval(timer);
+  }
+}
+
+function typingSender(channel: Message["channel"]): (() => Promise<void>) | undefined {
+  if ("sendTyping" in channel && typeof channel.sendTyping === "function") {
+    return () => channel.sendTyping();
+  }
+
+  return undefined;
 }
 
 function stripMention(content: string, botUserId: string): string {

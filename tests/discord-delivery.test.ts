@@ -9,7 +9,7 @@ import { discordMessageSource, handleDiscordMessage } from "../src/lib/discord.j
 import { parseDiscordTarget } from "../src/lib/discord-delivery.js";
 import { ACTIVITY_LOG_FILE } from "../src/lib/logging.js";
 import { logsDir } from "../src/lib/paths.js";
-import type { Endpoint } from "../src/lib/types.js";
+import type { AgentRunResult, Endpoint } from "../src/lib/types.js";
 
 vi.mock("../src/lib/assistant.js", () => ({
   handleAssistantRequest: vi.fn()
@@ -19,6 +19,7 @@ const cleanupPaths: string[] = [];
 
 describe("discord delivery", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.clearAllMocks();
 
     for (const target of cleanupPaths.splice(0)) {
@@ -90,6 +91,45 @@ describe("discord delivery", () => {
       }
     });
   });
+
+  it("keeps Discord typing active while the agent is running", async () => {
+    vi.useFakeTimers();
+
+    const home = tempHome();
+    const message = fakeMessage();
+    const sendTyping = message.channel.sendTyping;
+    let resolveAgent: (result: AgentRunResult) => void;
+
+    vi.mocked(handleAssistantRequest).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveAgent = resolve;
+      })
+    );
+
+    const handled = handleDiscordMessage(home, endpoint, message);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(sendTyping).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(sendTyping).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(sendTyping).toHaveBeenCalledTimes(3);
+
+    resolveAgent!({
+      response: "done",
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+      resumed: true
+    });
+    await handled;
+
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(sendTyping).toHaveBeenCalledTimes(3);
+    expect(message.reply).toHaveBeenCalledWith({ content: "done" });
+  });
 });
 
 function messageSource(input: { channelId: string; guildId: string | null; authorId: string }) {
@@ -120,7 +160,12 @@ function mockHandleAssistantRequest(): {
   return handleAssistantRequest as unknown as ReturnType<typeof mockHandleAssistantRequest>;
 }
 
-function fakeMessage(options: { reply?: ReturnType<typeof vi.fn> } = {}): Message & { reply: ReturnType<typeof vi.fn> } {
+type FakeMessage = Message & {
+  channel: Message["channel"] & { sendTyping: ReturnType<typeof vi.fn> };
+  reply: ReturnType<typeof vi.fn>;
+};
+
+function fakeMessage(options: { reply?: ReturnType<typeof vi.fn> } = {}): FakeMessage {
   return {
     author: {
       bot: false,
@@ -144,7 +189,7 @@ function fakeMessage(options: { reply?: ReturnType<typeof vi.fn> } = {}): Messag
       }
     },
     reply: options.reply ?? vi.fn().mockResolvedValue(undefined)
-  } as unknown as Message & { reply: ReturnType<typeof vi.fn> };
+  } as unknown as FakeMessage;
 }
 
 function readActivityEvents(home: string): Array<{ event: string; metadata?: Record<string, unknown> }> {
