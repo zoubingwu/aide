@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { execa } from "execa";
 import { afterEach, describe, expect, it } from "vitest";
+import { discordPreparationGuide } from "../src/commands/endpoints.js";
 
 const cleanupPaths: string[] = [];
 
@@ -100,6 +101,13 @@ describe("CLI help", () => {
     expect(stdout).not.toContain("--channel <channel>");
     expect(stdout).not.toContain("--approval-shell");
     expect(stdout).not.toContain("--approval-writes");
+  });
+
+  it("mentions Discord history permissions in the setup guide", () => {
+    const guide = discordPreparationGuide();
+
+    expect(guide).toContain("Enable Message Content Intent");
+    expect(guide).toContain("Grant View Channel, Send Messages, and Read Message History");
   });
 
   it("shows endpoint config subcommands", async () => {

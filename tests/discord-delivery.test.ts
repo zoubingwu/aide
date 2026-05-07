@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { defaultCodexAgentConfig } from "../src/lib/config.js";
 import { handleAssistantRequest } from "../src/lib/assistant.js";
 import { chunkDiscordMessage, discordMessageSource, handleDiscordMessage } from "../src/lib/discord.js";
+import { startDiscordContextToolServer } from "../src/lib/discord-context-mcp.js";
 import { deliverDiscordMessage, parseDiscordTarget } from "../src/lib/discord-delivery.js";
 import { ACTIVITY_LOG_FILE } from "../src/lib/logging.js";
 import { logsDir } from "../src/lib/paths.js";
@@ -13,6 +14,10 @@ import type { AgentRunResult, Endpoint } from "../src/lib/types.js";
 
 vi.mock("../src/lib/assistant.js", () => ({
   handleAssistantRequest: vi.fn()
+}));
+
+vi.mock("../src/lib/discord-context-mcp.js", () => ({
+  startDiscordContextToolServer: vi.fn()
 }));
 
 const cleanupPaths: string[] = [];
@@ -170,6 +175,49 @@ describe("discord delivery", () => {
     expect(sendTyping).toHaveBeenCalledTimes(3);
     expect(message.reply).toHaveBeenCalledWith({ content: "done" });
   });
+
+  it("passes Discord metadata and context tools to the assistant", async () => {
+    const home = tempHome();
+    const stop = vi.fn().mockResolvedValue(undefined);
+    const message = fakeMessage({
+      id: "message-1",
+      reference: { messageId: "message-0" },
+      channel: {
+        id: "thread-1",
+        parentId: "parent-1",
+        isThread: () => true,
+        sendTyping: vi.fn()
+      } as FakeMessage["channel"] & { id: string; parentId: string; isThread: () => boolean },
+      channelId: "thread-1"
+    });
+    mockStartDiscordContextToolServer().mockResolvedValueOnce({
+      name: "aide-discord-context",
+      url: "http://127.0.0.1:43210/mcp",
+      stop
+    });
+    mockHandleAssistantRequest().mockResolvedValueOnce({
+      response: "done",
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+      resumed: true
+    });
+
+    await handleDiscordMessage(home, endpoint, message);
+
+    expect(handleAssistantRequest).toHaveBeenCalledWith(home, endpoint, "hello", "alice", {
+      source: "channel:thread-1",
+      metadata: [
+        { label: "Discord Message ID", value: "message-1" },
+        { label: "Discord Guild ID", value: "guild-1" },
+        { label: "Discord Channel ID", value: "parent-1" },
+        { label: "Discord Thread ID", value: "thread-1" },
+        { label: "Discord Reply To", value: "message-0" }
+      ],
+      toolServers: [{ name: "aide-discord-context", url: "http://127.0.0.1:43210/mcp" }]
+    });
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
 });
 
 function messageSource(input: { channelId: string; guildId: string | null; authorId: string }) {
@@ -200,22 +248,36 @@ function mockHandleAssistantRequest(): {
   return handleAssistantRequest as unknown as ReturnType<typeof mockHandleAssistantRequest>;
 }
 
+function mockStartDiscordContextToolServer(): {
+  mockResolvedValueOnce(value: unknown): ReturnType<typeof mockStartDiscordContextToolServer>;
+} {
+  return startDiscordContextToolServer as unknown as ReturnType<typeof mockStartDiscordContextToolServer>;
+}
+
 type FakeMessage = Message & {
   channel: Message["channel"] & { sendTyping: ReturnType<typeof vi.fn> };
   reply: ReturnType<typeof vi.fn>;
 };
 
-function fakeMessage(options: { reply?: ReturnType<typeof vi.fn> } = {}): FakeMessage {
+function fakeMessage(options: {
+  id?: string;
+  reference?: { messageId: string };
+  channel?: FakeMessage["channel"] & { id?: string; parentId?: string; isThread?: () => boolean };
+  channelId?: string;
+  reply?: ReturnType<typeof vi.fn>;
+} = {}): FakeMessage {
   return {
+    id: options.id ?? "message-1",
     author: {
       bot: false,
       id: "user-1",
       username: "alice"
     },
-    channel: {
+    channel: options.channel ?? {
+      id: "channel-1",
       sendTyping: vi.fn()
     },
-    channelId: "channel-1",
+    channelId: options.channelId ?? "channel-1",
     client: {
       user: {
         id: "bot-1"
@@ -228,6 +290,7 @@ function fakeMessage(options: { reply?: ReturnType<typeof vi.fn> } = {}): FakeMe
         has: vi.fn((id: string) => id === "bot-1")
       }
     },
+    reference: options.reference ?? null,
     reply: options.reply ?? vi.fn().mockResolvedValue(undefined)
   } as unknown as FakeMessage;
 }
