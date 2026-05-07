@@ -47,6 +47,20 @@ describe("config", () => {
 
     expect(fs.statSync(configPath(home)).mode & 0o777).toBe(0o600);
   });
+
+  it("tightens an existing config file when loading config", () => {
+    if (process.platform === "win32") {
+      return;
+    }
+
+    const home = tempHome();
+    ensureAideHome(home);
+    fs.chmodSync(configPath(home), 0o644);
+
+    loadConfig(home);
+
+    expect(fs.statSync(configPath(home)).mode & 0o777).toBe(0o600);
+  });
 });
 
 function tempHome(): string {

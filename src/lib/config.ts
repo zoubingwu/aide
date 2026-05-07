@@ -96,6 +96,8 @@ export function assertInitialized(home: string): void {
   if (!fs.existsSync(configPath(home))) {
     throw new Error("Aide is not initialized. Run `aide init` first.");
   }
+
+  secureConfigFile(home);
 }
 
 export function loadConfig(home: string): AideConfig {
