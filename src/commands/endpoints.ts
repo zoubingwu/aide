@@ -16,19 +16,24 @@ import {
   slugifyId
 } from "../lib/paths.js";
 import { inspectEndpointWorkspace, ensureEndpointWorkspace, endpointWorkspace } from "../lib/workspace.js";
-import type { AgentConfig, AgentProvider, CodexAgentConfig, CodexReasoningEffort, Endpoint } from "../lib/types.js";
+import type { AgentConfig, AgentProvider, CodexAgentConfig, CodexReasoningEffort, Endpoint, Provider } from "../lib/types.js";
 import type { CommandOptions } from "./options.js";
 import { homeFromOptions, stringOption } from "./options.js";
 
 const DEFAULT_DISCORD_ENDPOINT_ID = "discord";
 const REASONING_EFFORTS: CodexReasoningEffort[] = ["low", "medium", "high", "xhigh"];
+const ENDPOINT_PROVIDERS: Array<{ provider: Provider; label: string; description: string }> = [
+  { provider: "discord", label: "Discord", description: "Discord bot endpoint" }
+];
 
-export async function addEndpointCommand(provider: string, options: CommandOptions): Promise<void> {
-  if (provider !== "discord") {
-    throw new Error(`Provider ${provider} is not supported in MVP.`);
+export async function addEndpointCommand(options: CommandOptions): Promise<void> {
+  const provider = await resolveEndpointProvider(options);
+
+  switch (provider) {
+    case "discord":
+      await addDiscordEndpoint(options);
+      return;
   }
-
-  await addDiscordEndpoint(options);
 }
 
 export async function listEndpointsCommand(options: CommandOptions): Promise<void> {
@@ -184,6 +189,45 @@ async function addDiscordEndpoint(options: CommandOptions): Promise<void> {
   console.log(nextStepsGuide());
 }
 
+async function resolveEndpointProvider(options: CommandOptions): Promise<Provider> {
+  const provider = stringOption(options, "provider");
+
+  if (provider) {
+    return parseEndpointProvider(provider);
+  }
+
+  if (!process.stdin.isTTY) {
+    return "discord";
+  }
+
+  const response = await prompts({
+    type: "select",
+    name: "provider",
+    message: "Endpoint provider",
+    choices: ENDPOINT_PROVIDERS.map((endpointProvider) => ({
+      title: endpointProvider.label,
+      value: endpointProvider.provider,
+      description: endpointProvider.description
+    }))
+  });
+
+  if (typeof response.provider !== "string") {
+    throw new Error("Endpoint creation cancelled.");
+  }
+
+  return parseEndpointProvider(response.provider);
+}
+
+function parseEndpointProvider(value: string): Provider {
+  const provider = ENDPOINT_PROVIDERS.find((candidate) => candidate.provider === value);
+
+  if (provider) {
+    return provider.provider;
+  }
+
+  throw new Error(`Endpoint provider must be one of: ${ENDPOINT_PROVIDERS.map((candidate) => candidate.provider).join(", ")}.`);
+}
+
 async function agentFromOptions(options: CommandOptions): Promise<AgentConfig> {
   const provider = await resolveAgentProvider(options);
 
@@ -208,7 +252,7 @@ async function resolveAgentProvider(options: CommandOptions): Promise<AgentProvi
   const installedAgents = await detectInstalledAgents(agentCommand ? { codex: agentCommand } : {});
 
   if (installedAgents.length === 0) {
-    throw new Error("No supported CLI agent found. Install Codex CLI and run `aide endpoint add discord` again.");
+    throw new Error("No supported CLI agent found. Install Codex CLI and run `aide endpoint add` again.");
   }
 
   const response = await prompts({
