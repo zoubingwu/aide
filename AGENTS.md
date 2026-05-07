@@ -17,6 +17,7 @@ Aide is a TypeScript CLI package. Runtime code targets Node-compatible APIs and 
 - `src/lib/config.ts`: TOML config, JSON runtime state, JSON schedules data, and schema validation.
 - `src/lib/paths.ts`: Aide home, display paths, endpoint id helpers.
 - `src/lib/workspace.ts`: endpoint workspace creation and validation.
+- `src/lib/agents.ts`: supported CLI agent catalog, default agent config dispatch, and local install detection.
 - `src/lib/agent.ts`: agent provider dispatch and shared prompt construction.
 - `src/lib/codex-args.ts`: shared Codex default resume and fresh execution args.
 - `src/lib/codex.ts`: Codex provider args, execution, JSONL response extraction.
