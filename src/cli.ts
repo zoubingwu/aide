@@ -148,7 +148,8 @@ function runEndpointCli(argv: string[]): void {
   cli.option("--home <path>", "Aide home directory").help();
 
   cli
-    .command("add <provider>", "Add an endpoint")
+    .command("add", "Add an endpoint")
+    .option("--provider <provider>", "Endpoint provider")
     .option("--id <id>", "Endpoint id")
     .option("--token <token>", "Provider token")
     .option("--agent <provider>", "CLI agent provider")
@@ -172,7 +173,12 @@ function runEndpointCli(argv: string[]): void {
   cli.command("open <id>", "Open endpoint workspace").action(wrap(openEndpointCommand));
   cli.command("config", "Manage endpoint config").action(() => runEndpointConfigCli(["node", "aide endpoint config"]));
 
-  handleNoMatch(cli, cli.parse(argv));
+  try {
+    handleNoMatch(cli, cli.parse(argv));
+  } catch (error) {
+    console.error(endpointAddUnusedArgsMessage(argv, error) ?? errorMessage(error));
+    process.exitCode = 1;
+  }
 }
 
 function runEndpointConfigCli(argv: string[]): void {
@@ -316,6 +322,33 @@ function handleNoMatch(cli: ReturnType<typeof cac>, parsed: { args: readonly str
   }
 
   cli.outputHelp();
+}
+
+function endpointAddUnusedArgsMessage(argv: string[], error: unknown): string | undefined {
+  const message = errorMessage(error);
+
+  if (!message.startsWith("Unused args:")) {
+    return undefined;
+  }
+
+  const args = argv.slice(2);
+  const commandIndex = firstPositionalIndex(args);
+
+  if (commandIndex === undefined || args[commandIndex] !== "add") {
+    return undefined;
+  }
+
+  const argument = firstBacktickValue(message);
+
+  if (!argument) {
+    return "Unexpected endpoint add argument. Use --provider <provider> for scripted setup, or run `aide endpoint add`.";
+  }
+
+  return `Unexpected endpoint provider argument: ${argument}. Use --provider ${argument} for scripted setup, or run \`aide endpoint add\`.`;
+}
+
+function firstBacktickValue(value: string): string | undefined {
+  return value.match(/`([^`]+)`/)?.[1];
 }
 
 function wrap<T extends unknown[]>(handler: (...args: T) => Promise<void> | void) {

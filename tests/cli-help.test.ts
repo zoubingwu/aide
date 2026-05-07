@@ -49,7 +49,7 @@ describe("CLI help", () => {
   it("gets and sets config", async () => {
     const home = tempHome();
     await runCli("--home", home, "init");
-    await runCli("--home", home, "endpoint", "add", "discord", "--id", "discord-main", "--token", "test-token");
+    await runCli("--home", home, "endpoint", "add", "--id", "discord-main", "--token", "test-token");
 
     await runCli("--home", home, "config", "set", "endpoints.discord-main.agent.model", "gpt-5.4");
     await runCli("--home", home, "config", "set", "endpoints.discord-main.agent.reasoningEffort", "high");
@@ -81,15 +81,16 @@ describe("CLI help", () => {
   it("shows endpoint subcommands", async () => {
     const { stdout } = await runCli("endpoint", "--help");
 
-    expect(stdout).toContain("add <provider>  Add an endpoint");
-    expect(stdout).toContain("config          Manage endpoint config");
+    expect(stdout).toContain("add          Add an endpoint");
+    expect(stdout).toContain("config       Manage endpoint config");
     expect(stdout).toContain("aide endpoint add --help");
   });
 
   it("shows endpoint add options", async () => {
     const { stdout } = await runCli("endpoint", "add", "--help");
 
-    expect(stdout).toContain("$ aide endpoint add <provider>");
+    expect(stdout).toContain("$ aide endpoint add");
+    expect(stdout).toContain("--provider <provider>");
     expect(stdout).toContain("--token <token>");
     expect(stdout).toContain("--id <id>");
     expect(stdout).toContain("--agent <provider>");
@@ -282,7 +283,6 @@ describe("CLI help", () => {
       home,
       "endpoint",
       "add",
-      "discord",
       "--id",
       "discord-agent-ops",
       "--token",
@@ -309,15 +309,40 @@ describe("CLI help", () => {
     const home = tempHome();
     await runCli("--home", home, "init");
 
-    await expect(runCli("--home", home, "endpoint", "add", "discord", "--token", "test-token")).rejects.toMatchObject({
+    await expect(runCli("--home", home, "endpoint", "add", "--token", "test-token")).rejects.toMatchObject({
       stderr: expect.stringContaining("Missing endpoint id. Provide --id <id>.")
     });
+  });
+
+  it("rejects unsupported endpoint providers", async () => {
+    const home = tempHome();
+    await runCli("--home", home, "init");
+
+    await expect(
+      runCli("--home", home, "endpoint", "add", "--provider", "slack", "--id", "chat", "--token", "test-token")
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining("Endpoint provider must be one of: discord.")
+    });
+  });
+
+  it("rejects positional endpoint providers for add", async () => {
+    const home = tempHome();
+    await runCli("--home", home, "init");
+
+    await expect(
+      runCli("--home", home, "endpoint", "add", "slack", "--id", "chat", "--token", "test-token")
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining("Unexpected endpoint provider argument: slack.")
+    });
+
+    const configToml = fs.readFileSync(path.join(home, "config.toml"), "utf8");
+    expect(configToml).toContain("endpoints = []");
   });
 
   it("logs hidden runtime startup errors", async () => {
     const home = tempHome();
     await runCli("--home", home, "init");
-    await runCli("--home", home, "endpoint", "add", "discord", "--id", "broken", "--token", "test-token");
+    await runCli("--home", home, "endpoint", "add", "--id", "broken", "--token", "test-token");
     fs.rmSync(path.join(home, "workspace", "broken"), { recursive: true, force: true });
 
     await expect(runCli("--home", home, "start")).rejects.toMatchObject({

@@ -45,12 +45,13 @@ aide --help
 
 ```bash
 aide init
-aide endpoint add discord
+aide endpoint add
 aide start
 ```
 
 The setup asks for:
 
+- An endpoint provider. Discord is the currently runnable endpoint.
 - An endpoint id, used to name this assistant surface and its local settings.
 - A Discord bot token, stored in `~/.aide/config.toml`.
 - A locally installed CLI agent. Codex is the currently runnable agent.

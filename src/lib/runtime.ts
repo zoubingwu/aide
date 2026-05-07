@@ -19,7 +19,7 @@ export async function startRuntimeInBackground(home: string): Promise<void> {
   }
 
   if (endpoints.length === 0) {
-    console.log("No enabled endpoints. Add one with `aide endpoint add discord --id <id> --token <token>`.");
+    console.log("No enabled endpoints. Add one with `aide endpoint add --id <id> --token <token>`.");
     return;
   }
 
@@ -93,7 +93,7 @@ export async function startRuntime(home: string): Promise<void> {
   }
 
   if (endpoints.length === 0) {
-    console.log("No enabled endpoints. Add one with `aide endpoint add discord --id <id> --token <token>`.");
+    console.log("No enabled endpoints. Add one with `aide endpoint add --id <id> --token <token>`.");
     return;
   }
 
