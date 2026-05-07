@@ -16,7 +16,7 @@ export async function handleAssistantRequest(
   context: AssistantRequestContext = {}
 ): Promise<AgentRunResult> {
   assertEndpointWorkspace(home, endpoint);
-  const prompt = makeAssistantPrompt(endpoint, message, author, context);
+  const prompt = makeAssistantPrompt(message, author, context);
   const workspace = endpointWorkspace(home, endpoint);
 
   appendActivityLog(home, endpointActivity(home, endpoint, "message_received", { author }));
