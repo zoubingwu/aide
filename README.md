@@ -4,7 +4,7 @@ Turn the coding agent you already use into an always-available assistant.
 
 Aide gives long-lived coding agents a home outside the terminal. Point it at the Codex, Claude Code, opencode, or similar setup you have already tuned: skills, tools, auth, working directories, memory, and operating habits.
 
-The core idea is simple: your coding agent is already a strong general-purpose agent. Aide lets you bring that agent into chat, scheduled work, and context-specific workspaces, so the same assistant can help with engineering tasks, research, operations, writing, planning, and daily briefs.
+The core idea is simple: your coding agent is already a strong general-purpose agent. Aide lets you bring that agent into chat and scheduled work, so the same assistant can help with engineering tasks, research, operations, writing, planning, and daily briefs.
 
 Aide's bet is that mature coding-agent CLIs already contain the hard parts of useful agents. The product layer should stay thin: route requests, run the CLI, deliver the result.
 
@@ -14,7 +14,6 @@ Use Aide when you want:
 
 - A personal assistant powered by your existing coding agent configuration.
 - Chat-based access to the agent that already knows your tools and preferences.
-- Separate workspaces for different projects, teams, bots, or roles.
 - Scheduled prompts for briefs, reminders, checks, and recurring workflows.
 - A thin and stable runtime that keeps the agent close to the CLI you already trust.
 
@@ -52,24 +51,10 @@ aide start
 
 The setup asks for:
 
-- An endpoint id, used for the workspace path and token key.
+- An endpoint id, used to name this assistant surface and its local settings.
 - A Discord bot token, stored in `~/.aide/.env.local`.
 
 After `aide start`, mention the bot in a Discord channel where it has access.
-
-## Workspace
-
-Each assistant context gets its own workspace under `~/.aide/workspace/`.
-
-```text
-~/.aide/workspace/<endpoint-id>/
-  SOUL.md
-  AGENTS.md
-```
-
-Use `SOUL.md` for stable assistant personality and preferences.
-
-Use `AGENTS.md` for context-specific rules, project notes, commands, and workflows. The agent runs from this workspace, so it can keep durable context just like a normal coding-agent session.
 
 ## Runtime Config
 
