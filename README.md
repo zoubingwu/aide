@@ -56,20 +56,27 @@ The setup asks for:
 
 After `aide start`, mention the bot in a Discord channel where it has access.
 
-## Runtime Config
+## Config
 
-Codex works out of the box:
+Endpoints bind a transport provider to a CLI agent:
 
 ```toml
 [runtime]
+startupTimeoutMs = 30000
+
+[[endpoints]]
+id = "discord"
+provider = "discord"
+enabled = true
+
+[endpoints.agent]
 provider = "codex"
 command = "codex"
-args = ["exec", "resume", "--last", "--json", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox"]
 model = "gpt-5.5"
 reasoningEffort = "medium"
 ```
 
-Edit `~/.aide/config.toml` to change the Codex command, model, or args.
+Edit `~/.aide/config.toml` to change endpoint agent command, model, or reasoning effort.
 
 ## Useful Commands
 
@@ -80,8 +87,8 @@ aide usage
 aide doctor
 
 aide config get
-aide config set runtime.model gpt-5.5
-aide config set runtime.reasoningEffort high
+aide config set endpoints.discord.agent.model gpt-5.5
+aide config set endpoints.discord.agent.reasoningEffort high
 
 aide endpoint list
 aide endpoint show <id>

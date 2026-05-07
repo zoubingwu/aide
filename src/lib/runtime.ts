@@ -86,7 +86,6 @@ export async function startRuntimeInBackground(home: string): Promise<void> {
 }
 
 export async function startRuntime(home: string): Promise<void> {
-  const config = loadConfig(home);
   const endpoints = loadEndpoints(home).filter((endpoint) => endpoint.enabled);
   const current = runtimeDisplayStatus(home);
 
@@ -105,8 +104,11 @@ export async function startRuntime(home: string): Promise<void> {
 
   appendRuntimeLog(home, "runtime_starting", {
     pid: process.pid,
-    provider: config.runtime.provider,
-    command: config.runtime.command
+    agents: endpoints.map((endpoint) => ({
+      endpoint: endpoint.id,
+      provider: endpoint.agent.provider,
+      command: endpoint.agent.command
+    }))
   });
 
   const clients = new Map<string, Client>();

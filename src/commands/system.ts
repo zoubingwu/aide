@@ -5,14 +5,13 @@ import { agentProviderLabel } from "../lib/agent.js";
 import {
   configPath,
   displayPath,
-  endpointsPath,
   logsDir,
   runtimePath,
   schedulesPath,
   usagePath,
   workspaceDir
 } from "../lib/paths.js";
-import { ensureAideHome, loadConfig, loadEndpoints, loadRuntimeState } from "../lib/config.js";
+import { ensureAideHome, loadEndpoints, loadRuntimeState } from "../lib/config.js";
 import { checkMark, printTable, statusLabel } from "../lib/format.js";
 import { ACTIVITY_LOG_FILE, RUNTIME_LOG_FILE, readLastLines } from "../lib/logging.js";
 import { runtimeDisplayStatus, isPidAlive } from "../lib/runtime-state.js";
@@ -31,12 +30,9 @@ export async function initCommand(options: CommandOptions): Promise<void> {
 
 export async function statusCommand(options: CommandOptions): Promise<void> {
   const home = homeFromOptions(options);
-  const config = loadConfig(home);
   const endpoints = loadEndpoints(home);
   const runtime = runtimeDisplayStatus(home);
   const usage = summarizeUsage(home);
-  const agentLabel = agentProviderLabel(config.runtime.provider);
-  const agentVersion = await readAgentVersion(config.runtime.command);
 
   console.log("Aide\n");
   console.log(`Home        ${displayPath(home)}`);
@@ -46,7 +42,6 @@ export async function statusCommand(options: CommandOptions): Promise<void> {
     console.log(`PID         ${runtime.pid}`);
   }
 
-  console.log(`Agent       ${agentLabel} (${agentVersion})`);
   console.log("\nEndpoints");
 
   if (endpoints.length === 0) {
@@ -55,9 +50,10 @@ export async function statusCommand(options: CommandOptions): Promise<void> {
     const rows = endpoints.map((endpoint) => [
       endpoint.id,
       endpoint.provider === "discord" ? "Discord" : endpoint.provider,
+      agentProviderLabel(endpoint.agent.provider),
       statusLabel(endpoint.enabled)
     ]);
-    console.log(printTable(["Endpoint", "Provider", "Status"], rows));
+    console.log(printTable(["Endpoint", "Provider", "Agent", "Status"], rows));
   }
 
   console.log("\nTokens");
@@ -121,8 +117,7 @@ function missingBasePathLabels(home: string): string[] {
   return [
     { label: "Aide home", path: home },
     { label: "config.toml", path: configPath(home) },
-    { label: "endpoints.toml", path: endpointsPath(home) },
-    { label: "schedules.toml", path: schedulesPath(home) },
+    { label: "schedules.json", path: schedulesPath(home) },
     { label: "runtime.json", path: runtimePath(home) },
     { label: "usage.jsonl", path: usagePath(home) },
     { label: "logs directory", path: logsDir(home) },
@@ -142,10 +137,8 @@ async function runDoctorChecks(home: string): Promise<DoctorCheck[]> {
   });
 
   const configExists = fs.existsSync(configPath(home));
-  const endpointsExists = fs.existsSync(endpointsPath(home));
   checks.push({ status: configExists ? "ok" : "fail", label: "config.toml" });
-  checks.push({ status: endpointsExists ? "ok" : "fail", label: "endpoints.toml" });
-  checks.push({ status: fs.existsSync(schedulesPath(home)) ? "ok" : "fail", label: "schedules.toml" });
+  checks.push({ status: fs.existsSync(schedulesPath(home)) ? "ok" : "fail", label: "schedules.json" });
   checks.push({ status: fs.existsSync(runtimePath(home)) ? "ok" : "fail", label: "runtime.json" });
   checks.push({ status: fs.existsSync(usagePath(home)) ? "ok" : "fail", label: "usage.jsonl" });
   checks.push({ status: fs.existsSync(workspaceDir(home)) ? "ok" : "fail", label: "workspace directory" });
@@ -156,15 +149,11 @@ async function runDoctorChecks(home: string): Promise<DoctorCheck[]> {
     detail: serviceSupported ? process.platform : "manual start supported"
   });
 
-  const config = configExists && endpointsExists ? loadConfig(home) : undefined;
-  const agentProvider = config?.runtime.provider ?? "codex";
-  const agentCommand = config?.runtime.command ?? "codex";
-  checks.push(await agentCheck(agentProvider, agentCommand));
-
-  if (configExists && endpointsExists) {
+  if (configExists) {
     const endpoints = loadEndpoints(home);
 
     for (const endpoint of endpoints) {
+      checks.push(await agentCheck(endpoint.agent.provider, endpoint.agent.command, endpoint.id));
       const workspace = inspectEndpointWorkspace(home, endpoint);
       checks.push({
         status: workspace.exists ? "ok" : "fail",
@@ -198,8 +187,8 @@ async function runDoctorChecks(home: string): Promise<DoctorCheck[]> {
   return checks;
 }
 
-async function agentCheck(provider: AgentProvider, command: string): Promise<DoctorCheck> {
-  const label = `${agentProviderLabel(provider)} CLI`;
+async function agentCheck(provider: AgentProvider, command: string, endpointId: string): Promise<DoctorCheck> {
+  const label = `${endpointId} ${agentProviderLabel(provider)} CLI`;
   const result = await execa(command, ["--version"], { reject: false });
 
   if (result.exitCode === 0) {
@@ -211,9 +200,4 @@ async function agentCheck(provider: AgentProvider, command: string): Promise<Doc
     label,
     detail: `Install ${agentProviderLabel(provider)} and run \`aide doctor\` again.`
   };
-}
-
-async function readAgentVersion(command: string): Promise<string> {
-  const result = await execa(command, ["--version"], { reject: false });
-  return result.exitCode === 0 ? result.stdout.trim() : "missing";
 }

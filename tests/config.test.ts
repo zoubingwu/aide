@@ -2,9 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { defaultCodexResumeArgs } from "../src/lib/codex-args.js";
 import { ensureAideHome, loadConfig, loadEndpoints } from "../src/lib/config.js";
-import { configPath, endpointsPath, logsDir, schedulesPath, usagePath, workspaceDir } from "../src/lib/paths.js";
+import { configPath, logsDir, schedulesPath, usagePath, workspaceDir } from "../src/lib/paths.js";
 
 const cleanupPaths: string[] = [];
 
@@ -21,16 +20,14 @@ describe("config", () => {
     ensureAideHome(home);
 
     expect(fs.existsSync(configPath(home))).toBe(true);
-    expect(fs.existsSync(endpointsPath(home))).toBe(true);
     expect(fs.existsSync(schedulesPath(home))).toBe(true);
+    expect(path.basename(schedulesPath(home))).toBe("schedules.json");
     expect(fs.existsSync(usagePath(home))).toBe(true);
     expect(fs.readFileSync(usagePath(home), "utf8")).toBe("");
     expect(fs.existsSync(logsDir(home))).toBe(true);
     expect(fs.existsSync(workspaceDir(home))).toBe(true);
-    expect(loadConfig(home).runtime.provider).toBe("codex");
-    expect(loadConfig(home).runtime.model).toBe("gpt-5.5");
-    expect(loadConfig(home).runtime.reasoningEffort).toBe("medium");
-    expect(loadConfig(home).runtime.args).toEqual(defaultCodexResumeArgs());
+    expect(loadConfig(home).runtime.startupTimeoutMs).toBe(30_000);
+    expect(loadConfig(home).endpoints).toEqual([]);
     expect(loadEndpoints(home)).toEqual([]);
   });
 });

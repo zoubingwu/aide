@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { agentProviderLabel, makeAssistantPrompt } from "../src/lib/agent.js";
+import { defaultCodexAgentConfig } from "../src/lib/config.js";
+import type { Endpoint } from "../src/lib/types.js";
+
+const endpoint: Endpoint = {
+  id: "discord-agent-ops",
+  provider: "discord",
+  enabled: true,
+  agent: defaultCodexAgentConfig()
+};
 
 describe("agent", () => {
   it("labels the default Codex provider", () => {
@@ -8,11 +17,7 @@ describe("agent", () => {
 
   it("builds the shared assistant prompt without CLI-specific fields", () => {
     const prompt = makeAssistantPrompt(
-      {
-        id: "discord-agent-ops",
-        provider: "discord",
-        enabled: true
-      },
+      endpoint,
       "hello",
       "alice"
     );
@@ -28,11 +33,7 @@ describe("agent", () => {
 
   it("includes the request source when provided", () => {
     const prompt = makeAssistantPrompt(
-      {
-        id: "discord-agent-ops",
-        provider: "discord",
-        enabled: true
-      },
+      endpoint,
       "schedule this daily",
       "alice",
       { source: "channel:123" }

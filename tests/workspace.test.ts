@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { defaultCodexAgentConfig } from "../src/lib/config.js";
 import { endpointWorkspacePath } from "../src/lib/paths.js";
 import { ensureEndpointWorkspace, inspectEndpointWorkspace } from "../src/lib/workspace.js";
 import type { Endpoint } from "../src/lib/types.js";
@@ -54,6 +55,7 @@ function makeEndpoint(): Endpoint {
   return {
     id: "discord-agent-ops",
     provider: "discord",
-    enabled: true
+    enabled: true,
+    agent: defaultCodexAgentConfig()
   };
 }

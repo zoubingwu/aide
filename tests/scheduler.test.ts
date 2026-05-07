@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ensureAideHome, writeEndpoints } from "../src/lib/config.js";
+import { defaultCodexAgentConfig, ensureAideHome, writeEndpoints } from "../src/lib/config.js";
 import { RUNTIME_LOG_FILE } from "../src/lib/logging.js";
 import { logsDir, schedulesPath } from "../src/lib/paths.js";
 import { executeScheduleOnce, RuntimeScheduler } from "../src/lib/scheduler.js";
@@ -48,25 +48,25 @@ describe("scheduler execution", () => {
     writeEndpoints(home, [endpoint]);
     fs.writeFileSync(
       schedulesPath(home),
-      `[[schedules]]
-id = "pay-rent"
-endpoint = "discord-main"
-enabled = true
-kind = "once"
-runAt = "2026-05-10T10:00:00+08:00"
-target = "user:987"
-message = "Remind me to pay rent."
-
-[[schedules]]
-id = "bad-timezone"
-endpoint = "discord-main"
-enabled = true
-kind = "daily"
-time = "09:00"
-timezone = "Europe/Lnodon"
-target = "channel:123"
-message = "Generate my daily brief."
-`
+      JSON.stringify(
+        {
+          schedules: [
+            schedule,
+            {
+              id: "bad-timezone",
+              endpoint: "discord-main",
+              enabled: true,
+              kind: "daily",
+              time: "09:00",
+              timezone: "Europe/Lnodon",
+              target: "channel:123",
+              message: "Generate my daily brief."
+            }
+          ]
+        },
+        null,
+        2
+      )
     );
 
     await executeScheduleOnce({
@@ -79,8 +79,8 @@ message = "Generate my daily brief."
     });
 
     const content = fs.readFileSync(schedulesPath(home), "utf8");
-    expect(content).not.toContain('id = "pay-rent"');
-    expect(content).toContain('id = "bad-timezone"');
+    expect(content).not.toContain('"id": "pay-rent"');
+    expect(content).toContain('"id": "bad-timezone"');
   });
 
   it("keeps a once schedule after delivery failure", async () => {
@@ -236,16 +236,24 @@ message = "Generate my daily brief."
     ensureAideHome(home);
     fs.writeFileSync(
       schedulesPath(home),
-      `[[schedules]]
-id = "bad-timezone"
-endpoint = "discord-main"
-enabled = true
-kind = "daily"
-time = "09:00"
-timezone = "Europe/Lnodon"
-target = "channel:123"
-message = "Generate my daily brief."
-`
+      JSON.stringify(
+        {
+          schedules: [
+            {
+              id: "bad-timezone",
+              endpoint: "discord-main",
+              enabled: true,
+              kind: "daily",
+              time: "09:00",
+              timezone: "Europe/Lnodon",
+              target: "channel:123",
+              message: "Generate my daily brief."
+            }
+          ]
+        },
+        null,
+        2
+      )
     );
 
     const scheduler = new RuntimeScheduler({ home, endpoints: [discordEndpoint()], clients: new Map() });
@@ -259,7 +267,7 @@ message = "Generate my daily brief."
 });
 
 function discordEndpoint(): Endpoint {
-  return { id: "discord-main", provider: "discord", enabled: true };
+  return { id: "discord-main", provider: "discord", enabled: true, agent: defaultCodexAgentConfig() };
 }
 
 function onceSchedule(): Schedule {

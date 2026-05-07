@@ -17,7 +17,7 @@ describe("CLI help", () => {
     const { stdout } = await runCli("--help");
 
     expect(stdout).toContain("start     Start Aide runtime in the background");
-    expect(stdout).toContain("config    Manage runtime config");
+    expect(stdout).toContain("config    Manage config");
     expect(stdout).toContain("help      Show detailed help");
     expect(stdout).toContain("usage     Show usage");
   });
@@ -32,43 +32,44 @@ describe("CLI help", () => {
   it("repairs missing base paths with doctor fix", async () => {
     const home = tempHome();
     await runCli("--home", home, "init");
-    fs.rmSync(path.join(home, "schedules.toml"), { force: true });
+    fs.rmSync(path.join(home, "schedules.json"), { force: true });
     fs.rmSync(path.join(home, "runtime.json"), { force: true });
     fs.rmSync(path.join(home, "logs"), { recursive: true, force: true });
 
     const { stdout } = await runCli("--home", home, "doctor", "--fix");
 
-    expect(stdout).toContain("Fixed missing Aide base paths: schedules.toml, runtime.json, logs directory.");
-    expect(stdout).toContain("✓ schedules.toml");
+    expect(stdout).toContain("Fixed missing Aide base paths: schedules.json, runtime.json, logs directory.");
+    expect(stdout).toContain("✓ schedules.json");
     expect(stdout).toContain("✓ runtime.json");
-    expect(fs.existsSync(path.join(home, "schedules.toml"))).toBe(true);
+    expect(fs.existsSync(path.join(home, "schedules.json"))).toBe(true);
     expect(fs.existsSync(path.join(home, "runtime.json"))).toBe(true);
     expect(fs.existsSync(path.join(home, "logs"))).toBe(true);
   });
 
-  it("gets and sets runtime config", async () => {
+  it("gets and sets config", async () => {
     const home = tempHome();
     await runCli("--home", home, "init");
+    await runCli("--home", home, "endpoint", "add", "discord", "--id", "discord-main", "--token", "test-token");
 
-    await runCli("--home", home, "config", "set", "runtime.model", "gpt-5.4");
-    await runCli("--home", home, "config", "set", "runtime.reasoningEffort", "high");
-    await runCli("--home", home, "config", "set", "runtime.args", "[\"exec\",\"--json\",\"--skip-git-repo-check\"]");
+    await runCli("--home", home, "config", "set", "endpoints.discord-main.agent.model", "gpt-5.4");
+    await runCli("--home", home, "config", "set", "endpoints.discord-main.agent.reasoningEffort", "high");
+    await runCli("--home", home, "config", "set", "runtime.startupTimeoutMs", "45000");
 
-    const model = await runCli("--home", home, "config", "get", "runtime.model");
+    const model = await runCli("--home", home, "config", "get", "endpoints.discord-main.agent.model");
     const config = fs.readFileSync(path.join(home, "config.toml"), "utf8");
 
-    expect(model.stdout).toContain('runtime.model = "gpt-5.4"');
+    expect(model.stdout).toContain('endpoints.discord-main.agent.model = "gpt-5.4"');
     expect(config).toContain('model = "gpt-5.4"');
     expect(config).toContain('reasoningEffort = "high"');
-    expect(config).toContain('args = [ "exec", "--json", "--skip-git-repo-check" ]');
+    expect(config).toContain("startupTimeoutMs = 45_000");
   });
 
   it("shows config help examples", async () => {
     const { stdout } = await runCli("config", "set", "--help");
 
-    expect(stdout).toContain("runtime.model");
-    expect(stdout).toContain("runtime.args");
-    expect(stdout).toContain("aide config set runtime.reasoningEffort high");
+    expect(stdout).toContain("endpoints.<id>.agent.model");
+    expect(stdout).toContain("endpoints.<id>.agent.reasoningEffort");
+    expect(stdout).toContain("aide config set endpoints.discord.agent.reasoningEffort high");
   });
 
   it("shows endpoint subcommands", async () => {
@@ -85,6 +86,8 @@ describe("CLI help", () => {
     expect(stdout).toContain("$ aide endpoint add <provider>");
     expect(stdout).toContain("--token <token>");
     expect(stdout).toContain("--id <id>");
+    expect(stdout).toContain("--agent <provider>");
+    expect(stdout).toContain("--model <model>");
     expect(stdout).not.toContain("--name <name>");
     expect(stdout).not.toContain("--server <server>");
     expect(stdout).not.toContain("--channel <channel>");
@@ -144,11 +147,11 @@ describe("CLI help", () => {
     );
 
     const { stdout } = await runCli("--home", home, "schedule", "show", "--id", "failed-jobs");
-    const schedules = fs.readFileSync(path.join(home, "schedules.toml"), "utf8");
+    const schedules = fs.readFileSync(path.join(home, "schedules.json"), "utf8");
 
     expect(stdout).toContain("Kind       cron");
     expect(stdout).toContain("Cron       */15 * * * *");
-    expect(schedules).toContain('cron = "*/15 * * * *"');
+    expect(schedules).toContain('"cron": "*/15 * * * *"');
   });
 
   it("adds and lists a daily schedule", async () => {
@@ -257,7 +260,7 @@ describe("CLI help", () => {
 
     expect(stdout).toContain("Aide Agent Guide");
     expect(stdout).toContain("Source: channel:<id>");
-    expect(stdout).toContain("aide config set runtime.model gpt-5.5");
+    expect(stdout).toContain("aide config set endpoints.discord.agent.model gpt-5.5");
     expect(stdout).toContain("aide schedule add <prompt>");
     expect(stdout).toContain("Agents should prefer --kind cron with --cron for exact schedules.");
     expect(stdout).toContain("Agents should use --kind once with --run-at for delayed reminders");
@@ -283,11 +286,13 @@ describe("CLI help", () => {
     const { stdout } = await runCli("--home", home, "endpoint", "list");
     expect(stdout).toContain("discord-agent-ops");
 
-    const endpointsToml = fs.readFileSync(path.join(home, "endpoints.toml"), "utf8");
-    expect(endpointsToml).toContain('id = "discord-agent-ops"');
-    expect(endpointsToml).not.toContain("workspacePath");
-    expect(endpointsToml).not.toContain("routing");
-    expect(endpointsToml).not.toContain("permissions");
+    const configToml = fs.readFileSync(path.join(home, "config.toml"), "utf8");
+    expect(configToml).toContain('id = "discord-agent-ops"');
+    expect(configToml).toContain('provider = "codex"');
+    expect(configToml).toContain('command = "codex"');
+    expect(configToml).not.toContain("workspacePath");
+    expect(configToml).not.toContain("routing");
+    expect(configToml).not.toContain("permissions");
   });
 
   it("requires endpoint id for scripted Discord add", async () => {

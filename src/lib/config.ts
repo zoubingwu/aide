@@ -5,15 +5,13 @@ import { z } from "zod";
 import {
   configPath,
   displayPath,
-  endpointsPath,
   logsDir,
   runtimePath,
   schedulesPath,
   usagePath,
   workspaceDir
 } from "./paths.js";
-import { defaultCodexResumeArgs } from "./codex-args.js";
-import type { AideConfig, Endpoint, EndpointsFile, RuntimeConfig, RuntimeState } from "./types.js";
+import type { AideConfig, CodexAgentConfig, Endpoint, RuntimeConfig, RuntimeState } from "./types.js";
 
 const DEFAULT_RUNTIME_MODEL = "gpt-5.5";
 const DEFAULT_REASONING_EFFORT = "medium";
@@ -21,27 +19,21 @@ const DEFAULT_REASONING_EFFORT = "medium";
 const codexReasoningEffortSchema = z.enum(["low", "medium", "high", "xhigh"]);
 
 const runtimeConfigSchema = z.object({
-  provider: z.literal("codex").default("codex"),
-  command: z.string().min(1).default("codex"),
-  args: z.array(z.string()).default(defaultCodexResumeArgs),
-  model: z.string().min(1).default(DEFAULT_RUNTIME_MODEL),
-  reasoningEffort: codexReasoningEffortSchema.default(DEFAULT_REASONING_EFFORT),
   startupTimeoutMs: z.number().int().positive().default(30_000)
 });
 
-const configSchema = z.object({
-  home: z.string().min(1),
-  runtime: runtimeConfigSchema.default(defaultRuntimeConfig)
+const codexAgentConfigSchema = z.object({
+  provider: z.literal("codex").default("codex"),
+  command: z.string().min(1).default("codex"),
+  model: z.string().min(1).default(DEFAULT_RUNTIME_MODEL),
+  reasoningEffort: codexReasoningEffortSchema.default(DEFAULT_REASONING_EFFORT)
 });
 
 const endpointSchema = z.object({
   id: z.string().min(1),
   provider: z.literal("discord"),
-  enabled: z.boolean()
-});
-
-const endpointsFileSchema = z.object({
-  endpoints: z.array(endpointSchema).default([])
+  enabled: z.boolean(),
+  agent: codexAgentConfigSchema.default(defaultCodexAgentConfig)
 });
 
 const runtimeStateSchema = z.object({
@@ -51,21 +43,32 @@ const runtimeStateSchema = z.object({
   startedAt: z.string().optional()
 });
 
+const configSchema = z.object({
+  home: z.string().min(1),
+  runtime: runtimeConfigSchema.default(defaultRuntimeConfig),
+  endpoints: z.array(endpointSchema).default([])
+});
+
 export function defaultConfig(home: string): AideConfig {
   return {
     home: displayPath(home),
-    runtime: defaultRuntimeConfig()
+    runtime: defaultRuntimeConfig(),
+    endpoints: []
   };
 }
 
 function defaultRuntimeConfig(): RuntimeConfig {
   return {
+    startupTimeoutMs: 30_000
+  };
+}
+
+export function defaultCodexAgentConfig(): CodexAgentConfig {
+  return {
     provider: "codex",
     command: "codex",
-    args: defaultCodexResumeArgs(),
     model: DEFAULT_RUNTIME_MODEL,
-    reasoningEffort: DEFAULT_REASONING_EFFORT,
-    startupTimeoutMs: 30_000
+    reasoningEffort: DEFAULT_REASONING_EFFORT
   };
 }
 
@@ -82,14 +85,13 @@ export function ensureAideHome(home: string): void {
   fs.mkdirSync(workspaceDir(home), { recursive: true });
 
   writeFileIfMissing(configPath(home), stringifyToml(defaultConfig(home)));
-  writeFileIfMissing(endpointsPath(home), stringifyToml({ endpoints: [] }));
-  writeFileIfMissing(schedulesPath(home), stringifyToml({ schedules: [] }));
+  writeFileIfMissing(schedulesPath(home), stringifyJson({ schedules: [] }));
   writeFileIfMissing(runtimePath(home), stringifyJson(defaultRuntimeState(home)));
   writeFileIfMissing(usagePath(home), "");
 }
 
 export function assertInitialized(home: string): void {
-  if (!fs.existsSync(configPath(home)) || !fs.existsSync(endpointsPath(home))) {
+  if (!fs.existsSync(configPath(home))) {
     throw new Error("Aide is not initialized. Run `aide init` first.");
   }
 }
@@ -104,13 +106,12 @@ export function writeConfig(home: string, config: AideConfig): void {
 }
 
 export function loadEndpoints(home: string): Endpoint[] {
-  assertInitialized(home);
-  return endpointsFileSchema.parse(readToml(endpointsPath(home))).endpoints;
+  return loadConfig(home).endpoints;
 }
 
 export function writeEndpoints(home: string, endpoints: Endpoint[]): void {
-  const body: EndpointsFile = { endpoints };
-  fs.writeFileSync(endpointsPath(home), stringifyToml(endpointsFileSchema.parse(body)));
+  const config = loadConfig(home);
+  writeConfig(home, { ...config, endpoints });
 }
 
 export function loadRuntimeState(home: string): RuntimeState {
@@ -160,7 +161,7 @@ export function stringifyToml(value: unknown): string {
   return `${TOML.stringify(value as Parameters<typeof TOML.stringify>[0])}\n`;
 }
 
-function readJson(filePath: string, fallback: unknown): unknown {
+export function readJson(filePath: string, fallback: unknown): unknown {
   if (!fs.existsSync(filePath)) {
     return fallback;
   }
@@ -174,7 +175,7 @@ function readJson(filePath: string, fallback: unknown): unknown {
   return JSON.parse(content);
 }
 
-function stringifyJson(value: unknown): string {
+export function stringifyJson(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 

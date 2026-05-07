@@ -1,4 +1,4 @@
-import type { AideConfig, AgentProvider, AgentRunResult, Endpoint } from "./types.js";
+import type { AgentProvider, AgentRunResult, Endpoint } from "./types.js";
 import { runCodex } from "./codex.js";
 
 export interface AssistantPromptContext {
@@ -18,15 +18,14 @@ ${message}`;
 }
 
 export async function runAgent(
-  config: AideConfig,
   home: string,
   workspace: string,
   endpoint: Endpoint,
   prompt: string
 ): Promise<AgentRunResult> {
-  switch (config.runtime.provider) {
+  switch (endpoint.agent.provider) {
     case "codex":
-      return runCodex(config, home, workspace, endpoint, prompt);
+      return runCodex(home, workspace, endpoint, prompt);
   }
 }
 

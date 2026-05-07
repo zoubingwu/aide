@@ -1,5 +1,4 @@
 import { makeAssistantPrompt, runAgent } from "./agent.js";
-import { loadConfig } from "./config.js";
 import { appendActivityLog, endpointActivity } from "./logging.js";
 import { estimateTokens, addCodexUsage, addEstimatedUsage } from "./usage.js";
 import { assertEndpointWorkspace, endpointWorkspace } from "./workspace.js";
@@ -17,14 +16,13 @@ export async function handleAssistantRequest(
   context: AssistantRequestContext = {}
 ): Promise<AgentRunResult> {
   assertEndpointWorkspace(home, endpoint);
-  const config = loadConfig(home);
   const prompt = makeAssistantPrompt(endpoint, message, author, context);
   const workspace = endpointWorkspace(home, endpoint);
 
   appendActivityLog(home, endpointActivity(home, endpoint, "message_received", { author }));
-  appendActivityLog(home, endpointActivity(home, endpoint, "agent_request", { provider: config.runtime.provider, workspace }));
+  appendActivityLog(home, endpointActivity(home, endpoint, "agent_request", { provider: endpoint.agent.provider, workspace }));
 
-  const result = await runAgent(config, home, workspace, endpoint, prompt);
+  const result = await runAgent(home, workspace, endpoint, prompt);
   const estimatedTokens = estimateTokens(prompt) + estimateTokens(result.response);
   const tokens = result.usageTokens ?? estimatedTokens;
 
@@ -36,7 +34,7 @@ export async function handleAssistantRequest(
 
   appendActivityLog(home, {
     ...endpointActivity(home, endpoint, "agent_response", {
-      provider: config.runtime.provider,
+      provider: endpoint.agent.provider,
       exitCode: result.exitCode,
       resumed: result.resumed
     }),

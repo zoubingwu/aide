@@ -1,16 +1,14 @@
 import type { Command } from "cac";
-import { defaultCodexResumeArgsJson } from "../lib/codex-args.js";
 import type { ScheduleKind, Weekday } from "../lib/types.js";
 
 export const SCHEDULE_KINDS = ["cron", "hourly", "daily", "weekly", "biweekly", "monthly", "once"] as const satisfies readonly ScheduleKind[];
 export const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"] as const satisfies readonly Weekday[];
 
 export const CONFIG_PATHS = [
-  "runtime.command",
-  "runtime.args",
-  "runtime.model",
-  "runtime.reasoningEffort",
-  "runtime.startupTimeoutMs"
+  "runtime.startupTimeoutMs",
+  "endpoints.<id>.agent.command",
+  "endpoints.<id>.agent.model",
+  "endpoints.<id>.agent.reasoningEffort"
 ] as const;
 
 export const SCHEDULE_KIND_LIST = SCHEDULE_KINDS.join(" | ");
@@ -19,10 +17,10 @@ export const CONFIG_PATH_LIST = CONFIG_PATHS.join(" | ");
 
 export const CONFIG_EXAMPLES = [
   "aide config get",
-  "aide config get runtime.model",
-  "aide config set runtime.model gpt-5.5",
-  "aide config set runtime.reasoningEffort high",
-  `aide config set runtime.args '${defaultCodexResumeArgsJson()}'`
+  "aide config get endpoints.discord.agent.model",
+  "aide config set endpoints.discord.agent.model gpt-5.5",
+  "aide config set endpoints.discord.agent.reasoningEffort high",
+  "aide config set runtime.startupTimeoutMs 30000"
 ];
 
 export const SCHEDULE_ADD_EXAMPLES = [
@@ -48,17 +46,16 @@ export function agentHelpCommand(): void {
 function agentHelpText(): string {
   return `Aide Agent Guide
 
-Use the aide CLI when asked to inspect or change Aide settings. Prefer exact commands over editing TOML directly.
+Use the aide CLI when asked to inspect or change Aide settings. Prefer exact commands over direct config edits.
 
 When the prompt includes Source: channel:<id> or Source: user:<id>, use that source as the default schedule --target unless the user asks for another target.
 
 Config
-- Get all runtime config: aide config get
+- Get all config: aide config get
 - Get one value: aide config get <path>
 - Set one value: aide config set <path> <value>
 - Paths: ${CONFIG_PATH_LIST}
-- runtime.args value must be a JSON array of strings.
-- runtime.command, runtime.args, runtime.model, and runtime.reasoningEffort apply on the next agent request.
+- Endpoint agent command, model, and reasoning effort apply on the next agent request.
 - runtime.startupTimeoutMs applies on the next start or restart.
 
 Config examples
