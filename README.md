@@ -62,9 +62,6 @@ After `aide start`, mention the bot in a Discord channel where it has access.
 Endpoints bind a transport provider to a CLI agent:
 
 ```toml
-[runtime]
-startupTimeoutMs = 30000
-
 [[endpoints]]
 id = "discord"
 provider = "discord"

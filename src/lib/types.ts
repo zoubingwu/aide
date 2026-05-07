@@ -3,10 +3,6 @@ export type AgentProvider = "codex";
 export type CodexReasoningEffort = "low" | "medium" | "high" | "xhigh";
 export type RuntimeStatus = "running" | "stopped";
 
-export interface RuntimeConfig {
-  startupTimeoutMs: number;
-}
-
 export interface CodexAgentConfig {
   provider: "codex";
   command: string;
@@ -15,12 +11,6 @@ export interface CodexAgentConfig {
 }
 
 export type AgentConfig = CodexAgentConfig;
-
-export interface AideConfig {
-  home: string;
-  runtime: RuntimeConfig;
-  endpoints: Endpoint[];
-}
 
 export interface Endpoint {
   id: string;

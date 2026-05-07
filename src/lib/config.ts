@@ -11,16 +11,12 @@ import {
   usagePath,
   workspaceDir
 } from "./paths.js";
-import type { AideConfig, CodexAgentConfig, Endpoint, RuntimeConfig, RuntimeState } from "./types.js";
+import type { CodexAgentConfig, Endpoint, RuntimeState } from "./types.js";
 
 const DEFAULT_RUNTIME_MODEL = "gpt-5.5";
 const DEFAULT_REASONING_EFFORT = "medium";
 
 const codexReasoningEffortSchema = z.enum(["low", "medium", "high", "xhigh"]);
-
-const runtimeConfigSchema = z.object({
-  startupTimeoutMs: z.number().int().positive().default(30_000)
-});
 
 const codexAgentConfigSchema = z.object({
   provider: z.literal("codex").default("codex"),
@@ -45,22 +41,14 @@ const runtimeStateSchema = z.object({
 });
 
 const configSchema = z.object({
-  home: z.string().min(1),
-  runtime: runtimeConfigSchema.default(defaultRuntimeConfig),
   endpoints: z.array(endpointSchema).default([])
 });
 
-export function defaultConfig(home: string): AideConfig {
-  return {
-    home: displayPath(home),
-    runtime: defaultRuntimeConfig(),
-    endpoints: []
-  };
-}
+export type AideConfig = z.infer<typeof configSchema>;
 
-function defaultRuntimeConfig(): RuntimeConfig {
+export function defaultConfig(): AideConfig {
   return {
-    startupTimeoutMs: 30_000
+    endpoints: []
   };
 }
 
@@ -85,7 +73,7 @@ export function ensureAideHome(home: string): void {
   fs.mkdirSync(logsDir(home), { recursive: true });
   fs.mkdirSync(workspaceDir(home), { recursive: true });
 
-  writeFileIfMissing(configPath(home), `${stringifyToml(defaultConfig(home))}\n`, 0o600);
+  writeFileIfMissing(configPath(home), `${stringifyToml(defaultConfig())}\n`, 0o600);
   secureConfigFile(home);
   writeFileIfMissing(schedulesPath(home), `${JSON.stringify({ schedules: [] }, null, 2)}\n`);
   writeFileIfMissing(runtimePath(home), `${JSON.stringify(defaultRuntimeState(home), null, 2)}\n`);

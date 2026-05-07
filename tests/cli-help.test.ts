@@ -54,18 +54,19 @@ describe("CLI help", () => {
     await runCli("--home", home, "config", "set", "endpoints.discord-main.agent.model", "gpt-5.4");
     await runCli("--home", home, "config", "set", "endpoints.discord-main.agent.reasoningEffort", "high");
     await runCli("--home", home, "config", "set", "endpoints.discord-main.token", "new-token");
-    await runCli("--home", home, "config", "set", "runtime.startupTimeoutMs", "45000");
 
     const model = await runCli("--home", home, "config", "get", "endpoints.discord-main.agent.model");
     const token = await runCli("--home", home, "config", "get", "endpoints.discord-main.token");
+    const all = await runCli("--home", home, "config", "get");
     const config = fs.readFileSync(path.join(home, "config.toml"), "utf8");
 
     expect(model.stdout).toContain('endpoints.discord-main.agent.model = "gpt-5.4"');
     expect(token.stdout).toContain('endpoints.discord-main.token = "configured"');
+    expect(all.stdout).not.toContain("home");
     expect(config).toContain('model = "gpt-5.4"');
     expect(config).toContain('reasoningEffort = "high"');
     expect(config).toContain('token = "new-token"');
-    expect(config).toContain("startupTimeoutMs = 45000");
+    expect(config).not.toContain("home =");
   });
 
   it("shows config help examples", async () => {
