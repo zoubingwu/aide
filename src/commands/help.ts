@@ -6,6 +6,7 @@ export const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday",
 
 export const CONFIG_PATHS = [
   "runtime.startupTimeoutMs",
+  "endpoints.<id>.token",
   "endpoints.<id>.agent.command",
   "endpoints.<id>.agent.model",
   "endpoints.<id>.agent.reasoningEffort"
@@ -18,6 +19,7 @@ export const CONFIG_PATH_LIST = CONFIG_PATHS.join(" | ");
 export const CONFIG_EXAMPLES = [
   "aide config get",
   "aide config get endpoints.discord.agent.model",
+  "aide config set endpoints.discord.token <discord-bot-token>",
   "aide config set endpoints.discord.agent.model gpt-5.5",
   "aide config set endpoints.discord.agent.reasoningEffort high",
   "aide config set runtime.startupTimeoutMs 30000"
@@ -55,6 +57,7 @@ Config
 - Get one value: aide config get <path>
 - Set one value: aide config set <path> <value>
 - Paths: ${CONFIG_PATH_LIST}
+- Endpoint token changes apply on the next start or restart.
 - Endpoint agent command, model, and reasoning effort apply on the next agent request.
 - runtime.startupTimeoutMs applies on the next start or restart.
 

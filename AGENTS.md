@@ -17,7 +17,6 @@ Aide is a TypeScript CLI package. Runtime code targets Node-compatible APIs and 
 - `src/lib/config.ts`: TOML config, JSON runtime state, JSON schedules data, and schema validation.
 - `src/lib/paths.ts`: Aide home, display paths, endpoint id helpers.
 - `src/lib/workspace.ts`: endpoint workspace creation and validation.
-- `src/lib/secrets.ts`: Discord token fallback in env and `.env.local`.
 - `src/lib/agent.ts`: agent provider dispatch and shared prompt construction.
 - `src/lib/codex-args.ts`: shared Codex default resume and fresh execution args.
 - `src/lib/codex.ts`: Codex provider args, execution, JSONL response extraction.
@@ -38,7 +37,7 @@ Aide is a TypeScript CLI package. Runtime code targets Node-compatible APIs and 
 
 ## Development Rules
 
-Keep endpoint as the public concept and workspace as implementation detail. Prefer small command handlers and focused helpers over broad service classes. Use TOML helpers for config changes and keep secrets out of `config.toml`.
+Keep endpoint as the public concept and workspace as implementation detail. Prefer small command handlers and focused helpers over broad service classes. Use TOML helpers for config changes. Endpoint tokens live in `config.toml`; keep token values out of terminal output and commits.
 
 Run these checks before handoff:
 

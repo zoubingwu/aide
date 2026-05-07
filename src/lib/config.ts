@@ -33,6 +33,7 @@ const endpointSchema = z.object({
   id: z.string().min(1),
   provider: z.literal("discord"),
   enabled: z.boolean(),
+  token: z.string().min(1),
   agent: codexAgentConfigSchema.default(defaultCodexAgentConfig)
 });
 
@@ -84,7 +85,7 @@ export function ensureAideHome(home: string): void {
   fs.mkdirSync(logsDir(home), { recursive: true });
   fs.mkdirSync(workspaceDir(home), { recursive: true });
 
-  writeFileIfMissing(configPath(home), stringifyToml(defaultConfig(home)));
+  writeFileIfMissing(configPath(home), stringifyToml(defaultConfig(home)), 0o600);
   writeFileIfMissing(schedulesPath(home), stringifyJson({ schedules: [] }));
   writeFileIfMissing(runtimePath(home), stringifyJson(defaultRuntimeState(home)));
   writeFileIfMissing(usagePath(home), "");
@@ -102,7 +103,9 @@ export function loadConfig(home: string): AideConfig {
 }
 
 export function writeConfig(home: string, config: AideConfig): void {
-  fs.writeFileSync(configPath(home), stringifyToml(configSchema.parse(config)));
+  const filePath = configPath(home);
+  fs.writeFileSync(filePath, stringifyToml(configSchema.parse(config)), { mode: 0o600 });
+  fs.chmodSync(filePath, 0o600);
 }
 
 export function loadEndpoints(home: string): Endpoint[] {
@@ -179,10 +182,10 @@ export function stringifyJson(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
-function writeFileIfMissing(filePath: string, content: string): void {
+function writeFileIfMissing(filePath: string, content: string, mode?: number): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
 
   if (!fs.existsSync(filePath)) {
-    fs.writeFileSync(filePath, content);
+    fs.writeFileSync(filePath, content, mode === undefined ? undefined : { mode });
   }
 }

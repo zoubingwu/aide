@@ -52,7 +52,7 @@ aide start
 The setup asks for:
 
 - An endpoint id, used to name this assistant surface and its local settings.
-- A Discord bot token, stored in `~/.aide/.env.local`.
+- A Discord bot token, stored in `~/.aide/config.toml`.
 
 After `aide start`, mention the bot in a Discord channel where it has access.
 
@@ -68,6 +68,7 @@ startupTimeoutMs = 30000
 id = "discord"
 provider = "discord"
 enabled = true
+token = "<discord-bot-token>"
 
 [endpoints.agent]
 provider = "codex"
@@ -76,7 +77,7 @@ model = "gpt-5.5"
 reasoningEffort = "medium"
 ```
 
-Edit `~/.aide/config.toml` to change endpoint agent command, model, or reasoning effort.
+Edit `~/.aide/config.toml` to change endpoint token, agent command, model, or reasoning effort.
 
 ## Useful Commands
 
@@ -87,6 +88,7 @@ aide usage
 aide doctor
 
 aide config get
+aide config set endpoints.discord.token <discord-bot-token>
 aide config set endpoints.discord.agent.model gpt-5.5
 aide config set endpoints.discord.agent.reasoningEffort high
 

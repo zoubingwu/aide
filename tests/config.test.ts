@@ -20,6 +20,9 @@ describe("config", () => {
     ensureAideHome(home);
 
     expect(fs.existsSync(configPath(home))).toBe(true);
+    if (process.platform !== "win32") {
+      expect(fs.statSync(configPath(home)).mode & 0o777).toBe(0o600);
+    }
     expect(fs.existsSync(schedulesPath(home))).toBe(true);
     expect(path.basename(schedulesPath(home))).toBe("schedules.json");
     expect(fs.existsSync(usagePath(home))).toBe(true);

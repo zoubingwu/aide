@@ -78,7 +78,7 @@ function defaultAgents(): string {
 
 This file holds endpoint-specific instructions, project notes, commands, paths, and workflows. Keep stable personality and communication preferences in \`SOUL.md\`.
 
-Run work from this endpoint workspace by default. Keep secrets in Aide's secret storage or environment variables.
+Run work from this endpoint workspace by default. Endpoint tokens live in Aide's config.toml.
 
 ## Aide Runtime Management
 

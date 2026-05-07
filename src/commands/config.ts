@@ -7,6 +7,7 @@ import { CONFIG_PATH_LIST } from "./help.js";
 
 type ConfigPath =
   | { kind: "runtimeStartupTimeout" }
+  | { kind: "endpointToken"; id: string }
   | { kind: "endpointAgent"; id: string; field: EndpointAgentField };
 
 type EndpointAgentField = "provider" | "command" | "model" | "reasoningEffort";
@@ -45,6 +46,11 @@ export function setConfigCommand(path: string, value: string, options: CommandOp
     case "runtimeStartupTimeout":
       next.runtime.startupTimeoutMs = parsePositiveInteger(formatConfigPath(key), value);
       break;
+    case "endpointToken": {
+      const endpoint = findEndpointConfig(next, key.id);
+      endpoint.token = nonEmptyValue(formatConfigPath(key), value);
+      break;
+    }
     case "endpointAgent": {
       const endpoint = findEndpointConfig(next, key.id);
 
@@ -78,6 +84,7 @@ function configRows(config: AideConfig): string[][] {
 
   for (const endpoint of config.endpoints) {
     rows.push(
+      [`endpoints.${endpoint.id}.token`, secretStatus(endpoint.token)],
       [`endpoints.${endpoint.id}.agent.provider`, endpoint.agent.provider],
       [`endpoints.${endpoint.id}.agent.command`, endpoint.agent.command],
       [`endpoints.${endpoint.id}.agent.model`, endpoint.agent.model],
@@ -91,6 +98,15 @@ function configRows(config: AideConfig): string[][] {
 function parseConfigPath(path: string): ConfigPath {
   if (path === "runtime.startupTimeoutMs") {
     return { kind: "runtimeStartupTimeout" };
+  }
+
+  const endpointTokenMatch = /^endpoints\.([a-z0-9][a-z0-9-]*)\.token$/.exec(path);
+
+  if (endpointTokenMatch?.[1]) {
+    return {
+      kind: "endpointToken",
+      id: endpointTokenMatch[1]
+    };
   }
 
   const match = /^endpoints\.([a-z0-9][a-z0-9-]*)\.agent\.(provider|command|model|reasoningEffort)$/.exec(path);
@@ -110,6 +126,10 @@ function readConfigValue(config: AideConfig, path: ConfigPath): string | number 
   switch (path.kind) {
     case "runtimeStartupTimeout":
       return config.runtime.startupTimeoutMs;
+    case "endpointToken": {
+      const endpoint = findEndpointConfig(config, path.id);
+      return secretStatus(endpoint.token);
+    }
     case "endpointAgent": {
       const endpoint = findEndpointConfig(config, path.id);
       return endpoint.agent[path.field];
@@ -131,6 +151,8 @@ function formatConfigPath(path: ConfigPath): string {
   switch (path.kind) {
     case "runtimeStartupTimeout":
       return "runtime.startupTimeoutMs";
+    case "endpointToken":
+      return `endpoints.${path.id}.token`;
     case "endpointAgent":
       return `endpoints.${path.id}.agent.${path.field}`;
   }
@@ -167,11 +189,15 @@ function formatAssignmentValue(value: string | number): string {
 }
 
 function applyNote(path: ConfigPath): string {
-  if (path.kind === "runtimeStartupTimeout") {
+  if (path.kind === "runtimeStartupTimeout" || path.kind === "endpointToken") {
     return "Applies on the next start or restart.";
   }
 
   return "Applies on the next agent request.";
+}
+
+function secretStatus(value: string): string {
+  return value ? "configured" : "missing";
 }
 
 function isOptions(value: unknown): value is CommandOptions {

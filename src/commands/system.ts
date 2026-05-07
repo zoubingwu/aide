@@ -15,7 +15,6 @@ import { ensureAideHome, loadEndpoints, loadRuntimeState } from "../lib/config.j
 import { checkMark, printTable, statusLabel } from "../lib/format.js";
 import { ACTIVITY_LOG_FILE, RUNTIME_LOG_FILE, readLastLines } from "../lib/logging.js";
 import { runtimeDisplayStatus, isPidAlive } from "../lib/runtime-state.js";
-import { resolveDiscordToken } from "../lib/secrets.js";
 import { formatTokenCount, summarizeUsage } from "../lib/usage.js";
 import { inspectEndpointWorkspace } from "../lib/workspace.js";
 import type { CommandOptions } from "./options.js";
@@ -165,7 +164,7 @@ async function runDoctorChecks(home: string): Promise<DoctorCheck[]> {
 
       if (endpoint.provider === "discord" && endpoint.enabled) {
         checks.push({
-          status: resolveDiscordToken(home, endpoint) ? "ok" : "fail",
+          status: endpoint.token ? "ok" : "fail",
           label: `${endpoint.id} Discord token`
         });
       }

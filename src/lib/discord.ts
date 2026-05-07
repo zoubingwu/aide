@@ -7,15 +7,14 @@ import {
 } from "discord.js";
 import { handleAssistantRequest } from "./assistant.js";
 import { appendActivityLog, endpointActivity } from "./logging.js";
-import { discordTokenEnvKey, resolveDiscordToken } from "./secrets.js";
 import type { Endpoint } from "./types.js";
 
 export async function startDiscordEndpoint(home: string, endpoint: Endpoint): Promise<Client> {
-  const token = resolveDiscordToken(home, endpoint);
+  const token = endpoint.token;
 
   if (!token) {
     throw new Error(
-      `Discord token is missing for endpoint ${endpoint.id}. Set ${discordTokenEnvKey(endpoint.id)} or DISCORD_BOT_TOKEN.`
+      `Discord token is missing for endpoint ${endpoint.id}. Run \`aide config set endpoints.${endpoint.id}.token <discord-bot-token>\`.`
     );
   }
 

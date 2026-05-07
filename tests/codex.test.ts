@@ -30,6 +30,7 @@ const endpoint: Endpoint = {
   id: "yaya",
   provider: "discord",
   enabled: true,
+  token: "test-token",
   agent: agentConfig
 };
 

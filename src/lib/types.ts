@@ -26,6 +26,7 @@ export interface Endpoint {
   id: string;
   provider: Provider;
   enabled: boolean;
+  token: string;
   agent: AgentConfig;
 }
 
