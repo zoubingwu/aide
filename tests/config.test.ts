@@ -29,7 +29,6 @@ describe("config", () => {
     expect(fs.readFileSync(usagePath(home), "utf8")).toBe("");
     expect(fs.existsSync(logsDir(home))).toBe(true);
     expect(fs.existsSync(workspaceDir(home))).toBe(true);
-    expect(loadConfig(home).runtime.startupTimeoutMs).toBe(30_000);
     expect(loadConfig(home).endpoints).toEqual([]);
     expect(loadEndpoints(home)).toEqual([]);
   });

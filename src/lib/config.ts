@@ -11,16 +11,12 @@ import {
   usagePath,
   workspaceDir
 } from "./paths.js";
-import type { AideConfig, CodexAgentConfig, Endpoint, RuntimeConfig, RuntimeState } from "./types.js";
+import type { AideConfig, CodexAgentConfig, Endpoint, RuntimeState } from "./types.js";
 
 const DEFAULT_RUNTIME_MODEL = "gpt-5.5";
 const DEFAULT_REASONING_EFFORT = "medium";
 
 const codexReasoningEffortSchema = z.enum(["low", "medium", "high", "xhigh"]);
-
-const runtimeConfigSchema = z.object({
-  startupTimeoutMs: z.number().int().positive().default(30_000)
-});
 
 const codexAgentConfigSchema = z.object({
   provider: z.literal("codex").default("codex"),
@@ -46,21 +42,13 @@ const runtimeStateSchema = z.object({
 
 const configSchema = z.object({
   home: z.string().min(1),
-  runtime: runtimeConfigSchema.default(defaultRuntimeConfig),
   endpoints: z.array(endpointSchema).default([])
 });
 
 export function defaultConfig(home: string): AideConfig {
   return {
     home: displayPath(home),
-    runtime: defaultRuntimeConfig(),
     endpoints: []
-  };
-}
-
-function defaultRuntimeConfig(): RuntimeConfig {
-  return {
-    startupTimeoutMs: 30_000
   };
 }
 

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { loadConfig, loadEndpoints } from "./config.js";
+import { loadEndpoints } from "./config.js";
 import { appendRuntimeLog } from "./logging.js";
 import { markRuntimeRunning, markRuntimeStopped, runtimeDisplayStatus, isPidAlive } from "./runtime-state.js";
 import { startDiscordEndpoint } from "./discord.js";
@@ -11,7 +11,6 @@ import type { Client } from "discord.js";
 const START_WAIT_MS = 3_000;
 
 export async function startRuntimeInBackground(home: string): Promise<void> {
-  const config = loadConfig(home);
   const endpoints = loadEndpoints(home).filter((endpoint) => endpoint.enabled);
   const current = runtimeDisplayStatus(home);
 
@@ -59,7 +58,7 @@ export async function startRuntimeInBackground(home: string): Promise<void> {
   const result = await waitForRuntimeStart(
     home,
     child.pid,
-    Math.min(config.runtime.startupTimeoutMs, START_WAIT_MS),
+    START_WAIT_MS,
     () => childExit.exited
   );
 

@@ -6,7 +6,6 @@ import { homeFromOptions } from "./options.js";
 import { CONFIG_PATH_LIST } from "./help.js";
 
 type ConfigPath =
-  | { kind: "runtimeStartupTimeout" }
   | { kind: "endpointToken"; id: string }
   | { kind: "endpointAgent"; id: string; field: EndpointAgentField };
 
@@ -35,7 +34,6 @@ export function setConfigCommand(path: string, value: string, options: CommandOp
   const config = loadConfig(home);
   const next: AideConfig = {
     ...config,
-    runtime: { ...config.runtime },
     endpoints: config.endpoints.map((endpoint) => ({
       ...endpoint,
       agent: { ...endpoint.agent }
@@ -43,9 +41,6 @@ export function setConfigCommand(path: string, value: string, options: CommandOp
   };
 
   switch (key.kind) {
-    case "runtimeStartupTimeout":
-      next.runtime.startupTimeoutMs = parsePositiveInteger(formatConfigPath(key), value);
-      break;
     case "endpointToken": {
       const endpoint = findEndpointConfig(next, key.id);
       endpoint.token = nonEmptyValue(formatConfigPath(key), value);
@@ -77,10 +72,7 @@ export function setConfigCommand(path: string, value: string, options: CommandOp
 }
 
 function configRows(config: AideConfig): string[][] {
-  const rows = [
-    ["home", config.home],
-    ["runtime.startupTimeoutMs", String(config.runtime.startupTimeoutMs)]
-  ];
+  const rows = [["home", config.home]];
 
   for (const endpoint of config.endpoints) {
     rows.push(
@@ -96,10 +88,6 @@ function configRows(config: AideConfig): string[][] {
 }
 
 function parseConfigPath(path: string): ConfigPath {
-  if (path === "runtime.startupTimeoutMs") {
-    return { kind: "runtimeStartupTimeout" };
-  }
-
   const endpointTokenMatch = /^endpoints\.([a-z0-9][a-z0-9-]*)\.token$/.exec(path);
 
   if (endpointTokenMatch?.[1]) {
@@ -124,8 +112,6 @@ function parseConfigPath(path: string): ConfigPath {
 
 function readConfigValue(config: AideConfig, path: ConfigPath): string | number {
   switch (path.kind) {
-    case "runtimeStartupTimeout":
-      return config.runtime.startupTimeoutMs;
     case "endpointToken": {
       const endpoint = findEndpointConfig(config, path.id);
       return secretStatus(endpoint.token);
@@ -149,8 +135,6 @@ function findEndpointConfig(config: AideConfig, id: string): Endpoint {
 
 function formatConfigPath(path: ConfigPath): string {
   switch (path.kind) {
-    case "runtimeStartupTimeout":
-      return "runtime.startupTimeoutMs";
     case "endpointToken":
       return `endpoints.${path.id}.token`;
     case "endpointAgent":
@@ -174,22 +158,12 @@ function parseReasoningEffort(value: string): CodexReasoningEffort {
   throw new Error(`reasoningEffort must be one of: ${REASONING_EFFORTS.join(", ")}.`);
 }
 
-function parsePositiveInteger(path: string, value: string): number {
-  const parsed = Number(value);
-
-  if (Number.isInteger(parsed) && parsed > 0) {
-    return parsed;
-  }
-
-  throw new Error(`${path} must be a positive integer.`);
-}
-
 function formatAssignmentValue(value: string | number): string {
   return typeof value === "number" ? String(value) : JSON.stringify(value);
 }
 
 function applyNote(path: ConfigPath): string {
-  if (path.kind === "runtimeStartupTimeout" || path.kind === "endpointToken") {
+  if (path.kind === "endpointToken") {
     return "Applies on the next start or restart.";
   }
 
