@@ -1,15 +1,13 @@
-import { loadConfig, writeConfig } from "../lib/config.js";
+import { loadConfig, writeConfig, type AideConfig } from "../lib/config.js";
 import { printTable } from "../lib/format.js";
-import type { AideConfig, CodexReasoningEffort, Endpoint } from "../lib/types.js";
+import type { CodexReasoningEffort, Endpoint } from "../lib/types.js";
 import type { CommandOptions } from "./options.js";
 import { homeFromOptions } from "./options.js";
 import { CONFIG_PATH_LIST } from "./help.js";
 
-type ConfigPath =
-  | { kind: "endpointToken"; id: string }
-  | { kind: "endpointAgent"; id: string; field: EndpointAgentField };
-
-type EndpointAgentField = "provider" | "command" | "model" | "reasoningEffort";
+type EndpointAgentField = keyof Endpoint["agent"];
+type ConfigField = "token" | EndpointAgentField;
+type ConfigTarget = { path: string; endpoint: Endpoint; field: ConfigField };
 
 const REASONING_EFFORTS: CodexReasoningEffort[] = ["low", "medium", "high", "xhigh"];
 
@@ -19,8 +17,8 @@ export function getConfigCommand(pathOrOptions?: string | CommandOptions, maybeO
   const config = loadConfig(homeFromOptions(options));
 
   if (path) {
-    const parsed = parseConfigPath(path);
-    console.log(`${formatConfigPath(parsed)} = ${formatAssignmentValue(readConfigValue(config, parsed))}`);
+    const target = resolveConfigTarget(config, path);
+    console.log(`${target.path} = ${formatAssignmentValue(readConfigValue(target))}`);
     return;
   }
 
@@ -30,97 +28,83 @@ export function getConfigCommand(pathOrOptions?: string | CommandOptions, maybeO
 
 export function setConfigCommand(path: string, value: string, options: CommandOptions): void {
   const home = homeFromOptions(options);
-  const key = parseConfigPath(path);
-  const config = loadConfig(home);
-  const next: AideConfig = {
-    ...config,
-    endpoints: config.endpoints.map((endpoint) => ({
-      ...endpoint,
-      agent: { ...endpoint.agent }
-    }))
-  };
+  const next = loadConfig(home);
+  const target = resolveConfigTarget(next, path);
 
-  switch (key.kind) {
-    case "endpointToken": {
-      const endpoint = findEndpointConfig(next, key.id);
-      endpoint.token = nonEmptyValue(formatConfigPath(key), value);
-      break;
-    }
-    case "endpointAgent": {
-      const endpoint = findEndpointConfig(next, key.id);
-
-      switch (key.field) {
-        case "command":
-          endpoint.agent.command = nonEmptyValue(formatConfigPath(key), value);
-          break;
-        case "model":
-          endpoint.agent.model = nonEmptyValue(formatConfigPath(key), value);
-          break;
-        case "reasoningEffort":
-          endpoint.agent.reasoningEffort = parseReasoningEffort(value);
-          break;
-        case "provider":
-          throw new Error(`${formatConfigPath(key)} is managed by endpoint creation.`);
-      }
-      break;
-    }
-  }
+  setConfigValue(target, value);
 
   writeConfig(home, next);
-  console.log(`Updated ${formatConfigPath(key)} = ${formatAssignmentValue(readConfigValue(next, key))}.`);
-  console.log(applyNote(key));
+  console.log(`Updated ${target.path} = ${formatAssignmentValue(readConfigValue(target))}.`);
+  console.log(applyNote(target));
 }
 
 function configRows(config: AideConfig): string[][] {
-  const rows = [["home", config.home]];
-
-  for (const endpoint of config.endpoints) {
-    rows.push(
-      [`endpoints.${endpoint.id}.token`, secretStatus(endpoint.token)],
-      [`endpoints.${endpoint.id}.agent.provider`, endpoint.agent.provider],
-      [`endpoints.${endpoint.id}.agent.command`, endpoint.agent.command],
-      [`endpoints.${endpoint.id}.agent.model`, endpoint.agent.model],
-      [`endpoints.${endpoint.id}.agent.reasoningEffort`, endpoint.agent.reasoningEffort]
-    );
-  }
-
-  return rows;
+  return config.endpoints.flatMap((endpoint) => [
+    [`endpoints.${endpoint.id}.token`, secretStatus(endpoint.token)],
+    [`endpoints.${endpoint.id}.agent.provider`, endpoint.agent.provider],
+    [`endpoints.${endpoint.id}.agent.command`, endpoint.agent.command],
+    [`endpoints.${endpoint.id}.agent.model`, endpoint.agent.model],
+    [`endpoints.${endpoint.id}.agent.reasoningEffort`, endpoint.agent.reasoningEffort]
+  ]);
 }
 
-function parseConfigPath(path: string): ConfigPath {
-  const endpointTokenMatch = /^endpoints\.([a-z0-9][a-z0-9-]*)\.token$/.exec(path);
+function resolveConfigTarget(config: AideConfig, path: string): ConfigTarget {
+  const parts = path.split(".");
+  const id = parts[1];
 
-  if (endpointTokenMatch?.[1]) {
+  if (parts[0] !== "endpoints" || !id) {
+    throwUnsupportedPath(path);
+  }
+
+  if (parts.length === 3 && parts[2] === "token") {
     return {
-      kind: "endpointToken",
-      id: endpointTokenMatch[1]
+      path: `endpoints.${id}.token`,
+      endpoint: findEndpointConfig(config, id),
+      field: "token"
     };
   }
 
-  const match = /^endpoints\.([a-z0-9][a-z0-9-]*)\.agent\.(provider|command|model|reasoningEffort)$/.exec(path);
+  const field = parts[3];
 
-  if (match?.[1] && match[2]) {
+  if (parts.length === 4 && parts[2] === "agent" && isAgentField(field)) {
     return {
-      kind: "endpointAgent",
-      id: match[1],
-      field: match[2] as EndpointAgentField
+      path: `endpoints.${id}.agent.${field}`,
+      endpoint: findEndpointConfig(config, id),
+      field
     };
   }
 
+  throwUnsupportedPath(path);
+}
+
+function throwUnsupportedPath(path: string): never {
   throw new Error(`Unsupported config path: ${path}. Use ${CONFIG_PATH_LIST}.`);
 }
 
-function readConfigValue(config: AideConfig, path: ConfigPath): string | number {
-  switch (path.kind) {
-    case "endpointToken": {
-      const endpoint = findEndpointConfig(config, path.id);
-      return secretStatus(endpoint.token);
-    }
-    case "endpointAgent": {
-      const endpoint = findEndpointConfig(config, path.id);
-      return endpoint.agent[path.field];
-    }
+function readConfigValue(target: ConfigTarget): string {
+  if (target.field === "token") {
+    return secretStatus(target.endpoint.token);
   }
+
+  return target.endpoint.agent[target.field];
+}
+
+function setConfigValue(target: ConfigTarget, value: string): void {
+  if (target.field === "token") {
+    target.endpoint.token = nonEmptyValue(target.path, value);
+    return;
+  }
+
+  if (target.field === "provider") {
+    throw new Error(`${target.path} is managed by endpoint creation.`);
+  }
+
+  if (target.field === "reasoningEffort") {
+    target.endpoint.agent.reasoningEffort = parseReasoningEffort(value);
+    return;
+  }
+
+  target.endpoint.agent[target.field] = nonEmptyValue(target.path, value);
 }
 
 function findEndpointConfig(config: AideConfig, id: string): Endpoint {
@@ -131,15 +115,6 @@ function findEndpointConfig(config: AideConfig, id: string): Endpoint {
   }
 
   return endpoint;
-}
-
-function formatConfigPath(path: ConfigPath): string {
-  switch (path.kind) {
-    case "endpointToken":
-      return `endpoints.${path.id}.token`;
-    case "endpointAgent":
-      return `endpoints.${path.id}.agent.${path.field}`;
-  }
 }
 
 function nonEmptyValue(path: string, value: string): string {
@@ -158,16 +133,20 @@ function parseReasoningEffort(value: string): CodexReasoningEffort {
   throw new Error(`reasoningEffort must be one of: ${REASONING_EFFORTS.join(", ")}.`);
 }
 
-function formatAssignmentValue(value: string | number): string {
-  return typeof value === "number" ? String(value) : JSON.stringify(value);
+function formatAssignmentValue(value: string): string {
+  return JSON.stringify(value);
 }
 
-function applyNote(path: ConfigPath): string {
-  if (path.kind === "endpointToken") {
+function applyNote(target: ConfigTarget): string {
+  if (target.field === "token") {
     return "Applies on the next start or restart.";
   }
 
   return "Applies on the next agent request.";
+}
+
+function isAgentField(value: string | undefined): value is EndpointAgentField {
+  return value === "provider" || value === "command" || value === "model" || value === "reasoningEffort";
 }
 
 function secretStatus(value: string): string {

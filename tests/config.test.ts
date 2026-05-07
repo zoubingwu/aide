@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { ensureAideHome, loadConfig, loadEndpoints } from "../src/lib/config.js";
+import { ensureAideHome, loadConfig, loadEndpoints, writeConfig } from "../src/lib/config.js";
 import { configPath, logsDir, schedulesPath, usagePath, workspaceDir } from "../src/lib/paths.js";
 
 const cleanupPaths: string[] = [];
@@ -29,8 +29,27 @@ describe("config", () => {
     expect(fs.readFileSync(usagePath(home), "utf8")).toBe("");
     expect(fs.existsSync(logsDir(home))).toBe(true);
     expect(fs.existsSync(workspaceDir(home))).toBe(true);
+    expect(fs.readFileSync(configPath(home), "utf8")).not.toContain("home =");
     expect(loadConfig(home).endpoints).toEqual([]);
     expect(loadEndpoints(home)).toEqual([]);
+  });
+
+  it("strips legacy config metadata fields on write", () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    fs.writeFileSync(
+      configPath(home),
+      'home = "~/.aide"\nendpoints = []\n\n[runtime]\nstartupTimeoutMs = 30000\n'
+    );
+
+    const config = loadConfig(home);
+    writeConfig(home, config);
+    const content = fs.readFileSync(configPath(home), "utf8");
+
+    expect(config).toEqual({ endpoints: [] });
+    expect(content).not.toContain("home =");
+    expect(content).not.toContain("[runtime]");
+    expect(content).not.toContain("startupTimeoutMs");
   });
 
   it("tightens an existing config file during initialization", () => {

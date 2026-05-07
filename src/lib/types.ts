@@ -12,11 +12,6 @@ export interface CodexAgentConfig {
 
 export type AgentConfig = CodexAgentConfig;
 
-export interface AideConfig {
-  home: string;
-  endpoints: Endpoint[];
-}
-
 export interface Endpoint {
   id: string;
   provider: Provider;

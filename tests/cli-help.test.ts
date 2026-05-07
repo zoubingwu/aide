@@ -57,13 +57,16 @@ describe("CLI help", () => {
 
     const model = await runCli("--home", home, "config", "get", "endpoints.discord-main.agent.model");
     const token = await runCli("--home", home, "config", "get", "endpoints.discord-main.token");
+    const all = await runCli("--home", home, "config", "get");
     const config = fs.readFileSync(path.join(home, "config.toml"), "utf8");
 
     expect(model.stdout).toContain('endpoints.discord-main.agent.model = "gpt-5.4"');
     expect(token.stdout).toContain('endpoints.discord-main.token = "configured"');
+    expect(all.stdout).not.toContain("home");
     expect(config).toContain('model = "gpt-5.4"');
     expect(config).toContain('reasoningEffort = "high"');
     expect(config).toContain('token = "new-token"');
+    expect(config).not.toContain("home =");
   });
 
   it("shows config help examples", async () => {
