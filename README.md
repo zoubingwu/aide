@@ -53,6 +53,7 @@ The setup asks for:
 
 - An endpoint id, used to name this assistant surface and its local settings.
 - A Discord bot token, stored in `~/.aide/config.toml`.
+- A locally installed CLI agent. Codex is the currently runnable agent.
 
 After `aide start`, mention the bot in a Discord channel where it has access.
 

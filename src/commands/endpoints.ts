@@ -2,12 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 import prompts from "prompts";
 import {
-  defaultCodexAgentConfig,
   findEndpoint,
   loadEndpoints,
   requireEndpointIndex,
   writeEndpoints
 } from "../lib/config.js";
+import { defaultAgentConfig, detectInstalledAgents, parseAgentProvider } from "../lib/agents.js";
 import { handleAssistantRequest } from "../lib/assistant.js";
 import { printTable, statusLabel } from "../lib/format.js";
 import { openFiles, openPath } from "../lib/open.js";
@@ -16,7 +16,7 @@ import {
   slugifyId
 } from "../lib/paths.js";
 import { inspectEndpointWorkspace, ensureEndpointWorkspace, endpointWorkspace } from "../lib/workspace.js";
-import type { CodexAgentConfig, CodexReasoningEffort, Endpoint } from "../lib/types.js";
+import type { AgentConfig, AgentProvider, CodexAgentConfig, CodexReasoningEffort, Endpoint } from "../lib/types.js";
 import type { CommandOptions } from "./options.js";
 import { homeFromOptions, stringOption } from "./options.js";
 
@@ -156,7 +156,7 @@ async function addDiscordEndpoint(options: CommandOptions): Promise<void> {
   const endpoints = loadEndpoints(home);
   const answers = await collectDiscordEndpointAnswers(options);
   const id = slugifyId(answers.id);
-  const agent = codexAgentFromOptions(options);
+  const agent = await agentFromOptions(options);
 
   if (id.length === 0) {
     throw new Error("Endpoint id must contain at least one letter or number.");
@@ -184,14 +184,53 @@ async function addDiscordEndpoint(options: CommandOptions): Promise<void> {
   console.log(nextStepsGuide());
 }
 
-function codexAgentFromOptions(options: CommandOptions): CodexAgentConfig {
-  const provider = stringOption(options, "agent") ?? "codex";
+async function agentFromOptions(options: CommandOptions): Promise<AgentConfig> {
+  const provider = await resolveAgentProvider(options);
 
-  if (provider !== "codex") {
-    throw new Error(`Agent provider ${provider} is not supported yet.`);
+  switch (provider) {
+    case "codex":
+      return codexAgentFromOptions(options);
+  }
+}
+
+async function resolveAgentProvider(options: CommandOptions): Promise<AgentProvider> {
+  const provider = stringOption(options, "agent");
+
+  if (provider) {
+    return parseAgentProvider(provider);
   }
 
-  const defaults = defaultCodexAgentConfig();
+  if (!process.stdin.isTTY) {
+    return "codex";
+  }
+
+  const agentCommand = stringOption(options, "agentCommand");
+  const installedAgents = await detectInstalledAgents(agentCommand ? { codex: agentCommand } : {});
+
+  if (installedAgents.length === 0) {
+    throw new Error("No supported CLI agent found. Install Codex CLI and run `aide endpoint add discord` again.");
+  }
+
+  const response = await prompts({
+    type: "select",
+    name: "provider",
+    message: "CLI agent",
+    choices: installedAgents.map((agent) => ({
+      title: agent.label,
+      value: agent.provider,
+      description: agent.version ?? agent.command
+    }))
+  });
+
+  if (typeof response.provider !== "string") {
+    throw new Error("Endpoint creation cancelled.");
+  }
+
+  return parseAgentProvider(response.provider);
+}
+
+function codexAgentFromOptions(options: CommandOptions): CodexAgentConfig {
+  const defaults = defaultAgentConfig("codex");
   return {
     provider: "codex",
     command: stringOption(options, "agentCommand") ?? defaults.command,
@@ -292,6 +331,7 @@ function discordPreparationGuide(): string {
 Aide will ask for:
 - Endpoint id: used for the workspace path.
 - Discord bot token: stored in ~/.aide/config.toml.
+- CLI agent: detected from locally installed supported agents.
 `;
 }
 

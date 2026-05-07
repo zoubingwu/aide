@@ -296,6 +296,8 @@ describe("CLI help", () => {
     expect(configToml).toContain('token = "test-token"');
     expect(configToml).toContain('provider = "codex"');
     expect(configToml).toContain('command = "codex"');
+    expect(configToml).toContain('model = "gpt-5.5"');
+    expect(configToml).toContain('reasoningEffort = "medium"');
     expect(fs.existsSync(path.join(home, ".env.local"))).toBe(false);
     expect(configToml).not.toContain("workspacePath");
     expect(configToml).not.toContain("routing");

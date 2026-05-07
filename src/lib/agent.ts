@@ -1,3 +1,4 @@
+import { agentProviderLabel as catalogAgentProviderLabel } from "./agents.js";
 import type { AgentProvider, AgentRunResult, Endpoint } from "./types.js";
 import { runCodex } from "./codex.js";
 
@@ -30,8 +31,5 @@ export async function runAgent(
 }
 
 export function agentProviderLabel(provider: AgentProvider): string {
-  switch (provider) {
-    case "codex":
-      return "Codex";
-  }
+  return catalogAgentProviderLabel(provider);
 }
