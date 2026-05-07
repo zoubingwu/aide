@@ -155,6 +155,7 @@ describe("codex", () => {
       }
     });
     expect(execa).toHaveBeenCalledWith("codex", expect.arrayContaining(["--cd", workspace]), {
+      cwd: workspace,
       reject: false,
       all: false
     });

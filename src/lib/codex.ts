@@ -149,6 +149,7 @@ async function runCodexOnce(execution: CodexExecution): Promise<Omit<AgentRunRes
 
   try {
     const result = await execa(execution.command, execution.args, {
+      cwd: execution.workspace,
       reject: false,
       all: false
     });
