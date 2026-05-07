@@ -65,7 +65,7 @@ describe("CLI help", () => {
     expect(config).toContain('model = "gpt-5.4"');
     expect(config).toContain('reasoningEffort = "high"');
     expect(config).toContain('token = "new-token"');
-    expect(config).toContain("startupTimeoutMs = 45_000");
+    expect(config).toContain("startupTimeoutMs = 45000");
   });
 
   it("shows config help examples", async () => {

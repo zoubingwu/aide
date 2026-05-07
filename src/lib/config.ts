@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import * as TOML from "@iarna/toml";
+import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { z } from "zod";
 import {
   configPath,
@@ -85,10 +85,10 @@ export function ensureAideHome(home: string): void {
   fs.mkdirSync(logsDir(home), { recursive: true });
   fs.mkdirSync(workspaceDir(home), { recursive: true });
 
-  writeFileIfMissing(configPath(home), stringifyToml(defaultConfig(home)), 0o600);
+  writeFileIfMissing(configPath(home), `${stringifyToml(defaultConfig(home))}\n`, 0o600);
   secureConfigFile(home);
-  writeFileIfMissing(schedulesPath(home), stringifyJson({ schedules: [] }));
-  writeFileIfMissing(runtimePath(home), stringifyJson(defaultRuntimeState(home)));
+  writeFileIfMissing(schedulesPath(home), `${JSON.stringify({ schedules: [] }, null, 2)}\n`);
+  writeFileIfMissing(runtimePath(home), `${JSON.stringify(defaultRuntimeState(home), null, 2)}\n`);
   writeFileIfMissing(usagePath(home), "");
 }
 
@@ -107,7 +107,7 @@ export function loadConfig(home: string): AideConfig {
 
 export function writeConfig(home: string, config: AideConfig): void {
   const filePath = configPath(home);
-  fs.writeFileSync(filePath, stringifyToml(configSchema.parse(config)), { mode: 0o600 });
+  fs.writeFileSync(filePath, `${stringifyToml(configSchema.parse(config))}\n`, { mode: 0o600 });
   secureConfigFile(home);
 }
 
@@ -126,7 +126,7 @@ export function loadRuntimeState(home: string): RuntimeState {
 }
 
 export function writeRuntimeState(home: string, state: RuntimeState): void {
-  fs.writeFileSync(runtimePath(home), stringifyJson(runtimeStateSchema.parse(state)));
+  fs.writeFileSync(runtimePath(home), `${JSON.stringify(runtimeStateSchema.parse(state), null, 2)}\n`);
 }
 
 export function findEndpoint(home: string, id: string): Endpoint {
@@ -160,11 +160,7 @@ export function readToml(filePath: string): unknown {
     return {};
   }
 
-  return TOML.parse(content);
-}
-
-export function stringifyToml(value: unknown): string {
-  return `${TOML.stringify(value as Parameters<typeof TOML.stringify>[0])}\n`;
+  return parseToml(content);
 }
 
 export function readJson(filePath: string, fallback: unknown): unknown {
@@ -179,10 +175,6 @@ export function readJson(filePath: string, fallback: unknown): unknown {
   }
 
   return JSON.parse(content);
-}
-
-export function stringifyJson(value: unknown): string {
-  return `${JSON.stringify(value, null, 2)}\n`;
 }
 
 function writeFileIfMissing(filePath: string, content: string, mode?: number): void {
