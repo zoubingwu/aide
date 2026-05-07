@@ -3,12 +3,12 @@ import { defaultCodexFreshArgs, defaultCodexResumeArgs } from "./codex-args.js";
 import { appendActivityLog, endpointActivity } from "./logging.js";
 import type { AgentRunResult, CodexAgentConfig, Endpoint } from "./types.js";
 
-export function buildCodexArgs(agent: CodexAgentConfig, prompt: string): string[] {
-  return withCodexAgentConfig([...defaultCodexResumeArgs(), prompt], agent);
+export function buildCodexArgs(agent: CodexAgentConfig, workspace: string, prompt: string): string[] {
+  return withCodexAgentConfig(["exec", "--cd", workspace, ...defaultCodexResumeArgs().slice(1), prompt], agent);
 }
 
-export function buildFreshCodexArgs(agent: CodexAgentConfig, prompt: string): string[] {
-  return withCodexAgentConfig([...defaultCodexFreshArgs(), prompt], agent);
+export function buildFreshCodexArgs(agent: CodexAgentConfig, workspace: string, prompt: string): string[] {
+  return withCodexAgentConfig(["exec", "--cd", workspace, ...defaultCodexFreshArgs().slice(1), prompt], agent);
 }
 
 function withCodexAgentConfig(args: string[], agent: CodexAgentConfig): string[] {
@@ -37,8 +37,8 @@ export async function runCodex(
     home,
     endpoint,
     command: agent.command,
-    args: buildCodexArgs(agent, prompt),
-    cwd: workspace,
+    args: buildCodexArgs(agent, workspace, prompt),
+    workspace,
     prompt,
     attempt: "resume"
   });
@@ -56,8 +56,8 @@ export async function runCodex(
     home,
     endpoint,
     command: agent.command,
-    args: buildFreshCodexArgs(agent, prompt),
-    cwd: workspace,
+    args: buildFreshCodexArgs(agent, workspace, prompt),
+    workspace,
     prompt,
     attempt: "fresh"
   });
@@ -129,7 +129,7 @@ interface CodexExecution {
   endpoint: Endpoint;
   command: string;
   args: string[];
-  cwd: string;
+  workspace: string;
   prompt: string;
   attempt: "resume" | "fresh";
 }
@@ -141,7 +141,7 @@ async function runCodexOnce(execution: CodexExecution): Promise<Omit<AgentRunRes
       attempt: execution.attempt,
       command: execution.command,
       args: sanitizeArgs(execution.args, execution.prompt),
-      cwd: execution.cwd
+      workspace: execution.workspace
     })
   );
 
@@ -149,13 +149,9 @@ async function runCodexOnce(execution: CodexExecution): Promise<Omit<AgentRunRes
 
   try {
     const result = await execa(execution.command, execution.args, {
-      cwd: execution.cwd,
+      cwd: execution.workspace,
       reject: false,
-      all: false,
-      env: {
-        ...process.env,
-        AIDE_ENDPOINT_WORKSPACE: execution.cwd
-      }
+      all: false
     });
     runResult = {
       stdout: result.stdout,

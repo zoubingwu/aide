@@ -44,24 +44,32 @@ describe("codex", () => {
   });
 
   it("builds resume-last exec args with prompt at the end", () => {
-    expect(buildCodexArgs(agentConfig, "hello")).toEqual([
+    const workspace = path.join(os.tmpdir(), "aide-workspace");
+
+    expect(buildCodexArgs(agentConfig, workspace, "hello")).toEqual([
       "exec",
       "--model",
       "gpt-5.5",
       "-c",
       "model_reasoning_effort=\"medium\"",
+      "--cd",
+      workspace,
       ...defaultCodexResumeArgs().slice(1),
       "hello"
     ]);
   });
 
   it("builds fresh exec args for first-run fallback", () => {
-    expect(buildFreshCodexArgs(agentConfig, "hello")).toEqual([
+    const workspace = path.join(os.tmpdir(), "aide-workspace");
+
+    expect(buildFreshCodexArgs(agentConfig, workspace, "hello")).toEqual([
       "exec",
       "--model",
       "gpt-5.5",
       "-c",
       "model_reasoning_effort=\"medium\"",
+      "--cd",
+      workspace,
       ...defaultCodexFreshArgs().slice(1),
       "hello"
     ]);
@@ -132,9 +140,24 @@ describe("codex", () => {
       metadata: {
         attempt: "resume",
         command: "codex",
-        args: expect.arrayContaining(["{prompt}"]),
-        cwd: workspace
+        args: [
+          "exec",
+          "--model",
+          "gpt-5.5",
+          "-c",
+          "model_reasoning_effort=\"medium\"",
+          "--cd",
+          workspace,
+          ...defaultCodexResumeArgs().slice(1),
+          "{prompt}"
+        ],
+        workspace
       }
+    });
+    expect(execa).toHaveBeenCalledWith("codex", expect.arrayContaining(["--cd", workspace]), {
+      cwd: workspace,
+      reject: false,
+      all: false
     });
     expect(events.slice(1, 5).map((event) => [event.event, event.metadata?.type])).toEqual([
       ["codex_cli_event", "thread.started"],
