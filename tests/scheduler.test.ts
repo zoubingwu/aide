@@ -267,7 +267,7 @@ describe("scheduler execution", () => {
 });
 
 function discordEndpoint(): Endpoint {
-  return { id: "discord-main", provider: "discord", enabled: true, agent: defaultCodexAgentConfig() };
+  return { id: "discord-main", provider: "discord", enabled: true, token: "test-token", agent: defaultCodexAgentConfig() };
 }
 
 function onceSchedule(): Schedule {

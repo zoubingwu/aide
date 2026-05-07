@@ -15,7 +15,6 @@ import {
   displayPath,
   slugifyId
 } from "../lib/paths.js";
-import { resolveDiscordToken, writeDiscordToken } from "../lib/secrets.js";
 import { inspectEndpointWorkspace, ensureEndpointWorkspace, endpointWorkspace } from "../lib/workspace.js";
 import type { CodexAgentConfig, CodexReasoningEffort, Endpoint } from "../lib/types.js";
 import type { CommandOptions } from "./options.js";
@@ -71,7 +70,7 @@ export async function showEndpointCommand(id: string, options: CommandOptions): 
   console.log(`Workspace   ${displayPath(workspace.path)}`);
   console.log(`SOUL.md     ${workspace.soulExists ? "exists" : "missing"}`);
   console.log(`AGENTS.md   ${workspace.agentsExists ? "exists" : "missing"}`);
-  console.log(`Token       ${resolveDiscordToken(home, endpoint) ? "configured" : "missing"}`);
+  console.log(`Token       ${endpoint.token ? "configured" : "missing"}`);
 }
 
 export async function pauseEndpointCommand(id: string, options: CommandOptions): Promise<void> {
@@ -171,17 +170,13 @@ async function addDiscordEndpoint(options: CommandOptions): Promise<void> {
     id,
     provider: "discord",
     enabled: true,
+    token: answers.token,
     agent
   };
 
   endpoints.push(endpoint);
   ensureEndpointWorkspace(home, endpoint);
   writeEndpoints(home, endpoints);
-
-  if (answers.token) {
-    const key = writeDiscordToken(home, id, answers.token);
-    console.log(`Stored Discord token in ${key}.`);
-  }
 
   console.log(`Discord endpoint ${id} created.`);
   console.log(`Workspace ${displayPath(endpointWorkspace(home, endpoint))}`);
@@ -215,7 +210,7 @@ function parseReasoningEffort(value: string): CodexReasoningEffort {
 
 async function collectDiscordEndpointAnswers(options: CommandOptions): Promise<{
   id: string;
-  token: string | undefined;
+  token: string;
 }> {
   const id = stringOption(options, "id");
   const token = stringOption(options, "token");
@@ -227,14 +222,13 @@ async function collectDiscordEndpointAnswers(options: CommandOptions): Promise<{
       throw new Error("Missing endpoint id. Provide --id <id>.");
     }
 
-    if (!token && !envToken) {
+    const resolvedToken = token ?? envToken;
+
+    if (!resolvedToken) {
       throw new Error("Missing Discord bot token. Provide --token or set DISCORD_BOT_TOKEN.");
     }
 
-    return {
-      id,
-      token: token ?? envToken
-    };
+    return { id, token: resolvedToken };
   }
 
   if (needsPrompt) {
@@ -257,7 +251,8 @@ async function collectDiscordEndpointAnswers(options: CommandOptions): Promise<{
   ]);
 
   const resolvedId = (id ?? String(response.id ?? "").trim()) || DEFAULT_DISCORD_ENDPOINT_ID;
-  const resolvedToken = token ?? envToken ?? response.token;
+  const promptToken = typeof response.token === "string" ? response.token.trim() : undefined;
+  const resolvedToken = token ?? envToken ?? promptToken;
 
   if (!resolvedToken) {
     throw new Error("Discord bot token is required.");
@@ -295,8 +290,8 @@ function discordPreparationGuide(): string {
 4. Grant View Channel and Send Messages in target channels: https://docs.discord.com/developers/topics/permissions
 
 Aide will ask for:
-- Endpoint id: used for the workspace path and token env key.
-- Discord bot token: stored in ~/.aide/.env.local.
+- Endpoint id: used for the workspace path.
+- Discord bot token: stored in ~/.aide/config.toml.
 `;
 }
 

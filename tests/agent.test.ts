@@ -7,6 +7,7 @@ const endpoint: Endpoint = {
   id: "discord-agent-ops",
   provider: "discord",
   enabled: true,
+  token: "test-token",
   agent: defaultCodexAgentConfig()
 };
 
