@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { CronPattern } from "croner";
 import { z } from "zod";
-import { assertInitialized, readJson, stringifyJson } from "./config.js";
+import { assertInitialized, readJson } from "./config.js";
 import { schedulesPath } from "./paths.js";
 import type { Schedule, SchedulesFile, Weekday } from "./types.js";
 
@@ -157,7 +157,7 @@ export function loadRuntimeSchedules(home: string): RuntimeSchedules {
 
 export function writeSchedules(home: string, schedules: Schedule[]): void {
   const body: SchedulesFile = { schedules };
-  fs.writeFileSync(schedulesPath(home), stringifyJson(schedulesFileSchema.parse(body)));
+  fs.writeFileSync(schedulesPath(home), `${JSON.stringify(schedulesFileSchema.parse(body), null, 2)}\n`);
 }
 
 export function findSchedule(home: string, id: string): Schedule {
@@ -209,7 +209,7 @@ export function removeRuntimeSchedule(home: string, id: string): void {
     throw new Error(`Schedule not found: ${id}`);
   }
 
-  fs.writeFileSync(schedulesPath(home), stringifyJson({ schedules: next }));
+  fs.writeFileSync(schedulesPath(home), `${JSON.stringify({ schedules: next }, null, 2)}\n`);
 }
 
 function setScheduleEnabled(home: string, id: string, enabled: boolean): void {
