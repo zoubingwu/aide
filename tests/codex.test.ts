@@ -59,6 +59,28 @@ describe("codex", () => {
     ]);
   });
 
+  it("builds resume args with MCP tool server config", () => {
+    const workspace = path.join(os.tmpdir(), "aide-workspace");
+
+    expect(
+      buildCodexArgs(agentConfig, workspace, "hello", [
+        { name: "aide-discord-context", url: "http://127.0.0.1:43210/mcp" }
+      ])
+    ).toEqual([
+      "exec",
+      "--model",
+      "gpt-5.5",
+      "-c",
+      "model_reasoning_effort=\"medium\"",
+      "-c",
+      "mcp_servers.aide-discord-context.url=\"http://127.0.0.1:43210/mcp\"",
+      "--cd",
+      workspace,
+      ...defaultCodexResumeArgs().slice(1),
+      "hello"
+    ]);
+  });
+
   it("builds fresh exec args for first-run fallback", () => {
     const workspace = path.join(os.tmpdir(), "aide-workspace");
 

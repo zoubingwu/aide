@@ -1,14 +1,31 @@
 import { execa } from "execa";
 import { defaultCodexFreshArgs, defaultCodexResumeArgs } from "./codex-args.js";
 import { appendActivityLog, endpointActivity } from "./logging.js";
+import type { AgentRunOptions, AgentToolServer } from "./agent-tools.js";
 import type { AgentRunResult, CodexAgentConfig, Endpoint } from "./types.js";
 
-export function buildCodexArgs(agent: CodexAgentConfig, workspace: string, prompt: string): string[] {
-  return withCodexAgentConfig(["exec", "--cd", workspace, ...defaultCodexResumeArgs().slice(1), prompt], agent);
+export function buildCodexArgs(
+  agent: CodexAgentConfig,
+  workspace: string,
+  prompt: string,
+  toolServers: AgentToolServer[] = []
+): string[] {
+  return withCodexAgentConfig(
+    ["exec", ...codexMcpConfigArgs(toolServers), "--cd", workspace, ...defaultCodexResumeArgs().slice(1), prompt],
+    agent
+  );
 }
 
-export function buildFreshCodexArgs(agent: CodexAgentConfig, workspace: string, prompt: string): string[] {
-  return withCodexAgentConfig(["exec", "--cd", workspace, ...defaultCodexFreshArgs().slice(1), prompt], agent);
+export function buildFreshCodexArgs(
+  agent: CodexAgentConfig,
+  workspace: string,
+  prompt: string,
+  toolServers: AgentToolServer[] = []
+): string[] {
+  return withCodexAgentConfig(
+    ["exec", ...codexMcpConfigArgs(toolServers), "--cd", workspace, ...defaultCodexFreshArgs().slice(1), prompt],
+    agent
+  );
 }
 
 function withCodexAgentConfig(args: string[], agent: CodexAgentConfig): string[] {
@@ -26,18 +43,26 @@ function withCodexAgentConfig(args: string[], agent: CodexAgentConfig): string[]
   return [...codexConfigArgs, ...args];
 }
 
+function codexMcpConfigArgs(toolServers: AgentToolServer[] = []): string[] {
+  return toolServers.flatMap((server) => [
+    "-c",
+    `mcp_servers.${server.name}.url=${JSON.stringify(server.url)}`
+  ]);
+}
+
 export async function runCodex(
   home: string,
   workspace: string,
   endpoint: Endpoint,
-  prompt: string
+  prompt: string,
+  options: AgentRunOptions = {}
 ): Promise<AgentRunResult> {
   const agent = endpoint.agent;
   const resumed = await runCodexOnce({
     home,
     endpoint,
     command: agent.command,
-    args: buildCodexArgs(agent, workspace, prompt),
+    args: buildCodexArgs(agent, workspace, prompt, options.toolServers),
     workspace,
     prompt,
     attempt: "resume"
@@ -56,7 +81,7 @@ export async function runCodex(
     home,
     endpoint,
     command: agent.command,
-    args: buildFreshCodexArgs(agent, workspace, prompt),
+    args: buildFreshCodexArgs(agent, workspace, prompt, options.toolServers),
     workspace,
     prompt,
     attempt: "fresh"

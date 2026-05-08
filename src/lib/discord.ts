@@ -6,7 +6,10 @@ import {
   type Message
 } from "discord.js";
 import { handleAssistantRequest } from "./assistant.js";
+import { buildDiscordPromptMetadata, buildDiscordRequestContext } from "./discord-context.js";
+import { startDiscordContextToolServer } from "./discord-context-mcp.js";
 import { appendActivityLog, endpointActivity } from "./logging.js";
+import type { ManagedAgentToolServer } from "./agent-tools.js";
 import type { Endpoint } from "./types.js";
 
 const DISCORD_TYPING_REFRESH_MS = 8_000;
@@ -59,12 +62,22 @@ export async function handleDiscordMessage(home: string, endpoint: Endpoint, mes
   }
 
   appendActivityLog(home, endpointActivity(home, endpoint, "discord_message_received", { author: message.author.username }));
+  const discordContext = buildDiscordRequestContext(endpoint, message);
+  const toolServer = await startDiscordContextTools(home, endpoint, message, discordContext);
 
-  const result = await withDiscordTyping(message.channel, () =>
-    handleAssistantRequest(home, endpoint, content, message.author.username, {
-      source: discordMessageSource(message)
-    })
-  );
+  const result = await (async () => {
+    try {
+      return await withDiscordTyping(message.channel, () =>
+        handleAssistantRequest(home, endpoint, content, message.author.username, {
+          source: discordContext.source,
+          metadata: buildDiscordPromptMetadata(discordContext),
+          toolServers: toolServer ? [{ name: toolServer.name, url: toolServer.url }] : undefined
+        })
+      );
+    } finally {
+      await toolServer?.stop();
+    }
+  })();
 
   if (result.exitCode !== 0) {
     appendActivityLog(home, endpointActivity(home, endpoint, "agent_response_failed", { exitCode: result.exitCode }));
@@ -123,6 +136,27 @@ async function sendResponse(message: Message, response: string): Promise<void> {
 
   for (const chunk of chunks) {
     await message.reply({ content: chunk });
+  }
+}
+
+async function startDiscordContextTools(
+  home: string,
+  endpoint: Endpoint,
+  message: Message,
+  request: ReturnType<typeof buildDiscordRequestContext>
+): Promise<ManagedAgentToolServer | undefined> {
+  try {
+    return await startDiscordContextToolServer({
+      home,
+      request,
+      channel: message.channel
+    });
+  } catch (error) {
+    appendActivityLog(home, endpointActivity(home, endpoint, "discord_context_tools_failed", {
+      source: request.source,
+      error: errorMessage(error)
+    }));
+    return undefined;
   }
 }
 

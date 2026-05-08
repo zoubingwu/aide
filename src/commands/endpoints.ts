@@ -365,12 +365,13 @@ async function setEndpointEnabled(id: string, options: CommandOptions, enabled: 
   console.log(`${enabled ? "Resumed" : "Paused"} endpoint ${id}.`);
 }
 
-function discordPreparationGuide(): string {
+export function discordPreparationGuide(): string {
   return `Discord setup before continuing:
 1. Open Discord Developer Portal: https://discord.com/developers/applications
 2. Create or open an app, then copy the bot token from the Bot page.
-3. Install the app to a server with the bot scope: https://docs.discord.com/developers/quick-start/getting-started#adding-scopes-and-bot-permissions
-4. Grant View Channel and Send Messages in target channels: https://docs.discord.com/developers/topics/permissions
+3. Enable Message Content Intent on the Bot page.
+4. Install the app to a server with the bot scope: https://docs.discord.com/developers/quick-start/getting-started#adding-scopes-and-bot-permissions
+5. Grant View Channel, Send Messages, and Read Message History in target channels: https://docs.discord.com/developers/topics/permissions
 
 Aide will ask for:
 - Endpoint id: used for the workspace path.
