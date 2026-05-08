@@ -389,7 +389,7 @@ function openClawEnv(options: ImportDiscoveryOptions): SourceEnv {
   const configEnv = objectPath(readJson5Object(resolveOpenClawConfigPath(options)), ["env"]);
 
   if (configEnv) {
-    Object.assign(values, recordToStringMap(configEnv));
+    Object.assign(values, openClawConfigEnvValues(configEnv));
   }
 
   for (const filePath of paths) {
@@ -593,6 +593,7 @@ async function resolveOpenClawExecSecret(
   const result = await execa(command, provider.args ?? [], {
     cwd: path.dirname(command),
     env: childEnv,
+    extendEnv: false,
     input: JSON.stringify({
       protocolVersion: 1,
       provider: ref.provider,
@@ -915,6 +916,13 @@ function recordToStringMap(value: Record<string, unknown>): Record<string, strin
   }
 
   return entries;
+}
+
+function openClawConfigEnvValues(value: Record<string, unknown>): Record<string, string> {
+  return {
+    ...recordToStringMap(value),
+    ...recordToStringMap(objectConfig(value.vars))
+  };
 }
 
 function objectConfig(value: unknown): Record<string, unknown> {
