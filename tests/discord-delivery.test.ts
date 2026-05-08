@@ -218,6 +218,27 @@ describe("discord delivery", () => {
     });
     expect(stop).toHaveBeenCalledTimes(1);
   });
+
+  it("stops Discord context tools when typing fails before the agent runs", async () => {
+    const home = tempHome();
+    const stop = vi.fn().mockResolvedValue(undefined);
+    const message = fakeMessage({
+      channel: {
+        id: "channel-1",
+        sendTyping: vi.fn().mockRejectedValue(new Error("typing denied"))
+      } as FakeMessage["channel"] & { id: string }
+    });
+    mockStartDiscordContextToolServer().mockResolvedValueOnce({
+      name: "aide-discord-context",
+      url: "http://127.0.0.1:43210/mcp",
+      stop
+    });
+
+    await expect(handleDiscordMessage(home, endpoint, message)).rejects.toThrow("typing denied");
+
+    expect(handleAssistantRequest).not.toHaveBeenCalled();
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
 });
 
 function messageSource(input: { channelId: string; guildId: string | null; authorId: string }) {
@@ -262,7 +283,7 @@ type FakeMessage = Message & {
 function fakeMessage(options: {
   id?: string;
   reference?: { messageId: string };
-  channel?: FakeMessage["channel"] & { id?: string; parentId?: string; isThread?: () => boolean };
+  channel?: FakeMessage["channel"] & { id?: string; parentId?: string | null; isThread?: () => boolean };
   channelId?: string;
   reply?: ReturnType<typeof vi.fn>;
 } = {}): FakeMessage {

@@ -183,6 +183,30 @@ describe("discord context", () => {
 
     expect(records.map((record) => record.id)).toEqual(["message-2"]);
   });
+
+  it("keeps the newest search matches before presenting oldest to newest", async () => {
+    const fetch = vi.fn().mockResolvedValue(messageMap([
+      fakeDiscordMessage({ id: "message-3", authorId: "user-3", authorName: "cara", bot: false, createdTimestamp: Date.parse("2026-05-07T10:20:00.000Z"), content: "release newest", channelId: "channel-1" }),
+      fakeDiscordMessage({ id: "message-2", authorId: "user-2", authorName: "bob", bot: false, createdTimestamp: Date.parse("2026-05-07T10:10:00.000Z"), content: "release middle", channelId: "channel-1" }),
+      fakeDiscordMessage({ id: "message-1", authorId: "user-1", authorName: "alice", bot: false, createdTimestamp: Date.parse("2026-05-07T10:00:00.000Z"), content: "release oldest", channelId: "channel-1" })
+    ]));
+    const reader = new DiscordContextReader({
+      request: {
+        endpointId: "discord-main",
+        source: "channel:channel-1",
+        messageId: "message-4",
+        authorId: "user-1",
+        guildId: "guild-1",
+        channelId: "channel-1"
+      },
+      channel: { id: "channel-1", messages: { fetch } } as never,
+      now: () => new Date("2026-05-07T10:30:00.000Z")
+    });
+
+    const records = await reader.searchRecentMessages({ source: "channel:channel-1", query: "release", limit: 2, lookback: "24h" });
+
+    expect(records.map((record) => record.id)).toEqual(["message-2", "message-3"]);
+  });
 });
 
 function fakeMessage(input: Record<string, unknown>) {

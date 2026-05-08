@@ -65,17 +65,19 @@ export async function handleDiscordMessage(home: string, endpoint: Endpoint, mes
   const discordContext = buildDiscordRequestContext(endpoint, message);
   const toolServer = await startDiscordContextTools(home, endpoint, message, discordContext);
 
-  const result = await withDiscordTyping(message.channel, async () => {
+  const result = await (async () => {
     try {
-      return await handleAssistantRequest(home, endpoint, content, message.author.username, {
-        source: discordContext.source,
-        metadata: buildDiscordPromptMetadata(discordContext),
-        toolServers: toolServer ? [{ name: toolServer.name, url: toolServer.url }] : undefined
-      });
+      return await withDiscordTyping(message.channel, () =>
+        handleAssistantRequest(home, endpoint, content, message.author.username, {
+          source: discordContext.source,
+          metadata: buildDiscordPromptMetadata(discordContext),
+          toolServers: toolServer ? [{ name: toolServer.name, url: toolServer.url }] : undefined
+        })
+      );
     } finally {
       await toolServer?.stop();
     }
-  });
+  })();
 
   if (result.exitCode !== 0) {
     appendActivityLog(home, endpointActivity(home, endpoint, "agent_response_failed", { exitCode: result.exitCode }));

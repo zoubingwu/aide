@@ -207,8 +207,8 @@ export class DiscordContextReader {
       .map(normalizeDiscordMessage)
       .filter((record) => Date.parse(record.timestamp) >= since.getTime())
       .filter((record) => record.content.toLowerCase().includes(query))
+      .slice(0, limit)
       .reverse()
-      .slice(0, limit);
   }
 
   private assertSource(source: string): void {
