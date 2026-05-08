@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { Client, Message } from "discord.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { defaultCodexAgentConfig } from "../src/lib/config.js";
+import { defaultCodexAgentConfig, defaultEndpointTriggerConfig } from "../src/lib/config.js";
 import { handleAssistantRequest } from "../src/lib/assistant.js";
 import { chunkDiscordMessage, discordMessageSource, handleDiscordMessage } from "../src/lib/discord.js";
 import { startDiscordContextToolServer } from "../src/lib/discord-context-mcp.js";
@@ -59,6 +59,119 @@ describe("discord delivery", () => {
     expect(chunks.length).toBeGreaterThan(1);
     expect(chunks.every((chunk) => chunk.length <= 2_000)).toBe(true);
     expect(chunks.join("")).toBe(response);
+  });
+
+  it("ignores guild messages without mentions by default", async () => {
+    const home = tempHome();
+    const message = fakeMessage({
+      content: "hello",
+      mentionsBot: false
+    });
+
+    await handleDiscordMessage(home, endpoint, message);
+
+    expect(handleAssistantRequest).not.toHaveBeenCalled();
+    expect(message.reply).not.toHaveBeenCalled();
+  });
+
+  it("responds to direct messages without mentions", async () => {
+    const home = tempHome();
+    const message = fakeMessage({
+      content: "hello from dm",
+      guildId: null,
+      mentionsBot: false
+    });
+    mockHandleAssistantRequest().mockResolvedValueOnce({
+      response: "done",
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+      resumed: true
+    });
+
+    await handleDiscordMessage(home, endpoint, message);
+
+    expect(handleAssistantRequest).toHaveBeenCalledWith(home, endpoint, "hello from dm", "alice", expect.any(Object));
+    expect(message.reply).toHaveBeenCalledWith({ content: "done" });
+  });
+
+  it("responds to free-response channel messages without mentions", async () => {
+    const home = tempHome();
+    const freeEndpoint: Endpoint = {
+      ...endpoint,
+      trigger: { requireMention: true, freeResponseSources: ["channel:channel-1"] }
+    };
+    const message = fakeMessage({
+      content: "hello from channel",
+      mentionsBot: false
+    });
+    mockHandleAssistantRequest().mockResolvedValueOnce({
+      response: "done",
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+      resumed: true
+    });
+
+    await handleDiscordMessage(home, freeEndpoint, message);
+
+    expect(handleAssistantRequest).toHaveBeenCalledWith(home, freeEndpoint, "hello from channel", "alice", expect.any(Object));
+    expect(message.reply).toHaveBeenCalledWith({ content: "done" });
+  });
+
+  it("uses free-response parent channels for thread messages", async () => {
+    const home = tempHome();
+    const freeEndpoint: Endpoint = {
+      ...endpoint,
+      trigger: { requireMention: true, freeResponseSources: ["channel:parent-1"] }
+    };
+    const message = fakeMessage({
+      channel: {
+        id: "thread-1",
+        parentId: "parent-1",
+        isThread: () => true,
+        sendTyping: vi.fn()
+      } as FakeMessage["channel"] & { id: string; parentId: string; isThread: () => boolean },
+      channelId: "thread-1",
+      content: "hello from thread",
+      mentionsBot: false
+    });
+    mockHandleAssistantRequest().mockResolvedValueOnce({
+      response: "done",
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+      resumed: true
+    });
+
+    await handleDiscordMessage(home, freeEndpoint, message);
+
+    expect(handleAssistantRequest).toHaveBeenCalledWith(home, freeEndpoint, "hello from thread", "alice", expect.any(Object));
+    expect(message.reply).toHaveBeenCalledWith({ content: "done" });
+  });
+
+  it("responds to guild messages without mentions when mention requirement is disabled", async () => {
+    const home = tempHome();
+    const freeEndpoint: Endpoint = {
+      ...endpoint,
+      trigger: { requireMention: false, freeResponseSources: [] }
+    };
+    const message = fakeMessage({
+      content: "hello from guild",
+      mentionsBot: false
+    });
+    mockHandleAssistantRequest().mockResolvedValueOnce({
+      response: "done",
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+      resumed: true
+    });
+
+    await handleDiscordMessage(home, freeEndpoint, message);
+
+    expect(handleAssistantRequest).toHaveBeenCalledWith(home, freeEndpoint, "hello from guild", "alice", expect.any(Object));
+    expect(message.reply).toHaveBeenCalledWith({ content: "done" });
   });
 
   it("replies once per long response chunk", async () => {
@@ -209,6 +322,7 @@ describe("discord delivery", () => {
       source: "channel:thread-1",
       metadata: [
         { label: "Discord Message ID", value: "message-1" },
+        { label: "Aide Endpoint ID", value: "discord-agent-ops" },
         { label: "Discord Guild ID", value: "guild-1" },
         { label: "Discord Channel ID", value: "parent-1" },
         { label: "Discord Thread ID", value: "thread-1" },
@@ -254,6 +368,7 @@ const endpoint: Endpoint = {
   provider: "discord",
   enabled: true,
   token: "test-token",
+  trigger: defaultEndpointTriggerConfig(),
   agent: defaultCodexAgentConfig()
 };
 
@@ -285,8 +400,13 @@ function fakeMessage(options: {
   reference?: { messageId: string };
   channel?: FakeMessage["channel"] & { id?: string; parentId?: string | null; isThread?: () => boolean };
   channelId?: string;
+  content?: string;
+  guildId?: string | null;
+  mentionsBot?: boolean;
   reply?: ReturnType<typeof vi.fn>;
 } = {}): FakeMessage {
+  const mentionsBot = options.mentionsBot ?? true;
+
   return {
     id: options.id ?? "message-1",
     author: {
@@ -304,11 +424,11 @@ function fakeMessage(options: {
         id: "bot-1"
       }
     },
-    content: "<@bot-1> hello",
-    guildId: "guild-1",
+    content: options.content ?? "<@bot-1> hello",
+    guildId: options.guildId === undefined ? "guild-1" : options.guildId,
     mentions: {
       users: {
-        has: vi.fn((id: string) => id === "bot-1")
+        has: vi.fn((id: string) => mentionsBot && id === "bot-1")
       }
     },
     reference: options.reference ?? null,

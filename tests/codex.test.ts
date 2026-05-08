@@ -10,7 +10,7 @@ import {
   extractFinalResponse,
   runCodex
 } from "../src/lib/codex.js";
-import { defaultCodexAgentConfig } from "../src/lib/config.js";
+import { defaultCodexAgentConfig, defaultEndpointTriggerConfig } from "../src/lib/config.js";
 import { defaultCodexFreshArgs, defaultCodexResumeArgs } from "../src/lib/codex-args.js";
 import { ACTIVITY_LOG_FILE } from "../src/lib/logging.js";
 import { logsDir } from "../src/lib/paths.js";
@@ -31,6 +31,7 @@ const endpoint: Endpoint = {
   provider: "discord",
   enabled: true,
   token: "test-token",
+  trigger: defaultEndpointTriggerConfig(),
   agent: agentConfig
 };
 

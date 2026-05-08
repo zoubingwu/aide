@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { defaultCodexAgentConfig } from "../src/lib/config.js";
+import { defaultCodexAgentConfig, defaultEndpointTriggerConfig } from "../src/lib/config.js";
 import {
   buildDiscordPromptMetadata,
   buildDiscordRequestContext,
@@ -14,6 +14,7 @@ const endpoint: Endpoint = {
   provider: "discord",
   enabled: true,
   token: "test-token",
+  trigger: defaultEndpointTriggerConfig(),
   agent: defaultCodexAgentConfig()
 };
 
@@ -54,6 +55,7 @@ describe("discord context", () => {
 
     expect(metadata).toEqual([
       { label: "Discord Message ID", value: "message-1" },
+      { label: "Aide Endpoint ID", value: "discord-main" },
       { label: "Discord Guild ID", value: "guild-1" },
       { label: "Discord Channel ID", value: "parent-1" },
       { label: "Discord Thread ID", value: "thread-1" },

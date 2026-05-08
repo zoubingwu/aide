@@ -6,6 +6,8 @@ export const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday",
 
 export const CONFIG_PATHS = [
   "endpoints.<id>.token",
+  "endpoints.<id>.trigger.requireMention",
+  "endpoints.<id>.trigger.freeResponseSources",
   "endpoints.<id>.agent.command",
   "endpoints.<id>.agent.model",
   "endpoints.<id>.agent.reasoningEffort"
@@ -19,6 +21,8 @@ export const CONFIG_EXAMPLES = [
   "aide config get",
   "aide config get endpoints.discord.agent.model",
   "aide config set endpoints.discord.token <discord-bot-token>",
+  "aide config set endpoints.discord.trigger.requireMention true",
+  "aide config set endpoints.discord.trigger.freeResponseSources channel:123,channel:456",
   "aide config set endpoints.discord.agent.model gpt-5.5",
   "aide config set endpoints.discord.agent.reasoningEffort high"
 ];
@@ -56,7 +60,17 @@ Config
 - Set one value: aide config set <path> <value>
 - Paths: ${CONFIG_PATH_LIST}
 - Endpoint token changes apply on the next start or restart.
+- Endpoint trigger changes apply on the next start or restart.
 - Endpoint agent command, model, and reasoning effort apply on the next agent request.
+
+Trigger guide
+- Trigger settings are per endpoint.
+- Direct messages always trigger the endpoint.
+- Server channels require a bot mention by default: endpoints.<id>.trigger.requireMention = true
+- Set endpoints.<id>.trigger.requireMention false to respond to every accessible server-channel message for that endpoint.
+- Set endpoints.<id>.trigger.freeResponseSources to a comma-separated channel list for mention-free channels, such as channel:123,channel:456.
+- A thread whose parent channel is listed in freeResponseSources also triggers without a mention.
+- When a user asks to make the current Discord channel mention-free, use Source: channel:<id> as the value for endpoints.<id>.trigger.freeResponseSources, then run aide restart.
 
 Config examples
 ${CONFIG_EXAMPLES.map((example) => `- ${example}`).join("\n")}

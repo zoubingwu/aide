@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { defaultCodexAgentConfig, ensureAideHome, writeEndpoints } from "../src/lib/config.js";
+import { defaultCodexAgentConfig, defaultEndpointTriggerConfig, ensureAideHome, writeEndpoints } from "../src/lib/config.js";
 import { RUNTIME_LOG_FILE } from "../src/lib/logging.js";
 import { logsDir, schedulesPath } from "../src/lib/paths.js";
 import { executeScheduleOnce, RuntimeScheduler } from "../src/lib/scheduler.js";
@@ -267,7 +267,14 @@ describe("scheduler execution", () => {
 });
 
 function discordEndpoint(): Endpoint {
-  return { id: "discord-main", provider: "discord", enabled: true, token: "test-token", agent: defaultCodexAgentConfig() };
+  return {
+    id: "discord-main",
+    provider: "discord",
+    enabled: true,
+    token: "test-token",
+    trigger: defaultEndpointTriggerConfig(),
+    agent: defaultCodexAgentConfig()
+  };
 }
 
 function onceSchedule(): Schedule {

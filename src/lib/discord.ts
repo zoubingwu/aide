@@ -51,7 +51,7 @@ export async function handleDiscordMessage(home: string, endpoint: Endpoint, mes
 
   const botUserId = message.client.user.id;
 
-  if (!message.mentions.users.has(botUserId)) {
+  if (!shouldTriggerDiscordMessage(endpoint, message, botUserId)) {
     return;
   }
 
@@ -129,6 +129,40 @@ function typingSender(channel: Message["channel"]): (() => Promise<void>) | unde
 
 function stripMention(content: string, botUserId: string): string {
   return content.replace(new RegExp(`<@!?${botUserId}>`, "g"), "").trim();
+}
+
+function shouldTriggerDiscordMessage(endpoint: Endpoint, message: Message, botUserId: string): boolean {
+  if (!message.guildId) {
+    return true;
+  }
+
+  if (!endpoint.trigger.requireMention || isFreeResponseMessage(endpoint, message)) {
+    return true;
+  }
+
+  return message.mentions.users.has(botUserId);
+}
+
+function isFreeResponseMessage(endpoint: Endpoint, message: Message): boolean {
+  const sources = new Set(endpoint.trigger.freeResponseSources);
+
+  for (const source of discordChannelSources(message)) {
+    if (sources.has(source)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function discordChannelSources(message: Message): string[] {
+  const channelIds = [message.channelId, discordParentChannelId(message)].filter(Boolean);
+  return [...new Set(channelIds)].map((id) => `channel:${id}`);
+}
+
+function discordParentChannelId(message: Message): string | undefined {
+  const channel = message.channel as Message["channel"] & { parentId?: string | null };
+  return channel.parentId ?? undefined;
 }
 
 async function sendResponse(message: Message, response: string): Promise<void> {

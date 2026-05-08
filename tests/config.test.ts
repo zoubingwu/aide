@@ -52,6 +52,33 @@ describe("config", () => {
     expect(content).not.toContain("startupTimeoutMs");
   });
 
+  it("defaults missing endpoint trigger config", () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    fs.writeFileSync(
+      configPath(home),
+      `[[endpoints]]
+id = "discord"
+provider = "discord"
+enabled = true
+token = "test-token"
+
+[endpoints.agent]
+provider = "codex"
+command = "codex"
+model = "gpt-5.5"
+reasoningEffort = "medium"
+`
+    );
+
+    const [endpoint] = loadEndpoints(home);
+
+    expect(endpoint?.trigger).toEqual({
+      requireMention: true,
+      freeResponseSources: []
+    });
+  });
+
   it("tightens an existing config file during initialization", () => {
     if (process.platform === "win32") {
       return;
