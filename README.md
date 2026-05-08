@@ -58,6 +58,14 @@ The setup asks for:
 
 After `aide start`, mention the bot in a Discord channel where it has access.
 
+To migrate existing Discord bot tokens from Hermes or OpenClaw:
+
+```bash
+aide import hermes
+aide import openclaw
+aide import all
+```
+
 ## Config
 
 Endpoints bind a transport provider to a CLI agent:
@@ -92,6 +100,9 @@ aide endpoint show <id>
 aide endpoint test <id> --message "hello"
 aide endpoint open <id>
 aide endpoint config open <id>
+
+aide import hermes
+aide import openclaw
 
 aide schedule add "Check failed jobs" --id failed-jobs --kind cron --cron "*/15 * * * *" --endpoint <id> --target channel:<channel-id>
 aide schedule add "Daily brief" --id daily-brief --kind daily --endpoint <id> --target channel:<channel-id> --time 09:00

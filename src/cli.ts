@@ -17,6 +17,7 @@ import {
   getConfigCommand,
   setConfigCommand
 } from "./commands/config.js";
+import { importCommand } from "./commands/import.js";
 import {
   installServiceCommand,
   statusServiceCommand,
@@ -59,6 +60,7 @@ const runArgv = subcommandArgv(process.argv, "__run", "aide __run");
 const configArgv = subcommandArgv(process.argv, "config", "aide config");
 const endpointArgv = subcommandArgv(process.argv, "endpoint", "aide endpoint");
 const helpArgv = subcommandArgv(process.argv, "help", "aide help");
+const importArgv = subcommandArgv(process.argv, "import", "aide import");
 const scheduleArgv = subcommandArgv(process.argv, "schedule", "aide schedule");
 const serviceArgv = subcommandArgv(process.argv, "service", "aide service");
 
@@ -75,6 +77,8 @@ if (runArgv) {
   }
 } else if (helpArgv) {
   runHelpCli(helpArgv);
+} else if (importArgv) {
+  runImportCli(importArgv);
 } else if (scheduleArgv) {
   const configArgv = subcommandArgv(scheduleArgv, "config", "aide schedule config");
   if (configArgv) {
@@ -114,6 +118,7 @@ function runRootCli(argv: string[]): void {
   cli.command("config", "Manage config").action(() => runConfigCli(["node", "aide config"]));
   cli.command("endpoint", "Manage endpoints").action(() => runEndpointCli(["node", "aide endpoint"]));
   cli.command("help", "Show detailed help").action(() => runHelpCli(["node", "aide help"]));
+  cli.command("import", "Import endpoints").action(() => runImportCli(["node", "aide import"]));
   cli.command("schedule", "Manage schedules").action(() => runScheduleCli(["node", "aide schedule"]));
   cli.command("service", "Manage runtime service").action(() => runServiceCli(["node", "aide service"]));
 
@@ -234,6 +239,15 @@ function runHelpCli(argv: string[]): void {
 
   cli.help();
   cli.command("agent", "Show agent-facing CLI guide").action(wrap(agentHelpCommand));
+
+  handleNoMatch(cli, cli.parse(argv));
+}
+
+function runImportCli(argv: string[]): void {
+  const cli = cac("aide import");
+
+  cli.option("--home <path>", "Aide home directory").help();
+  cli.command("<source>", "Import endpoints from hermes, openclaw, or all").action(wrap(importCommand));
 
   handleNoMatch(cli, cli.parse(argv));
 }
