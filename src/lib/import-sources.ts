@@ -297,6 +297,7 @@ function hermesTriggerConfig(config: unknown, env: Record<string, string>): Endp
 
 function discoverOpenClawCandidates(options: ImportDiscoveryOptions): ImportCandidate[] {
   const env = openClawEnv(options);
+  const openclawHome = resolveOpenClawHome(options);
   const configPath = resolveOpenClawConfigPath(options);
   const config = readJson5Object(configPath);
   const discord = objectPath(config, ["channels", "discord"]);
@@ -310,7 +311,7 @@ function discoverOpenClawCandidates(options: ImportDiscoveryOptions): ImportCand
   const defaultCandidate = {
     source: "openclaw" as const,
     sourceName: "default",
-    sourcePath: configPath ?? env.paths[0] ?? expandHome("~/.openclaw"),
+    sourcePath: configPath ?? env.paths[0] ?? openclawHome,
     endpointId: endpointIdFor("openclaw", "default"),
     trigger: defaultEndpointTriggerConfig()
   };
@@ -346,7 +347,7 @@ function discoverOpenClawCandidates(options: ImportDiscoveryOptions): ImportCand
       const baseCandidate = {
         source: "openclaw" as const,
         sourceName: accountId,
-        sourcePath: configPath ?? env.paths[0] ?? expandHome("~/.openclaw"),
+        sourcePath: configPath ?? env.paths[0] ?? openclawHome,
         endpointId: endpointIdFor("openclaw", accountId),
         trigger: defaultEndpointTriggerConfig()
       };
@@ -378,22 +379,21 @@ function discoverOpenClawCandidates(options: ImportDiscoveryOptions): ImportCand
 function openClawEnv(options: ImportDiscoveryOptions): SourceEnv {
   const env = options.env ?? process.env;
   const cwd = options.cwd ?? process.cwd();
-  const openclawHome = expandHome(options.openclawHome ?? "~/.openclaw");
+  const openclawHome = resolveOpenClawHome(options);
   const paths = [
     path.join(os.homedir(), ".config", "openclaw", "gateway.env"),
     path.join(openclawHome, ".env"),
     path.join(cwd, ".env")
   ];
   const values: Record<string, string> = {};
-
-  for (const filePath of paths) {
-    Object.assign(values, readEnvFile(filePath));
-  }
-
   const configEnv = objectPath(readJson5Object(resolveOpenClawConfigPath(options)), ["env"]);
 
   if (configEnv) {
     Object.assign(values, recordToStringMap(configEnv));
+  }
+
+  for (const filePath of paths) {
+    Object.assign(values, readEnvFile(filePath));
   }
 
   Object.assign(values, envToStrings(env));
@@ -404,10 +404,15 @@ function openClawEnv(options: ImportDiscoveryOptions): SourceEnv {
   };
 }
 
+function resolveOpenClawHome(options: ImportDiscoveryOptions): string {
+  const env = options.env ?? process.env;
+  return expandHome(options.openclawHome ?? env.OPENCLAW_HOME ?? "~/.openclaw");
+}
+
 function resolveOpenClawConfigPath(options: ImportDiscoveryOptions): string | undefined {
   const env = options.env ?? process.env;
   const explicitPath = options.openclawConfigPath ?? env.OPENCLAW_CONFIG_PATH;
-  const fallbackPath = path.join(expandHome(options.openclawHome ?? "~/.openclaw"), "openclaw.json");
+  const fallbackPath = path.join(resolveOpenClawHome(options), "openclaw.json");
   const candidates = [explicitPath ? expandHome(explicitPath) : undefined, fallbackPath].filter(Boolean) as string[];
   return candidates.find((filePath) => fs.existsSync(filePath));
 }

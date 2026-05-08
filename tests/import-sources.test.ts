@@ -89,6 +89,52 @@ describe("import sources", () => {
     ]);
   });
 
+  it("uses OPENCLAW_HOME for OpenClaw config and env discovery", () => {
+    const openclawHome = tempDir("aide-openclaw-home-");
+    writeFile(path.join(openclawHome, ".env"), "DISCORD_BOT_TOKEN=home-token\n");
+    writeFile(
+      path.join(openclawHome, "openclaw.json"),
+      [
+        "{",
+        "  channels: { discord: { token: '${DISCORD_BOT_TOKEN}' } },",
+        "}",
+        ""
+      ].join("\n")
+    );
+
+    const candidates = readyImportCandidates(discoverImportCandidates("openclaw", {
+      env: { OPENCLAW_HOME: openclawHome },
+      cwd: tempDir("aide-openclaw-cwd-")
+    }));
+
+    expect(candidates.map((candidate) => [candidate.sourcePath, candidate.token])).toEqual([
+      [path.join(openclawHome, "openclaw.json"), "home-token"]
+    ]);
+  });
+
+  it("treats OpenClaw config env as a fallback below dotenv files", () => {
+    const openclawHome = tempDir("aide-openclaw-env-");
+    writeFile(path.join(openclawHome, ".env"), "DISCORD_BOT_TOKEN=dotenv-token\n");
+    writeFile(
+      path.join(openclawHome, "openclaw.json"),
+      [
+        "{",
+        "  env: { DISCORD_BOT_TOKEN: 'config-token' },",
+        "  channels: { discord: { token: '${DISCORD_BOT_TOKEN}' } },",
+        "}",
+        ""
+      ].join("\n")
+    );
+
+    const candidates = readyImportCandidates(discoverImportCandidates("openclaw", {
+      openclawHome,
+      env: {},
+      cwd: tempDir("aide-openclaw-cwd-")
+    }));
+
+    expect(candidates.map((candidate) => candidate.token)).toEqual(["dotenv-token"]);
+  });
+
   it("deduplicates by token and allocates endpoint ids around conflicts", () => {
     const existing = [endpoint("openclaw-work", "existing-token"), endpoint("already", "default-token")];
     const candidates = [
