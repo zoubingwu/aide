@@ -61,8 +61,26 @@ describe("discord delivery", () => {
     expect(chunks.join("")).toBe(response);
   });
 
-  it("requests message content intent for mention-free guild triggers", () => {
-    expect(discordGatewayIntents()).toContain(GatewayIntentBits.MessageContent);
+  it("keeps default mention-only endpoints off the privileged message content intent", () => {
+    expect(discordGatewayIntents(endpoint)).not.toContain(GatewayIntentBits.MessageContent);
+  });
+
+  it("requests message content intent when the endpoint disables mention requirement", () => {
+    const freeEndpoint: Endpoint = {
+      ...endpoint,
+      trigger: { requireMention: false, freeResponseSources: [] }
+    };
+
+    expect(discordGatewayIntents(freeEndpoint)).toContain(GatewayIntentBits.MessageContent);
+  });
+
+  it("requests message content intent for free-response sources", () => {
+    const freeEndpoint: Endpoint = {
+      ...endpoint,
+      trigger: { requireMention: true, freeResponseSources: ["channel:channel-1"] }
+    };
+
+    expect(discordGatewayIntents(freeEndpoint)).toContain(GatewayIntentBits.MessageContent);
   });
 
   it("ignores guild messages without mentions by default", async () => {

@@ -17,13 +17,18 @@ const DISCORD_MESSAGE_CONTENT_LIMIT = 2_000;
 const DISCORD_MESSAGE_CHUNK_BUFFER = 100;
 const DISCORD_MESSAGE_CHUNK_SIZE = DISCORD_MESSAGE_CONTENT_LIMIT - DISCORD_MESSAGE_CHUNK_BUFFER;
 
-export function discordGatewayIntents(): GatewayIntentBits[] {
-  return [
+export function discordGatewayIntents(endpoint: Endpoint): GatewayIntentBits[] {
+  const intents = [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.DirectMessages,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.DirectMessages
   ];
+
+  if (requiresMessageContentIntent(endpoint)) {
+    intents.push(GatewayIntentBits.MessageContent);
+  }
+
+  return intents;
 }
 
 export async function startDiscordEndpoint(home: string, endpoint: Endpoint): Promise<Client> {
@@ -36,7 +41,7 @@ export async function startDiscordEndpoint(home: string, endpoint: Endpoint): Pr
   }
 
   const client = new Client({
-    intents: discordGatewayIntents(),
+    intents: discordGatewayIntents(endpoint),
     partials: [Partials.Channel]
   });
 
@@ -146,6 +151,10 @@ function shouldTriggerDiscordMessage(endpoint: Endpoint, message: Message, botUs
   }
 
   return message.mentions.users.has(botUserId);
+}
+
+function requiresMessageContentIntent(endpoint: Endpoint): boolean {
+  return !endpoint.trigger.requireMention || endpoint.trigger.freeResponseSources.length > 0;
 }
 
 function isFreeResponseMessage(endpoint: Endpoint, message: Message): boolean {
