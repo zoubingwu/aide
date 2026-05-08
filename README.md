@@ -68,12 +68,8 @@ id = "discord"
 provider = "discord"
 enabled = true
 token = "<discord-bot-token>"
-
-[endpoints.agent]
-provider = "codex"
-command = "codex"
-model = "gpt-5.5"
-reasoningEffort = "medium"
+trigger = { requireMention = true, freeResponseSources = [] }
+agent = { provider = "codex", command = "codex", model = "gpt-5.5", reasoningEffort = "medium" }
 ```
 
 Edit `~/.aide/config.toml` to change endpoint token, agent command, model, or reasoning effort.
