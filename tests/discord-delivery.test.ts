@@ -1,11 +1,11 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { Client, Message } from "discord.js";
+import { GatewayIntentBits, type Client, type Message } from "discord.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { defaultCodexAgentConfig, defaultEndpointTriggerConfig } from "../src/lib/config.js";
 import { handleAssistantRequest } from "../src/lib/assistant.js";
-import { chunkDiscordMessage, discordMessageSource, handleDiscordMessage } from "../src/lib/discord.js";
+import { chunkDiscordMessage, discordGatewayIntents, discordMessageSource, handleDiscordMessage } from "../src/lib/discord.js";
 import { startDiscordContextToolServer } from "../src/lib/discord-context-mcp.js";
 import { deliverDiscordMessage, parseDiscordTarget } from "../src/lib/discord-delivery.js";
 import { ACTIVITY_LOG_FILE } from "../src/lib/logging.js";
@@ -59,6 +59,10 @@ describe("discord delivery", () => {
     expect(chunks.length).toBeGreaterThan(1);
     expect(chunks.every((chunk) => chunk.length <= 2_000)).toBe(true);
     expect(chunks.join("")).toBe(response);
+  });
+
+  it("requests message content intent for mention-free guild triggers", () => {
+    expect(discordGatewayIntents()).toContain(GatewayIntentBits.MessageContent);
   });
 
   it("ignores guild messages without mentions by default", async () => {

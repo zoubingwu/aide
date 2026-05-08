@@ -290,6 +290,7 @@ describe("CLI help", () => {
     expect(stdout).toContain("Source: channel:<id>");
     expect(stdout).toContain("Trigger settings are per endpoint.");
     expect(stdout).toContain("aide config set endpoints.discord.trigger.freeResponseSources channel:123,channel:456");
+    expect(stdout).toContain("Mention-free server-channel triggers require Message Content Intent");
     expect(stdout).toContain("When a user asks to make the current Discord channel mention-free");
     expect(stdout).toContain("aide config set endpoints.discord.agent.model gpt-5.5");
     expect(stdout).toContain("aide schedule add <prompt>");

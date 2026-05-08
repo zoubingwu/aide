@@ -70,6 +70,7 @@ Trigger guide
 - Set endpoints.<id>.trigger.requireMention false to respond to every accessible server-channel message for that endpoint.
 - Set endpoints.<id>.trigger.freeResponseSources to a comma-separated channel list for mention-free channels, such as channel:123,channel:456.
 - A thread whose parent channel is listed in freeResponseSources also triggers without a mention.
+- Mention-free server-channel triggers require Message Content Intent in the Discord Developer Portal.
 - When a user asks to make the current Discord channel mention-free, use Source: channel:<id> as the value for endpoints.<id>.trigger.freeResponseSources, then run aide restart.
 
 Config examples

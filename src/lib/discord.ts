@@ -17,6 +17,15 @@ const DISCORD_MESSAGE_CONTENT_LIMIT = 2_000;
 const DISCORD_MESSAGE_CHUNK_BUFFER = 100;
 const DISCORD_MESSAGE_CHUNK_SIZE = DISCORD_MESSAGE_CONTENT_LIMIT - DISCORD_MESSAGE_CHUNK_BUFFER;
 
+export function discordGatewayIntents(): GatewayIntentBits[] {
+  return [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.DirectMessages,
+    GatewayIntentBits.MessageContent
+  ];
+}
+
 export async function startDiscordEndpoint(home: string, endpoint: Endpoint): Promise<Client> {
   const token = endpoint.token;
 
@@ -27,11 +36,7 @@ export async function startDiscordEndpoint(home: string, endpoint: Endpoint): Pr
   }
 
   const client = new Client({
-    intents: [
-      GatewayIntentBits.Guilds,
-      GatewayIntentBits.GuildMessages,
-      GatewayIntentBits.DirectMessages
-    ],
+    intents: discordGatewayIntents(),
     partials: [Partials.Channel]
   });
 
