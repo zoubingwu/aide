@@ -12,11 +12,17 @@ export interface CodexAgentConfig {
 
 export type AgentConfig = CodexAgentConfig;
 
+export interface EndpointTriggerConfig {
+  requireMention: boolean;
+  freeResponseSources: string[];
+}
+
 export interface Endpoint {
   id: string;
   provider: Provider;
   enabled: boolean;
   token: string;
+  trigger: EndpointTriggerConfig;
   agent: AgentConfig;
 }
 

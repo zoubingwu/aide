@@ -11,7 +11,7 @@ import {
   usagePath,
   workspaceDir
 } from "./paths.js";
-import type { CodexAgentConfig, Endpoint, RuntimeState } from "./types.js";
+import type { CodexAgentConfig, Endpoint, EndpointTriggerConfig, RuntimeState } from "./types.js";
 
 const DEFAULT_RUNTIME_MODEL = "gpt-5.5";
 const DEFAULT_REASONING_EFFORT = "medium";
@@ -25,11 +25,21 @@ const codexAgentConfigSchema = z.object({
   reasoningEffort: codexReasoningEffortSchema.default(DEFAULT_REASONING_EFFORT)
 });
 
+const discordTriggerSourceSchema = z.string().refine(isDiscordTriggerSource, {
+  message: "Unsupported trigger source. Use channel:<id>."
+});
+
+const endpointTriggerConfigSchema = z.object({
+  requireMention: z.boolean().default(true),
+  freeResponseSources: z.array(discordTriggerSourceSchema).default([])
+}).default(defaultEndpointTriggerConfig);
+
 const endpointSchema = z.object({
   id: z.string().min(1),
   provider: z.literal("discord"),
   enabled: z.boolean(),
   token: z.string().min(1),
+  trigger: endpointTriggerConfigSchema,
   agent: codexAgentConfigSchema.default(defaultCodexAgentConfig)
 });
 
@@ -58,6 +68,13 @@ export function defaultCodexAgentConfig(): CodexAgentConfig {
     command: "codex",
     model: DEFAULT_RUNTIME_MODEL,
     reasoningEffort: DEFAULT_REASONING_EFFORT
+  };
+}
+
+export function defaultEndpointTriggerConfig(): EndpointTriggerConfig {
+  return {
+    requireMention: true,
+    freeResponseSources: []
   };
 }
 
@@ -175,4 +192,9 @@ function writeFileIfMissing(filePath: string, content: string, mode?: number): v
 
 function secureConfigFile(home: string): void {
   fs.chmodSync(configPath(home), 0o600);
+}
+
+function isDiscordTriggerSource(value: string): boolean {
+  const [kind, id, extra] = value.split(":");
+  return kind === "channel" && Boolean(id) && extra === undefined;
 }

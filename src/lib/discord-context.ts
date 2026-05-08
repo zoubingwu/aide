@@ -56,6 +56,7 @@ export function buildDiscordRequestContext(endpoint: Endpoint, message: Message)
 export function buildDiscordPromptMetadata(context: DiscordRequestContext): AssistantPromptMetadata[] {
   return [
     { label: "Discord Message ID", value: context.messageId },
+    { label: "Aide Endpoint ID", value: context.endpointId },
     { label: "Discord Guild ID", value: context.guildId },
     { label: "Discord Channel ID", value: context.channelId },
     { label: "Discord Thread ID", value: context.threadId },

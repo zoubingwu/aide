@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import prompts from "prompts";
 import {
+  defaultEndpointTriggerConfig,
   findEndpoint,
   loadEndpoints,
   requireEndpointIndex,
@@ -72,6 +73,8 @@ export async function showEndpointCommand(id: string, options: CommandOptions): 
   console.log(`Command     ${endpoint.agent.command}`);
   console.log(`Model       ${endpoint.agent.model}`);
   console.log(`Reasoning   ${endpoint.agent.reasoningEffort}`);
+  console.log(`Mention     ${endpoint.trigger.requireMention ? "required" : "free"}`);
+  console.log(`Free chats  ${endpoint.trigger.freeResponseSources.join(",") || "none"}`);
   console.log(`Workspace   ${displayPath(workspace.path)}`);
   console.log(`SOUL.md     ${workspace.soulExists ? "exists" : "missing"}`);
   console.log(`AGENTS.md   ${workspace.agentsExists ? "exists" : "missing"}`);
@@ -176,6 +179,7 @@ async function addDiscordEndpoint(options: CommandOptions): Promise<void> {
     provider: "discord",
     enabled: true,
     token: answers.token,
+    trigger: defaultEndpointTriggerConfig(),
     agent
   };
 

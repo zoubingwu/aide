@@ -54,18 +54,28 @@ describe("CLI help", () => {
 
     await runCli("--home", home, "config", "set", "endpoints.discord-main.agent.model", "gpt-5.4");
     await runCli("--home", home, "config", "set", "endpoints.discord-main.agent.reasoningEffort", "high");
+    await runCli("--home", home, "config", "set", "endpoints.discord-main.trigger.requireMention", "false");
+    await runCli("--home", home, "config", "set", "endpoints.discord-main.trigger.freeResponseSources", "channel:123,channel:456");
     await runCli("--home", home, "config", "set", "endpoints.discord-main.token", "new-token");
 
     const model = await runCli("--home", home, "config", "get", "endpoints.discord-main.agent.model");
     const token = await runCli("--home", home, "config", "get", "endpoints.discord-main.token");
+    const requireMention = await runCli("--home", home, "config", "get", "endpoints.discord-main.trigger.requireMention");
+    const freeResponseSources = await runCli("--home", home, "config", "get", "endpoints.discord-main.trigger.freeResponseSources");
     const all = await runCli("--home", home, "config", "get");
     const config = fs.readFileSync(path.join(home, "config.toml"), "utf8");
 
     expect(model.stdout).toContain('endpoints.discord-main.agent.model = "gpt-5.4"');
     expect(token.stdout).toContain('endpoints.discord-main.token = "configured"');
+    expect(requireMention.stdout).toContain("endpoints.discord-main.trigger.requireMention = false");
+    expect(freeResponseSources.stdout).toContain('endpoints.discord-main.trigger.freeResponseSources = ["channel:123","channel:456"]');
     expect(all.stdout).not.toContain("home");
+    expect(all.stdout).toContain("endpoints.discord-main.trigger.requireMention");
+    expect(all.stdout).toContain("endpoints.discord-main.trigger.freeResponseSources");
     expect(config).toContain('model = "gpt-5.4"');
     expect(config).toContain('reasoningEffort = "high"');
+    expect(config).toContain("requireMention = false");
+    expect(config).toContain('freeResponseSources = [ "channel:123", "channel:456" ]');
     expect(config).toContain('token = "new-token"');
     expect(config).not.toContain("home =");
   });
@@ -75,7 +85,10 @@ describe("CLI help", () => {
 
     expect(stdout).toContain("endpoints.<id>.agent.model");
     expect(stdout).toContain("endpoints.<id>.agent.reasoningEffort");
+    expect(stdout).toContain("endpoints.<id>.trigger.requireMention");
+    expect(stdout).toContain("endpoints.<id>.trigger.freeResponseSources");
     expect(stdout).toContain("endpoints.<id>.token");
+    expect(stdout).toContain("aide config set endpoints.discord.trigger.freeResponseSources channel:123,channel:456");
     expect(stdout).toContain("aide config set endpoints.discord.agent.reasoningEffort high");
   });
 
@@ -275,6 +288,10 @@ describe("CLI help", () => {
 
     expect(stdout).toContain("Aide Agent Guide");
     expect(stdout).toContain("Source: channel:<id>");
+    expect(stdout).toContain("Trigger settings are per endpoint.");
+    expect(stdout).toContain("aide config set endpoints.discord.trigger.freeResponseSources channel:123,channel:456");
+    expect(stdout).toContain("Mention-free server-channel triggers require Message Content Intent");
+    expect(stdout).toContain("When a user asks to make the current Discord channel mention-free");
     expect(stdout).toContain("aide config set endpoints.discord.agent.model gpt-5.5");
     expect(stdout).toContain("aide schedule add <prompt>");
     expect(stdout).toContain("Agents should prefer --kind cron with --cron for exact schedules.");
@@ -307,6 +324,8 @@ describe("CLI help", () => {
     expect(configToml).toContain('command = "codex"');
     expect(configToml).toContain('model = "gpt-5.5"');
     expect(configToml).toContain('reasoningEffort = "medium"');
+    expect(configToml).toContain("requireMention = true");
+    expect(configToml).toContain("freeResponseSources = []");
     expect(fs.existsSync(path.join(home, ".env.local"))).toBe(false);
     expect(configToml).not.toContain("workspacePath");
     expect(configToml).not.toContain("routing");

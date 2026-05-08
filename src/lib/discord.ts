@@ -17,6 +17,20 @@ const DISCORD_MESSAGE_CONTENT_LIMIT = 2_000;
 const DISCORD_MESSAGE_CHUNK_BUFFER = 100;
 const DISCORD_MESSAGE_CHUNK_SIZE = DISCORD_MESSAGE_CONTENT_LIMIT - DISCORD_MESSAGE_CHUNK_BUFFER;
 
+export function discordGatewayIntents(endpoint: Endpoint): GatewayIntentBits[] {
+  const intents = [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.DirectMessages
+  ];
+
+  if (requiresMessageContentIntent(endpoint)) {
+    intents.push(GatewayIntentBits.MessageContent);
+  }
+
+  return intents;
+}
+
 export async function startDiscordEndpoint(home: string, endpoint: Endpoint): Promise<Client> {
   const token = endpoint.token;
 
@@ -27,11 +41,7 @@ export async function startDiscordEndpoint(home: string, endpoint: Endpoint): Pr
   }
 
   const client = new Client({
-    intents: [
-      GatewayIntentBits.Guilds,
-      GatewayIntentBits.GuildMessages,
-      GatewayIntentBits.DirectMessages
-    ],
+    intents: discordGatewayIntents(endpoint),
     partials: [Partials.Channel]
   });
 
@@ -51,7 +61,7 @@ export async function handleDiscordMessage(home: string, endpoint: Endpoint, mes
 
   const botUserId = message.client.user.id;
 
-  if (!message.mentions.users.has(botUserId)) {
+  if (!shouldTriggerDiscordMessage(endpoint, message, botUserId)) {
     return;
   }
 
@@ -129,6 +139,44 @@ function typingSender(channel: Message["channel"]): (() => Promise<void>) | unde
 
 function stripMention(content: string, botUserId: string): string {
   return content.replace(new RegExp(`<@!?${botUserId}>`, "g"), "").trim();
+}
+
+function shouldTriggerDiscordMessage(endpoint: Endpoint, message: Message, botUserId: string): boolean {
+  if (!message.guildId) {
+    return true;
+  }
+
+  if (!endpoint.trigger.requireMention || isFreeResponseMessage(endpoint, message)) {
+    return true;
+  }
+
+  return message.mentions.users.has(botUserId);
+}
+
+function requiresMessageContentIntent(endpoint: Endpoint): boolean {
+  return !endpoint.trigger.requireMention || endpoint.trigger.freeResponseSources.length > 0;
+}
+
+function isFreeResponseMessage(endpoint: Endpoint, message: Message): boolean {
+  const sources = new Set(endpoint.trigger.freeResponseSources);
+
+  for (const source of discordChannelSources(message)) {
+    if (sources.has(source)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function discordChannelSources(message: Message): string[] {
+  const channelIds = [message.channelId, discordParentChannelId(message)].filter(Boolean);
+  return [...new Set(channelIds)].map((id) => `channel:${id}`);
+}
+
+function discordParentChannelId(message: Message): string | undefined {
+  const channel = message.channel as Message["channel"] & { parentId?: string | null };
+  return channel.parentId ?? undefined;
 }
 
 async function sendResponse(message: Message, response: string): Promise<void> {
