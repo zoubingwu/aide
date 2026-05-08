@@ -89,6 +89,67 @@ describe("import sources", () => {
     ]);
   });
 
+  it("uses OpenClaw default account tokens before env fallback", () => {
+    const openclawHome = tempDir("aide-openclaw-default-account-");
+    writeFile(
+      path.join(openclawHome, "openclaw.json"),
+      [
+        "{",
+        "  channels: {",
+        "    discord: {",
+        "      accounts: {",
+        "        default: { token: 'account-token' },",
+        "      },",
+        "    },",
+        "  },",
+        "}",
+        ""
+      ].join("\n")
+    );
+
+    const candidates = readyImportCandidates(discoverImportCandidates("openclaw", {
+      openclawHome,
+      env: { DISCORD_BOT_TOKEN: "stale-env-token" },
+      cwd: openclawHome
+    }));
+
+    expect(candidates.map((candidate) => [candidate.sourceName, candidate.endpointId, candidate.token])).toEqual([
+      ["default", "openclaw", "account-token"]
+    ]);
+  });
+
+  it("resolves OpenClaw config includes before Discord token discovery", () => {
+    const openclawHome = tempDir("aide-openclaw-include-");
+    writeFile(
+      path.join(openclawHome, "openclaw.json"),
+      [
+        "{",
+        "  '$include': './discord.json5',",
+        "}",
+        ""
+      ].join("\n")
+    );
+    writeFile(
+      path.join(openclawHome, "discord.json5"),
+      [
+        "{",
+        "  channels: { discord: { token: 'included-token' } },",
+        "}",
+        ""
+      ].join("\n")
+    );
+
+    const candidates = readyImportCandidates(discoverImportCandidates("openclaw", {
+      openclawHome,
+      env: { DISCORD_BOT_TOKEN: "stale-env-token" },
+      cwd: openclawHome
+    }));
+
+    expect(candidates.map((candidate) => [candidate.sourceName, candidate.endpointId, candidate.token])).toEqual([
+      ["default", "openclaw", "included-token"]
+    ]);
+  });
+
   it("uses OPENCLAW_HOME for OpenClaw config and env discovery", () => {
     const openclawHome = tempDir("aide-openclaw-home-");
     writeFile(path.join(openclawHome, ".env"), "DISCORD_BOT_TOKEN=home-token\n");

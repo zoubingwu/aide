@@ -114,6 +114,10 @@ const HERMES_REQUIRE_MENTION_PATHS = [
   ["gateway", "platforms", "discord", "requireMention"]
 ] as const;
 
+const OPENCLAW_INCLUDE_KEY = "$include";
+const OPENCLAW_MAX_INCLUDE_DEPTH = 10;
+const OPENCLAW_MAX_INCLUDE_FILE_BYTES = 2 * 1024 * 1024;
+
 export function discoverImportCandidates(source: ImportSource, options: ImportDiscoveryOptions = {}): ImportCandidate[] {
   switch (source) {
     case "hermes":
@@ -299,7 +303,7 @@ function discoverOpenClawCandidates(options: ImportDiscoveryOptions): ImportCand
   const env = openClawEnv(options);
   const openclawHome = resolveOpenClawHome(options);
   const configPath = resolveOpenClawConfigPath(options);
-  const config = readJson5Object(configPath);
+  const config = readOpenClawConfigObject(configPath);
   const discord = objectPath(config, ["channels", "discord"]);
 
   if (discord && getBoolean(discord.enabled) === false) {
@@ -307,7 +311,16 @@ function discoverOpenClawCandidates(options: ImportDiscoveryOptions): ImportCand
   }
 
   const candidates: ImportCandidate[] = [];
-  const defaultToken = resolveOpenClawSecret(discord?.token, env.values, config) ?? env.values.DISCORD_BOT_TOKEN;
+  const accounts = objectPath(discord, ["accounts"]);
+  const defaultAccount = objectPath(accounts, ["default"]);
+  const hasDefaultAccountToken = Boolean(
+    defaultAccount &&
+    getBoolean(defaultAccount.enabled) !== false &&
+    objectHasOwn(defaultAccount, "token")
+  );
+  const defaultTokenInput = hasDefaultAccountToken ? defaultAccount?.token : discord?.token;
+  const defaultToken = resolveOpenClawSecret(defaultTokenInput, env.values, config) ??
+    (hasDefaultAccountToken ? undefined : env.values.DISCORD_BOT_TOKEN);
   const defaultCandidate = {
     source: "openclaw" as const,
     sourceName: "default",
@@ -323,7 +336,7 @@ function discoverOpenClawCandidates(options: ImportDiscoveryOptions): ImportCand
       token: defaultToken
     });
   } else {
-    const secret = openClawConfirmableSecret(discord?.token, config);
+    const secret = openClawConfirmableSecret(defaultTokenInput, config);
 
     if (secret) {
       candidates.push({
@@ -334,11 +347,9 @@ function discoverOpenClawCandidates(options: ImportDiscoveryOptions): ImportCand
     }
   }
 
-  const accounts = objectPath(discord, ["accounts"]);
-
   if (accounts) {
     for (const [accountId, account] of Object.entries(accounts)) {
-      if (!isRecord(account) || getBoolean(account.enabled) === false) {
+      if (accountId === "default" || !isRecord(account) || getBoolean(account.enabled) === false) {
         continue;
       }
 
@@ -386,7 +397,7 @@ function openClawEnv(options: ImportDiscoveryOptions): SourceEnv {
     path.join(cwd, ".env")
   ];
   const values: Record<string, string> = {};
-  const configEnv = objectPath(readJson5Object(resolveOpenClawConfigPath(options)), ["env"]);
+  const configEnv = objectPath(readOpenClawConfigObject(resolveOpenClawConfigPath(options)), ["env"]);
 
   if (configEnv) {
     Object.assign(values, openClawConfigEnvValues(configEnv));
@@ -735,6 +746,146 @@ function readJson5Object(filePath: string | undefined): unknown {
   return content.length > 0 ? JSON5.parse(content) : undefined;
 }
 
+function readOpenClawConfigObject(filePath: string | undefined): unknown {
+  const config = readJson5Object(filePath);
+
+  if (!filePath || config === undefined) {
+    return config;
+  }
+
+  const resolvedPath = path.resolve(filePath);
+  return resolveOpenClawConfigIncludes(config, resolvedPath, new Set([resolvedPath]), 0);
+}
+
+function resolveOpenClawConfigIncludes(
+  value: unknown,
+  baseFilePath: string,
+  seenPaths: Set<string>,
+  depth: number
+): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => resolveOpenClawConfigIncludes(entry, baseFilePath, seenPaths, depth));
+  }
+
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  if (objectHasOwn(value, OPENCLAW_INCLUDE_KEY)) {
+    const included = resolveOpenClawConfigInclude(value[OPENCLAW_INCLUDE_KEY], baseFilePath, seenPaths, depth);
+    const local: Record<string, unknown> = {};
+
+    for (const [key, entry] of Object.entries(value)) {
+      if (key === OPENCLAW_INCLUDE_KEY || isUnsafeObjectKey(key)) {
+        continue;
+      }
+
+      local[key] = resolveOpenClawConfigIncludes(entry, baseFilePath, seenPaths, depth);
+    }
+
+    return Object.keys(local).length > 0 ? deepMergeOpenClawConfig(included, local) : included;
+  }
+
+  const result: Record<string, unknown> = {};
+
+  for (const [key, entry] of Object.entries(value)) {
+    if (!isUnsafeObjectKey(key)) {
+      result[key] = resolveOpenClawConfigIncludes(entry, baseFilePath, seenPaths, depth);
+    }
+  }
+
+  return result;
+}
+
+function resolveOpenClawConfigInclude(
+  includeValue: unknown,
+  baseFilePath: string,
+  seenPaths: Set<string>,
+  depth: number
+): unknown {
+  if (typeof includeValue === "string") {
+    return loadOpenClawConfigInclude(includeValue, baseFilePath, seenPaths, depth);
+  }
+
+  if (Array.isArray(includeValue)) {
+    return includeValue.reduce<unknown>(
+      (merged, entry) => deepMergeOpenClawConfig(
+        merged,
+        resolveOpenClawConfigInclude(entry, baseFilePath, seenPaths, depth)
+      ),
+      {}
+    );
+  }
+
+  return undefined;
+}
+
+function loadOpenClawConfigInclude(
+  includePath: string,
+  baseFilePath: string,
+  seenPaths: Set<string>,
+  depth: number
+): unknown {
+  if (depth >= OPENCLAW_MAX_INCLUDE_DEPTH) {
+    throw new Error(`OpenClaw config include depth exceeded at ${includePath}.`);
+  }
+
+  const resolvedPath = resolveOpenClawIncludePath(includePath, baseFilePath);
+
+  if (seenPaths.has(resolvedPath)) {
+    throw new Error(`OpenClaw config include cycle detected at ${resolvedPath}.`);
+  }
+
+  const stats = fs.statSync(resolvedPath);
+
+  if (!stats.isFile()) {
+    throw new Error(`OpenClaw config include is not a file: ${resolvedPath}`);
+  }
+
+  if (stats.size > OPENCLAW_MAX_INCLUDE_FILE_BYTES) {
+    throw new Error(`OpenClaw config include exceeds max size: ${resolvedPath}`);
+  }
+
+  seenPaths.add(resolvedPath);
+
+  try {
+    return resolveOpenClawConfigIncludes(readJson5Object(resolvedPath), resolvedPath, seenPaths, depth + 1);
+  } finally {
+    seenPaths.delete(resolvedPath);
+  }
+}
+
+function resolveOpenClawIncludePath(includePath: string, baseFilePath: string): string {
+  const expandedPath = includePath === "~" || includePath.startsWith("~/") ? expandHome(includePath) : includePath;
+  return path.isAbsolute(expandedPath) ? expandedPath : path.resolve(path.dirname(baseFilePath), expandedPath);
+}
+
+function deepMergeOpenClawConfig(target: unknown, source: unknown): unknown {
+  if (Array.isArray(target) && Array.isArray(source)) {
+    return [...target, ...source];
+  }
+
+  if (isRecord(target) && isRecord(source)) {
+    const result: Record<string, unknown> = {};
+
+    for (const [key, value] of Object.entries(target)) {
+      if (!isUnsafeObjectKey(key)) {
+        result[key] = value;
+      }
+    }
+
+    for (const [key, value] of Object.entries(source)) {
+      if (!isUnsafeObjectKey(key)) {
+        result[key] = objectHasOwn(result, key) ? deepMergeOpenClawConfig(result[key], value) : value;
+      }
+    }
+
+    return result;
+  }
+
+  return source;
+}
+
 function readEnvFile(filePath: string): Record<string, string> {
   if (!fs.existsSync(filePath)) {
     return {};
@@ -888,6 +1039,14 @@ function isUsableSecret(value: string | undefined): value is string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function objectHasOwn(value: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function isUnsafeObjectKey(key: string): boolean {
+  return key === "__proto__" || key === "constructor" || key === "prototype";
 }
 
 function isStringArray(value: unknown): value is string[] {
