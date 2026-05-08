@@ -69,9 +69,11 @@ export async function runCodex(
   });
 
   if (resumed.exitCode === 0) {
+    const response = extractFinalResponse(resumed.stdout, resumed.stderr);
+
     return {
       ...resumed,
-      response: extractFinalResponse(resumed.stdout, resumed.stderr),
+      ...response,
       usageTokens: extractCodexUsageTokens(resumed.stdout),
       resumed: true
     };
@@ -86,16 +88,22 @@ export async function runCodex(
     prompt,
     attempt: "fresh"
   });
+  const response = extractFinalResponse(fresh.stdout, fresh.stderr);
 
   return {
     ...fresh,
-    response: extractFinalResponse(fresh.stdout, fresh.stderr),
+    ...response,
     usageTokens: extractCodexUsageTokens(fresh.stdout),
     resumed: false
   };
 }
 
-export function extractFinalResponse(stdout: string, stderr = ""): string {
+export interface ExtractedCodexResponse {
+  response: string;
+  hasTextResponse: boolean;
+}
+
+export function extractFinalResponse(stdout: string, stderr = ""): ExtractedCodexResponse {
   const candidates: string[] = [];
 
   for (const line of stdout.split(/\r?\n/)) {
@@ -122,11 +130,11 @@ export function extractFinalResponse(stdout: string, stderr = ""): string {
   const final = candidates.at(-1)?.trim();
 
   if (final) {
-    return final;
+    return { response: final, hasTextResponse: true };
   }
 
   const error = stderr.trim();
-  return error.length > 0 ? error : "Codex finished without a text response.";
+  return { response: error, hasTextResponse: false };
 }
 
 export function extractCodexUsageTokens(stdout: string): number | undefined {
@@ -159,7 +167,9 @@ interface CodexExecution {
   attempt: "resume" | "fresh";
 }
 
-async function runCodexOnce(execution: CodexExecution): Promise<Omit<AgentRunResult, "response" | "resumed">> {
+type CodexProcessResult = Omit<AgentRunResult, "response" | "hasTextResponse" | "resumed">;
+
+async function runCodexOnce(execution: CodexExecution): Promise<CodexProcessResult> {
   appendActivityLog(
     execution.home,
     endpointActivity(execution.home, execution.endpoint, "codex_cli_started", {
@@ -170,7 +180,7 @@ async function runCodexOnce(execution: CodexExecution): Promise<Omit<AgentRunRes
     })
   );
 
-  let runResult: Omit<AgentRunResult, "response" | "resumed">;
+  let runResult: CodexProcessResult;
 
   try {
     const result = await execa(execution.command, execution.args, {

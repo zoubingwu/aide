@@ -84,6 +84,15 @@ export async function executeScheduleOnce(execution: ScheduleExecution): Promise
     return;
   }
 
+  if (!result.hasTextResponse) {
+    appendRuntimeLog(execution.home, "schedule_response_empty", {
+      schedule: execution.schedule.id,
+      endpoint: endpoint.id
+    });
+    completeSchedule(execution);
+    return;
+  }
+
   const deliver = execution.deliver ?? deliverScheduleResponse;
 
   try {
@@ -102,12 +111,18 @@ export async function executeScheduleOnce(execution: ScheduleExecution): Promise
     endpoint: endpoint.id
   });
 
-  if (execution.schedule.kind === "once") {
-    removeRuntimeSchedule(execution.home, execution.schedule.id);
-    appendRuntimeLog(execution.home, "schedule_once_removed", {
-      schedule: execution.schedule.id
-    });
+  completeSchedule(execution);
+}
+
+function completeSchedule(execution: ScheduleExecution): void {
+  if (execution.schedule.kind !== "once") {
+    return;
   }
+
+  removeRuntimeSchedule(execution.home, execution.schedule.id);
+  appendRuntimeLog(execution.home, "schedule_once_removed", {
+    schedule: execution.schedule.id
+  });
 }
 
 export class RuntimeScheduler {

@@ -104,7 +104,7 @@ describe("codex", () => {
       JSON.stringify({ type: "final", final_response: "done" })
     ].join("\n");
 
-    expect(extractFinalResponse(output)).toBe("done");
+    expect(extractFinalResponse(output)).toEqual({ response: "done", hasTextResponse: true });
   });
 
   it("extracts agent_message text from Codex item events", () => {
@@ -114,7 +114,16 @@ describe("codex", () => {
       JSON.stringify({ type: "turn.completed", usage: { input_tokens: 10, output_tokens: 2 } })
     ].join("\n");
 
-    expect(extractFinalResponse(output)).toBe("done");
+    expect(extractFinalResponse(output)).toEqual({ response: "done", hasTextResponse: true });
+  });
+
+  it("marks empty Codex agent messages as successful no-response output", () => {
+    const output = [
+      JSON.stringify({ type: "item.completed", item: { id: "item_0", type: "agent_message", text: "" } }),
+      JSON.stringify({ type: "turn.completed", usage: { input_tokens: 10, output_tokens: 2 } })
+    ].join("\n");
+
+    expect(extractFinalResponse(output)).toEqual({ response: "", hasTextResponse: false });
   });
 
   it("extracts token usage from Codex turn completion", () => {
@@ -132,7 +141,7 @@ describe("codex", () => {
   });
 
   it("uses stderr when stdout has no text", () => {
-    expect(extractFinalResponse("", "missing session")).toBe("missing session");
+    expect(extractFinalResponse("", "missing session")).toEqual({ response: "missing session", hasTextResponse: false });
   });
 
   it("logs Codex CLI JSONL output", async () => {
@@ -155,6 +164,7 @@ describe("codex", () => {
     const events = readActivityEvents(home);
 
     expect(result.response).toBe("done");
+    expect(result.hasTextResponse).toBe(true);
     expect(result.usageTokens).toBe(12);
     expect(events).toHaveLength(6);
     expect(events[0]).toMatchObject({
@@ -229,6 +239,7 @@ describe("codex", () => {
 
     expect(result).toMatchObject({
       response: "fresh done",
+      hasTextResponse: true,
       exitCode: 0,
       resumed: false,
       usageTokens: undefined
