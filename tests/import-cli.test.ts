@@ -44,6 +44,32 @@ describe("import CLI", () => {
     expect(stdout).toContain("aide import");
     expect(stdout).toContain("Import endpoints from hermes, openclaw, or all");
   });
+
+  it("skips OpenClaw file SecretRefs in scripted imports", async () => {
+    const aideHome = tempDir("aide-import-home-");
+    const openclawHome = tempDir("aide-import-openclaw-");
+    const secretPath = path.join(openclawHome, "secrets.json");
+    writeFile(secretPath, JSON.stringify({ discord: { token: "file-token" } }));
+    writeFile(
+      path.join(openclawHome, "openclaw.json"),
+      [
+        "{",
+        "  secrets: { providers: { localfile: { source: 'file', path: '" + secretPath + "', mode: 'json' } } },",
+        "  channels: { discord: { token: { source: 'file', provider: 'localfile', id: '/discord/token' } } },",
+        "}",
+        ""
+      ].join("\n")
+    );
+
+    const { stdout } = await runCli(["--home", aideHome, "import", "openclaw"], {
+      OPENCLAW_CONFIG_PATH: path.join(openclawHome, "openclaw.json")
+    });
+    const config = fs.readFileSync(path.join(aideHome, "config.toml"), "utf8");
+
+    expect(stdout).toContain("SecretRef requires confirmation");
+    expect(stdout).not.toContain("file-token");
+    expect(config).toContain("endpoints = []");
+  });
 });
 
 function runCli(args: string[], env: NodeJS.ProcessEnv = {}) {

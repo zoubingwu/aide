@@ -1,8 +1,12 @@
 import prompts from "prompts";
 import {
+  describeSecretImportCandidate,
   discoverImportCandidates,
   importPlanEntryEndpoint,
   planEndpointImports,
+  readyImportCandidates,
+  resolveSecretImportCandidate,
+  type ImportCandidate,
   type ImportPlanEntry,
   type ImportSource
 } from "../lib/import-sources.js";
@@ -25,7 +29,7 @@ export async function importCommand(source: string, options: CommandOptions): Pr
   ensureAideHome(home);
 
   const endpoints = loadEndpoints(home);
-  const candidates = discoverImportCandidates(importSource);
+  const candidates = await resolveImportCandidates(discoverImportCandidates(importSource));
   const plan = planEndpointImports(endpoints, candidates);
   const createEntries = plan.filter((entry) => entry.action === "create");
 
@@ -74,6 +78,43 @@ export async function importCommand(source: string, options: CommandOptions): Pr
   console.log("\nRun `aide start` or `aide restart` to use imported endpoints.");
 }
 
+async function resolveImportCandidates(candidates: ImportCandidate[]) {
+  const ready = readyImportCandidates(candidates);
+
+  for (const candidate of candidates) {
+    if (candidate.kind !== "secret") {
+      continue;
+    }
+
+    if (!process.stdin.isTTY) {
+      console.log(
+        `Skipped ${candidate.source}:${candidate.sourceName}: SecretRef requires confirmation (${describeSecretImportCandidate(candidate)}).`
+      );
+      continue;
+    }
+
+    const response = await prompts({
+      type: "confirm",
+      name: "confirmed",
+      message: `Resolve ${candidate.source}:${candidate.sourceName} SecretRef from ${describeSecretImportCandidate(candidate)}?`,
+      initial: false
+    });
+
+    if (!response.confirmed) {
+      console.log(`Skipped ${candidate.source}:${candidate.sourceName}.`);
+      continue;
+    }
+
+    try {
+      ready.push(await resolveSecretImportCandidate(candidate));
+    } catch (error) {
+      console.log(`Skipped ${candidate.source}:${candidate.sourceName}: ${errorMessage(error)}.`);
+    }
+  }
+
+  return ready;
+}
+
 function parseImportSource(value: string): ImportSource {
   if (IMPORT_SOURCES.includes(value as ImportSource)) {
     return value as ImportSource;
@@ -93,4 +134,8 @@ function importPlanTable(plan: ImportPlanEntry[]): string {
       entry.action === "create" ? "create" : `skip (${entry.reason ?? "already handled"})`
     ])
   );
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

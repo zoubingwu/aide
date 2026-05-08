@@ -5,7 +5,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   discoverImportCandidates,
   importPlanEntryEndpoint,
-  planEndpointImports
+  planEndpointImports,
+  readyImportCandidates,
+  resolveSecretImportCandidate,
+  type ReadyImportCandidate
 } from "../src/lib/import-sources.js";
 import { defaultCodexAgentConfig, defaultEndpointTriggerConfig } from "../src/lib/config.js";
 import type { Endpoint } from "../src/lib/types.js";
@@ -45,7 +48,7 @@ describe("import sources", () => {
       ].join("\n")
     );
 
-    const candidates = discoverImportCandidates("hermes", { hermesHome, env: {} });
+    const candidates = readyImportCandidates(discoverImportCandidates("hermes", { hermesHome, env: {} }));
 
     expect(candidates.map((candidate) => candidate.endpointId)).toEqual(["hermes", "hermes-coder"]);
     expect(candidates.map((candidate) => candidate.token)).toEqual(["default-token", "profile-token"]);
@@ -77,7 +80,7 @@ describe("import sources", () => {
       ].join("\n")
     );
 
-    const candidates = discoverImportCandidates("openclaw", { openclawHome, env: {}, cwd: openclawHome });
+    const candidates = readyImportCandidates(discoverImportCandidates("openclaw", { openclawHome, env: {}, cwd: openclawHome }));
 
     expect(candidates.map((candidate) => [candidate.sourceName, candidate.endpointId, candidate.token])).toEqual([
       ["default", "openclaw", "default-token"],
@@ -103,6 +106,77 @@ describe("import sources", () => {
     ]);
     expect(importPlanEntryEndpoint(plan[1]!).id).toBe("openclaw-work-2");
   });
+
+  it("resolves OpenClaw file SecretRefs after confirmation", async () => {
+    const openclawHome = tempDir("aide-openclaw-file-");
+    const secretPath = path.join(openclawHome, "secrets.json");
+    writeFile(secretPath, JSON.stringify({ discord: { token: "file-token" } }));
+    writeFile(
+      path.join(openclawHome, "openclaw.json"),
+      [
+        "{",
+        "  secrets: {",
+        "    providers: {",
+        `      localfile: { source: 'file', path: '${secretPath}', mode: 'json' },`,
+        "    },",
+        "  },",
+        "  channels: {",
+        "    discord: { token: { source: 'file', provider: 'localfile', id: '/discord/token' } },",
+        "  },",
+        "}",
+        ""
+      ].join("\n")
+    );
+
+    const [candidate] = discoverImportCandidates("openclaw", { openclawHome, env: {}, cwd: openclawHome });
+
+    expect(candidate?.kind).toBe("secret");
+    if (!candidate || candidate.kind !== "secret") {
+      throw new Error("Expected OpenClaw file SecretRef candidate.");
+    }
+    const resolved = await resolveSecretImportCandidate(candidate);
+    expect(resolved.token).toBe("file-token");
+  });
+
+  it("resolves OpenClaw exec SecretRefs after confirmation", async () => {
+    const openclawHome = tempDir("aide-openclaw-exec-");
+    const scriptPath = path.join(openclawHome, "resolve-secret.sh");
+    writeFile(
+      scriptPath,
+      [
+        "#!/bin/sh",
+        "cat >/dev/null",
+        "printf '{\"protocolVersion\":1,\"values\":{\"discord/token\":\"exec-token\"}}'",
+        ""
+      ].join("\n")
+    );
+    fs.chmodSync(scriptPath, 0o700);
+    writeFile(
+      path.join(openclawHome, "openclaw.json"),
+      [
+        "{",
+        "  secrets: {",
+        "    providers: {",
+        `      vault: { source: 'exec', command: '${scriptPath}', jsonOnly: true },`,
+        "    },",
+        "  },",
+        "  channels: {",
+        "    discord: { token: { source: 'exec', provider: 'vault', id: 'discord/token' } },",
+        "  },",
+        "}",
+        ""
+      ].join("\n")
+    );
+
+    const [candidate] = discoverImportCandidates("openclaw", { openclawHome, env: {}, cwd: openclawHome });
+
+    expect(candidate?.kind).toBe("secret");
+    if (!candidate || candidate.kind !== "secret") {
+      throw new Error("Expected OpenClaw exec SecretRef candidate.");
+    }
+    const resolved = await resolveSecretImportCandidate(candidate);
+    expect(resolved.token).toBe("exec-token");
+  });
 });
 
 function endpoint(id: string, token: string): Endpoint {
@@ -121,8 +195,9 @@ function candidate(
   sourceName: string,
   endpointId: string,
   token: string
-) {
+): ReadyImportCandidate {
   return {
+    kind: "ready",
     source,
     sourceName,
     sourcePath: "/tmp/source",

@@ -66,6 +66,8 @@ aide import openclaw
 aide import all
 ```
 
+OpenClaw `file` and `exec` SecretRefs require confirmation before Aide reads a file or runs a resolver command.
+
 ## Config
 
 Endpoints bind a transport provider to a CLI agent:
