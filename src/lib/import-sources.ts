@@ -352,7 +352,7 @@ function discoverOpenClawCandidates(options: ImportDiscoveryOptions): ImportCand
         trigger: defaultEndpointTriggerConfig()
       };
 
-      if (token) {
+      if (isUsableSecret(token)) {
         candidates.push({
           kind: "ready",
           ...baseCandidate,
@@ -406,7 +406,7 @@ function openClawEnv(options: ImportDiscoveryOptions): SourceEnv {
 
 function resolveOpenClawHome(options: ImportDiscoveryOptions): string {
   const env = options.env ?? process.env;
-  return expandHome(options.openclawHome ?? env.OPENCLAW_HOME ?? "~/.openclaw");
+  return expandHome(options.openclawHome ?? env.OPENCLAW_HOME ?? env.OPENCLAW_STATE_DIR ?? "~/.openclaw");
 }
 
 function resolveOpenClawConfigPath(options: ImportDiscoveryOptions): string | undefined {

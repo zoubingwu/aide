@@ -112,6 +112,54 @@ describe("import sources", () => {
     ]);
   });
 
+  it("uses OPENCLAW_STATE_DIR for OpenClaw config and env discovery", () => {
+    const openclawHome = tempDir("aide-openclaw-state-");
+    writeFile(path.join(openclawHome, ".env"), "DISCORD_BOT_TOKEN=state-token\n");
+    writeFile(
+      path.join(openclawHome, "openclaw.json"),
+      [
+        "{",
+        "  channels: { discord: { token: '${DISCORD_BOT_TOKEN}' } },",
+        "}",
+        ""
+      ].join("\n")
+    );
+
+    const candidates = readyImportCandidates(discoverImportCandidates("openclaw", {
+      env: { OPENCLAW_STATE_DIR: openclawHome },
+      cwd: tempDir("aide-openclaw-cwd-")
+    }));
+
+    expect(candidates.map((candidate) => [candidate.sourcePath, candidate.token])).toEqual([
+      [path.join(openclawHome, "openclaw.json"), "state-token"]
+    ]);
+  });
+
+  it("skips OpenClaw account token templates that cannot be resolved", () => {
+    const openclawHome = tempDir("aide-openclaw-missing-account-env-");
+    writeFile(
+      path.join(openclawHome, "openclaw.json"),
+      [
+        "{",
+        "  channels: {",
+        "    discord: {",
+        "      accounts: { work: { token: '${DISCORD_WORK_TOKEN}' } },",
+        "    },",
+        "  },",
+        "}",
+        ""
+      ].join("\n")
+    );
+
+    const candidates = readyImportCandidates(discoverImportCandidates("openclaw", {
+      openclawHome,
+      env: {},
+      cwd: tempDir("aide-openclaw-cwd-")
+    }));
+
+    expect(candidates).toEqual([]);
+  });
+
   it("treats OpenClaw config env as a fallback below dotenv files", () => {
     const openclawHome = tempDir("aide-openclaw-env-");
     writeFile(path.join(openclawHome, ".env"), "DISCORD_BOT_TOKEN=dotenv-token\n");
