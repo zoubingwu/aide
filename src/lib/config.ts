@@ -90,7 +90,7 @@ export function ensureAideHome(home: string): void {
   fs.mkdirSync(logsDir(home), { recursive: true });
   fs.mkdirSync(workspaceDir(home), { recursive: true });
 
-  writeFileIfMissing(configPath(home), `${stringifyToml(defaultConfig())}\n`, 0o600);
+  writeFileIfMissing(configPath(home), `${stringifyConfig(defaultConfig())}\n`, 0o600);
   secureConfigFile(home);
   writeFileIfMissing(schedulesPath(home), `${JSON.stringify({ schedules: [] }, null, 2)}\n`);
   writeFileIfMissing(runtimePath(home), `${JSON.stringify(defaultRuntimeState(home), null, 2)}\n`);
@@ -112,7 +112,7 @@ export function loadConfig(home: string): AideConfig {
 
 export function writeConfig(home: string, config: AideConfig): void {
   const filePath = configPath(home);
-  fs.writeFileSync(filePath, `${stringifyToml(configSchema.parse(config))}\n`, { mode: 0o600 });
+  fs.writeFileSync(filePath, `${stringifyConfig(config)}\n`, { mode: 0o600 });
   secureConfigFile(home);
 }
 
@@ -192,6 +192,46 @@ function writeFileIfMissing(filePath: string, content: string, mode?: number): v
 
 function secureConfigFile(home: string): void {
   fs.chmodSync(configPath(home), 0o600);
+}
+
+function stringifyConfig(config: AideConfig): string {
+  const parsed = configSchema.parse(config);
+
+  if (parsed.endpoints.length === 0) {
+    return stringifyToml(parsed);
+  }
+
+  return parsed.endpoints.map(stringifyEndpointConfig).join("\n\n");
+}
+
+function stringifyEndpointConfig(endpoint: Endpoint): string {
+  return [
+    "[[endpoints]]",
+    `id = ${tomlValue(endpoint.id)}`,
+    `provider = ${tomlValue(endpoint.provider)}`,
+    `enabled = ${tomlValue(endpoint.enabled)}`,
+    `token = ${tomlValue(endpoint.token)}`,
+    `trigger = ${tomlInlineTable([
+      ["requireMention", endpoint.trigger.requireMention],
+      ["freeResponseSources", endpoint.trigger.freeResponseSources]
+    ])}`,
+    `agent = ${tomlInlineTable([
+      ["provider", endpoint.agent.provider],
+      ["command", endpoint.agent.command],
+      ["model", endpoint.agent.model],
+      ["reasoningEffort", endpoint.agent.reasoningEffort]
+    ])}`
+  ].join("\n");
+}
+
+function tomlInlineTable(entries: Array<[string, string | boolean | string[]]>): string {
+  return `{ ${entries.map(([key, value]) => `${key} = ${tomlValue(value)}`).join(", ")} }`;
+}
+
+function tomlValue(value: string | boolean | string[]): string {
+  const key = "__value__";
+  const line = stringifyToml({ [key]: value }).trim();
+  return line.slice(`${key} = `.length);
 }
 
 function isDiscordTriggerSource(value: string): boolean {

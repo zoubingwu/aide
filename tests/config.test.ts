@@ -52,6 +52,41 @@ describe("config", () => {
     expect(content).not.toContain("startupTimeoutMs");
   });
 
+  it("writes endpoint trigger and agent config as inline endpoint fields", () => {
+    const home = tempHome();
+    ensureAideHome(home);
+
+    writeConfig(home, {
+      endpoints: [
+        {
+          id: "discord-main",
+          provider: "discord",
+          enabled: true,
+          token: "test-token",
+          trigger: {
+            requireMention: false,
+            freeResponseSources: ["channel:123", "channel:456"]
+          },
+          agent: {
+            provider: "codex",
+            command: "codex",
+            model: "gpt-5.5",
+            reasoningEffort: "high"
+          }
+        }
+      ]
+    });
+
+    const content = fs.readFileSync(configPath(home), "utf8");
+
+    expect(content).toContain('trigger = { requireMention = false, freeResponseSources = [ "channel:123", "channel:456" ] }');
+    expect(content).toContain('agent = { provider = "codex", command = "codex", model = "gpt-5.5", reasoningEffort = "high" }');
+    expect(content).not.toContain("[endpoints.trigger]");
+    expect(content).not.toContain("[endpoints.agent]");
+    expect(loadEndpoints(home)[0]?.trigger.freeResponseSources).toEqual(["channel:123", "channel:456"]);
+    expect(loadEndpoints(home)[0]?.agent.reasoningEffort).toBe("high");
+  });
+
   it("defaults missing endpoint trigger config", () => {
     const home = tempHome();
     ensureAideHome(home);
