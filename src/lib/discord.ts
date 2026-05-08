@@ -10,12 +10,14 @@ import { buildDiscordPromptMetadata, buildDiscordRequestContext } from "./discor
 import { startDiscordContextToolServer } from "./discord-context-mcp.js";
 import { appendActivityLog, endpointActivity } from "./logging.js";
 import type { ManagedAgentToolServer } from "./agent-tools.js";
-import type { Endpoint } from "./types.js";
+import type { AgentRunResult, Endpoint } from "./types.js";
 
 const DISCORD_TYPING_REFRESH_MS = 8_000;
 const DISCORD_MESSAGE_CONTENT_LIMIT = 2_000;
 const DISCORD_MESSAGE_CHUNK_BUFFER = 100;
 const DISCORD_MESSAGE_CHUNK_SIZE = DISCORD_MESSAGE_CONTENT_LIMIT - DISCORD_MESSAGE_CHUNK_BUFFER;
+const EMPTY_SUCCESS_REACTION = "✅";
+const EMPTY_SUCCESS_REACTION_FALLBACK = "Done.";
 
 export function discordGatewayIntents(endpoint: Endpoint): GatewayIntentBits[] {
   const intents = [
@@ -94,7 +96,7 @@ export async function handleDiscordMessage(home: string, endpoint: Endpoint, mes
   }
 
   try {
-    await sendResponse(message, result.response);
+    await deliverDiscordResponse(home, endpoint, message, result);
   } catch (error) {
     appendActivityLog(
       home,
@@ -105,8 +107,6 @@ export async function handleDiscordMessage(home: string, endpoint: Endpoint, mes
     );
     throw error;
   }
-
-  appendActivityLog(home, endpointActivity(home, endpoint, "discord_response_delivered", { exitCode: result.exitCode }));
 }
 
 async function withDiscordTyping<T>(channel: Message["channel"], task: () => Promise<T>): Promise<T> {
@@ -185,6 +185,56 @@ async function sendResponse(message: Message, response: string): Promise<void> {
   for (const chunk of chunks) {
     await message.reply({ content: chunk });
   }
+}
+
+async function deliverDiscordResponse(home: string, endpoint: Endpoint, message: Message, result: AgentRunResult): Promise<void> {
+  if (result.exitCode === 0 && !result.hasTextResponse) {
+    await reactToEmptySuccess(home, endpoint, message, result);
+    return;
+  }
+
+  await sendResponse(message, discordResponseText(result));
+  appendActivityLog(home, endpointActivity(home, endpoint, "discord_response_delivered", { exitCode: result.exitCode }));
+}
+
+async function reactToEmptySuccess(home: string, endpoint: Endpoint, message: Message, result: AgentRunResult): Promise<void> {
+  try {
+    await message.react(EMPTY_SUCCESS_REACTION);
+    appendActivityLog(
+      home,
+      endpointActivity(home, endpoint, "discord_completion_reacted", {
+        exitCode: result.exitCode,
+        reaction: EMPTY_SUCCESS_REACTION
+      })
+    );
+  } catch (error) {
+    appendActivityLog(
+      home,
+      endpointActivity(home, endpoint, "discord_completion_reaction_failed", {
+        exitCode: result.exitCode,
+        reaction: EMPTY_SUCCESS_REACTION,
+        error: errorMessage(error)
+      })
+    );
+    await sendResponse(message, EMPTY_SUCCESS_REACTION_FALLBACK);
+    appendActivityLog(home, endpointActivity(home, endpoint, "discord_response_delivered", { exitCode: result.exitCode }));
+  }
+}
+
+function discordResponseText(result: AgentRunResult): string {
+  const response = result.response.trim();
+
+  if (response.length > 0) {
+    return response;
+  }
+
+  const stderr = result.stderr.trim();
+
+  if (stderr.length > 0) {
+    return stderr;
+  }
+
+  return `Codex failed with exit code ${result.exitCode}. Check aide logs for details.`;
 }
 
 async function startDiscordContextTools(

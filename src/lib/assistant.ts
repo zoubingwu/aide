@@ -40,7 +40,8 @@ export async function handleAssistantRequest(
     ...endpointActivity(home, endpoint, "agent_response", {
       provider: endpoint.agent.provider,
       exitCode: result.exitCode,
-      resumed: result.resumed
+      resumed: result.resumed,
+      hasTextResponse: result.hasTextResponse
     }),
     tokens
   });

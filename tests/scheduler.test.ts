@@ -7,7 +7,7 @@ import { RUNTIME_LOG_FILE } from "../src/lib/logging.js";
 import { logsDir, schedulesPath } from "../src/lib/paths.js";
 import { executeScheduleOnce, RuntimeScheduler } from "../src/lib/scheduler.js";
 import { loadSchedules, writeSchedules } from "../src/lib/schedules.js";
-import type { Endpoint, Schedule } from "../src/lib/types.js";
+import type { AgentRunResult, Endpoint, Schedule } from "../src/lib/types.js";
 
 const cleanupPaths: string[] = [];
 
@@ -33,7 +33,7 @@ describe("scheduler execution", () => {
       schedule,
       endpoints: [endpoint],
       clients: new Map([["discord-main", {}]]),
-      handleRequest: vi.fn().mockResolvedValue({ response: "done", stdout: "", stderr: "", exitCode: 0, resumed: true }),
+      handleRequest: vi.fn().mockResolvedValue(agentResult({ response: "done" })),
       deliver: vi.fn().mockResolvedValue(undefined)
     });
 
@@ -74,7 +74,7 @@ describe("scheduler execution", () => {
       schedule,
       endpoints: [endpoint],
       clients: new Map([["discord-main", {}]]),
-      handleRequest: vi.fn().mockResolvedValue({ response: "done", stdout: "", stderr: "", exitCode: 0, resumed: true }),
+      handleRequest: vi.fn().mockResolvedValue(agentResult({ response: "done" })),
       deliver: vi.fn().mockResolvedValue(undefined)
     });
 
@@ -96,11 +96,34 @@ describe("scheduler execution", () => {
       schedule,
       endpoints: [endpoint],
       clients: new Map([["discord-main", {}]]),
-      handleRequest: vi.fn().mockResolvedValue({ response: "done", stdout: "", stderr: "", exitCode: 0, resumed: true }),
+      handleRequest: vi.fn().mockResolvedValue(agentResult({ response: "done" })),
       deliver: vi.fn().mockRejectedValue(new Error("send failed"))
     });
 
     expect(loadSchedules(home)).toEqual([schedule]);
+  });
+
+  it("removes a once schedule after successful agent run with no text response", async () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = onceSchedule();
+    const deliver = vi.fn();
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+
+    await executeScheduleOnce({
+      home,
+      schedule,
+      endpoints: [endpoint],
+      clients: new Map([["discord-main", {}]]),
+      handleRequest: vi.fn().mockResolvedValue(agentResult({ response: "", hasTextResponse: false })),
+      deliver
+    });
+
+    expect(deliver).not.toHaveBeenCalled();
+    expect(loadSchedules(home)).toEqual([]);
+    expect(fs.readFileSync(path.join(logsDir(home), RUNTIME_LOG_FILE), "utf8")).toContain("schedule_response_empty");
   });
 
   it("logs agent request exceptions and keeps the schedule", async () => {
@@ -135,7 +158,7 @@ describe("scheduler execution", () => {
       ...onceSchedule(),
       runAt: "2026-05-10T10:00:00.000Z"
     };
-    const handleRequest = vi.fn().mockResolvedValue({ response: "done", stdout: "", stderr: "", exitCode: 0, resumed: true });
+    const handleRequest = vi.fn().mockResolvedValue(agentResult({ response: "done" }));
     const deliver = vi.fn().mockRejectedValue(new Error("send failed"));
     writeEndpoints(home, [endpoint]);
     writeSchedules(home, [schedule]);
@@ -174,10 +197,10 @@ describe("scheduler execution", () => {
       ...onceSchedule(),
       runAt: "2026-05-10T10:00:00.000Z"
     };
-    let resolveRequest: ((value: { response: string; stdout: string; stderr: string; exitCode: number; resumed: boolean }) => void) | undefined;
+    let resolveRequest: ((value: AgentRunResult) => void) | undefined;
     const handleRequest = vi.fn(
       () =>
-        new Promise<{ response: string; stdout: string; stderr: string; exitCode: number; resumed: boolean }>((resolve) => {
+        new Promise<AgentRunResult>((resolve) => {
           resolveRequest = resolve;
         })
     );
@@ -201,7 +224,7 @@ describe("scheduler execution", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(handleRequest).toHaveBeenCalledTimes(1);
 
-    resolveRequest?.({ response: "done", stdout: "", stderr: "", exitCode: 0, resumed: true });
+    resolveRequest?.(agentResult({ response: "done" }));
     await vi.runOnlyPendingTimersAsync();
     expect(loadSchedules(home)).toEqual([]);
 
@@ -265,6 +288,18 @@ describe("scheduler execution", () => {
     expect(log).toContain("Invalid IANA timezone");
   });
 });
+
+function agentResult(overrides: Partial<AgentRunResult>): AgentRunResult {
+  return {
+    response: "done",
+    hasTextResponse: true,
+    stdout: "",
+    stderr: "",
+    exitCode: 0,
+    resumed: true,
+    ...overrides
+  };
+}
 
 function discordEndpoint(): Endpoint {
   return {

@@ -103,13 +103,7 @@ describe("discord delivery", () => {
       guildId: null,
       mentionsBot: false
     });
-    mockHandleAssistantRequest().mockResolvedValueOnce({
-      response: "done",
-      stdout: "",
-      stderr: "",
-      exitCode: 0,
-      resumed: true
-    });
+    mockHandleAssistantRequest().mockResolvedValueOnce(agentResult({ response: "done" }));
 
     await handleDiscordMessage(home, endpoint, message);
 
@@ -127,13 +121,7 @@ describe("discord delivery", () => {
       content: "hello from channel",
       mentionsBot: false
     });
-    mockHandleAssistantRequest().mockResolvedValueOnce({
-      response: "done",
-      stdout: "",
-      stderr: "",
-      exitCode: 0,
-      resumed: true
-    });
+    mockHandleAssistantRequest().mockResolvedValueOnce(agentResult({ response: "done" }));
 
     await handleDiscordMessage(home, freeEndpoint, message);
 
@@ -158,13 +146,7 @@ describe("discord delivery", () => {
       content: "hello from thread",
       mentionsBot: false
     });
-    mockHandleAssistantRequest().mockResolvedValueOnce({
-      response: "done",
-      stdout: "",
-      stderr: "",
-      exitCode: 0,
-      resumed: true
-    });
+    mockHandleAssistantRequest().mockResolvedValueOnce(agentResult({ response: "done" }));
 
     await handleDiscordMessage(home, freeEndpoint, message);
 
@@ -182,13 +164,7 @@ describe("discord delivery", () => {
       content: "hello from guild",
       mentionsBot: false
     });
-    mockHandleAssistantRequest().mockResolvedValueOnce({
-      response: "done",
-      stdout: "",
-      stderr: "",
-      exitCode: 0,
-      resumed: true
-    });
+    mockHandleAssistantRequest().mockResolvedValueOnce(agentResult({ response: "done" }));
 
     await handleDiscordMessage(home, freeEndpoint, message);
 
@@ -199,13 +175,7 @@ describe("discord delivery", () => {
   it("replies once per long response chunk", async () => {
     const home = tempHome();
     const message = fakeMessage();
-    mockHandleAssistantRequest().mockResolvedValueOnce({
-      response: "x".repeat(4_001),
-      stdout: "",
-      stderr: "",
-      exitCode: 0,
-      resumed: true
-    });
+    mockHandleAssistantRequest().mockResolvedValueOnce(agentResult({ response: "x".repeat(4_001) }));
 
     await handleDiscordMessage(home, endpoint, message);
 
@@ -230,13 +200,7 @@ describe("discord delivery", () => {
   it("logs agent failures separately from Discord delivery", async () => {
     const home = tempHome();
     const message = fakeMessage();
-    mockHandleAssistantRequest().mockResolvedValueOnce({
-      response: "agent failed",
-      stdout: "",
-      stderr: "failed",
-      exitCode: 1,
-      resumed: true
-    });
+    mockHandleAssistantRequest().mockResolvedValueOnce(agentResult({ response: "agent failed", stderr: "failed", exitCode: 1 }));
 
     await handleDiscordMessage(home, endpoint, message);
 
@@ -248,18 +212,57 @@ describe("discord delivery", () => {
     ]);
   });
 
+  it("reacts to successful agent runs with no text response", async () => {
+    const home = tempHome();
+    const message = fakeMessage();
+    mockHandleAssistantRequest().mockResolvedValueOnce(agentResult({ response: "", hasTextResponse: false }));
+
+    await handleDiscordMessage(home, endpoint, message);
+
+    expect(message.react).toHaveBeenCalledWith("✅");
+    expect(message.reply).not.toHaveBeenCalled();
+    expect(readActivityEvents(home).map((event) => [event.event, event.metadata?.reaction])).toEqual([
+      ["discord_message_received", undefined],
+      ["discord_completion_reacted", "✅"]
+    ]);
+  });
+
+  it("falls back to a short reply when the completion reaction fails", async () => {
+    const home = tempHome();
+    const message = fakeMessage({
+      react: vi.fn().mockRejectedValue(new Error("missing reactions permission"))
+    });
+    mockHandleAssistantRequest().mockResolvedValueOnce(agentResult({ response: "", hasTextResponse: false }));
+
+    await handleDiscordMessage(home, endpoint, message);
+
+    expect(message.reply).toHaveBeenCalledWith({ content: "Done." });
+    expect(readActivityEvents(home).map((event) => event.event)).toEqual([
+      "discord_message_received",
+      "discord_completion_reaction_failed",
+      "discord_response_delivered"
+    ]);
+  });
+
+  it("replies with an error reason when failed agent runs have no text response", async () => {
+    const home = tempHome();
+    const message = fakeMessage();
+    mockHandleAssistantRequest().mockResolvedValueOnce(
+      agentResult({ response: "", hasTextResponse: false, stderr: "model request failed", exitCode: 1 })
+    );
+
+    await handleDiscordMessage(home, endpoint, message);
+
+    expect(message.react).not.toHaveBeenCalled();
+    expect(message.reply).toHaveBeenCalledWith({ content: "model request failed" });
+  });
+
   it("logs Discord delivery failures when replies fail", async () => {
     const home = tempHome();
     const message = fakeMessage({
       reply: vi.fn().mockRejectedValue(new Error("missing access"))
     });
-    mockHandleAssistantRequest().mockResolvedValueOnce({
-      response: "hello",
-      stdout: "",
-      stderr: "",
-      exitCode: 0,
-      resumed: true
-    });
+    mockHandleAssistantRequest().mockResolvedValueOnce(agentResult({ response: "hello" }));
 
     await expect(handleDiscordMessage(home, endpoint, message)).rejects.toThrow("missing access");
 
@@ -297,13 +300,7 @@ describe("discord delivery", () => {
     await vi.advanceTimersByTimeAsync(8_000);
     expect(sendTyping).toHaveBeenCalledTimes(3);
 
-    resolveAgent!({
-      response: "done",
-      stdout: "",
-      stderr: "",
-      exitCode: 0,
-      resumed: true
-    });
+    resolveAgent!(agentResult({ response: "done" }));
     await handled;
 
     await vi.advanceTimersByTimeAsync(8_000);
@@ -330,13 +327,7 @@ describe("discord delivery", () => {
       url: "http://127.0.0.1:43210/mcp",
       stop
     });
-    mockHandleAssistantRequest().mockResolvedValueOnce({
-      response: "done",
-      stdout: "",
-      stderr: "",
-      exitCode: 0,
-      resumed: true
-    });
+    mockHandleAssistantRequest().mockResolvedValueOnce(agentResult({ response: "done" }));
 
     await handleDiscordMessage(home, endpoint, message);
 
@@ -412,9 +403,22 @@ function mockStartDiscordContextToolServer(): {
   return startDiscordContextToolServer as unknown as ReturnType<typeof mockStartDiscordContextToolServer>;
 }
 
+function agentResult(overrides: Partial<AgentRunResult>): AgentRunResult {
+  return {
+    response: "done",
+    hasTextResponse: true,
+    stdout: "",
+    stderr: "",
+    exitCode: 0,
+    resumed: true,
+    ...overrides
+  };
+}
+
 type FakeMessage = Message & {
   channel: Message["channel"] & { sendTyping: ReturnType<typeof vi.fn> };
   reply: ReturnType<typeof vi.fn>;
+  react: ReturnType<typeof vi.fn>;
 };
 
 function fakeMessage(options: {
@@ -426,6 +430,7 @@ function fakeMessage(options: {
   guildId?: string | null;
   mentionsBot?: boolean;
   reply?: ReturnType<typeof vi.fn>;
+  react?: ReturnType<typeof vi.fn>;
 } = {}): FakeMessage {
   const mentionsBot = options.mentionsBot ?? true;
 
@@ -454,7 +459,8 @@ function fakeMessage(options: {
       }
     },
     reference: options.reference ?? null,
-    reply: options.reply ?? vi.fn().mockResolvedValue(undefined)
+    reply: options.reply ?? vi.fn().mockResolvedValue(undefined),
+    react: options.react ?? vi.fn().mockResolvedValue(undefined)
   } as unknown as FakeMessage;
 }
 

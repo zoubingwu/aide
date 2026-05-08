@@ -67,6 +67,7 @@ export interface RuntimeState {
 
 export interface AgentRunResult {
   response: string;
+  hasTextResponse: boolean;
   stdout: string;
   stderr: string;
   exitCode: number;
