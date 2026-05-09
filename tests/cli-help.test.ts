@@ -4,6 +4,7 @@ import path from "node:path";
 import { execa } from "execa";
 import { afterEach, describe, expect, it } from "vitest";
 import { discordPreparationGuide } from "../src/commands/endpoints.js";
+import { ensureAideHome, writeConfig } from "../src/lib/config.js";
 
 const cleanupPaths: string[] = [];
 
@@ -50,8 +51,7 @@ describe("CLI help", () => {
 
   it("gets and sets config", async () => {
     const home = tempHome();
-    await runCli("--home", home, "init");
-    await runCli("--home", home, "endpoint", "add", "--id", "discord-main", "--token", "test-token");
+    seedEndpointConfig(home);
 
     await runCli("--home", home, "config", "set", "endpoints.discord-main.agent.model", "gpt-5.4");
     await runCli("--home", home, "config", "set", "endpoints.discord-main.agent.reasoningEffort", "high");
@@ -61,18 +61,14 @@ describe("CLI help", () => {
 
     const model = await runCli("--home", home, "config", "get", "endpoints.discord-main.agent.model");
     const token = await runCli("--home", home, "config", "get", "endpoints.discord-main.token");
-    const requireMention = await runCli("--home", home, "config", "get", "endpoints.discord-main.trigger.requireMention");
-    const freeResponseSources = await runCli("--home", home, "config", "get", "endpoints.discord-main.trigger.freeResponseSources");
     const all = await runCli("--home", home, "config", "get");
     const config = fs.readFileSync(path.join(home, "config.toml"), "utf8");
 
     expect(model.stdout).toContain('endpoints.discord-main.agent.model = "gpt-5.4"');
     expect(token.stdout).toContain('endpoints.discord-main.token = "configured"');
-    expect(requireMention.stdout).toContain("endpoints.discord-main.trigger.requireMention = false");
-    expect(freeResponseSources.stdout).toContain('endpoints.discord-main.trigger.freeResponseSources = ["channel:123","channel:456"]');
     expect(all.stdout).not.toContain("home");
-    expect(all.stdout).toContain("endpoints.discord-main.trigger.requireMention");
-    expect(all.stdout).toContain("endpoints.discord-main.trigger.freeResponseSources");
+    expect(all.stdout).toMatch(/endpoints\.discord-main\.trigger\.requireMention\s+false/);
+    expect(all.stdout).toMatch(/endpoints\.discord-main\.trigger\.freeResponseSources\s+channel:123,channel:456/);
     expect(config).toContain('model = "gpt-5.4"');
     expect(config).toContain('reasoningEffort = "high"');
     expect(config).toContain("requireMention = false");
@@ -388,6 +384,30 @@ describe("CLI help", () => {
 function runCli(...args: string[]) {
   return execa("bun", ["src/cli.ts", ...args], {
     cwd: process.cwd()
+  });
+}
+
+function seedEndpointConfig(home: string): void {
+  ensureAideHome(home);
+  writeConfig(home, {
+    endpoints: [
+      {
+        id: "discord-main",
+        provider: "discord",
+        enabled: true,
+        token: "test-token",
+        trigger: {
+          requireMention: true,
+          freeResponseSources: []
+        },
+        agent: {
+          provider: "codex",
+          command: "codex",
+          model: "gpt-5.5",
+          reasoningEffort: "medium"
+        }
+      }
+    ]
   });
 }
 
