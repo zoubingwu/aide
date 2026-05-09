@@ -29,6 +29,21 @@ const IMPORT_SOURCES: ImportSource[] = ["hermes", "openclaw", "all"];
 export async function importCommand(source: string, options: CommandOptions): Promise<void> {
   const importSource = parseImportSource(source);
   const home = homeFromOptions(options);
+
+  await runEndpointImport(home, importSource, { promptRuntime: true });
+}
+
+export interface EndpointImportResult {
+  discoveredCount: number;
+  plannedCount: number;
+  importedCount: number;
+}
+
+export async function runEndpointImport(
+  home: string,
+  importSource: ImportSource,
+  options: { promptRuntime: boolean }
+): Promise<EndpointImportResult> {
   ensureAideHome(home);
 
   const endpoints = loadEndpoints(home);
@@ -38,7 +53,7 @@ export async function importCommand(source: string, options: CommandOptions): Pr
 
   if (discoveredCandidates.length === 0) {
     console.log("No Discord bot tokens found.");
-    return;
+    return { discoveredCount: 0, plannedCount: 0, importedCount: 0 };
   }
 
   console.log(importDiscoverySummary(discoveredCandidates));
@@ -49,7 +64,11 @@ export async function importCommand(source: string, options: CommandOptions): Pr
 
   if (plan.length === 0) {
     console.log("\nNo importable Discord bot tokens found.");
-    return;
+    return {
+      discoveredCount: discoveredCandidates.length,
+      plannedCount: 0,
+      importedCount: 0
+    };
   }
 
   console.log("\nImport plan:");
@@ -57,7 +76,11 @@ export async function importCommand(source: string, options: CommandOptions): Pr
 
   if (createEntries.length === 0) {
     console.log("\nNo new endpoints imported.");
-    return;
+    return {
+      discoveredCount: discoveredCandidates.length,
+      plannedCount: plan.length,
+      importedCount: 0
+    };
   }
 
   if (process.stdin.isTTY) {
@@ -70,7 +93,11 @@ export async function importCommand(source: string, options: CommandOptions): Pr
 
     if (!response.confirmed) {
       console.log("\nImport cancelled.");
-      return;
+      return {
+        discoveredCount: discoveredCandidates.length,
+        plannedCount: plan.length,
+        importedCount: 0
+      };
     }
   }
 
@@ -90,7 +117,16 @@ export async function importCommand(source: string, options: CommandOptions): Pr
   }
 
   printImportWarnings(createEntries);
-  await promptRuntimeReload(home);
+
+  if (options.promptRuntime) {
+    await promptRuntimeReload(home);
+  }
+
+  return {
+    discoveredCount: discoveredCandidates.length,
+    plannedCount: plan.length,
+    importedCount: createEntries.length
+  };
 }
 
 async function resolveImportCandidates(candidates: ImportCandidate[]): Promise<ReadyImportCandidate[]> {

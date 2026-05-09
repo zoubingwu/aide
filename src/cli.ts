@@ -57,7 +57,7 @@ function runRootCli(argv: string[]): void {
     .help();
 
   cli
-    .command("init", "Initialize Aide home")
+    .command("init", "Initialize Aide and run first-time onboarding")
     .action(wrapLazy(async () => (await import("./commands/system.js")).initCommand));
   cli
     .command("start", "Start Aide runtime in the background")
