@@ -458,15 +458,6 @@ function openClawTokenEnvKeys(params: {
 
 function addOpenClawTokenEnvKeys(keys: Set<string>, value: unknown, config: unknown): void {
   if (typeof value === "string") {
-    const envTemplateRef = openClawEnvTemplateRef(value, config);
-
-    if (envTemplateRef) {
-      if (openClawEnvSecretAllowed(envTemplateRef, config)) {
-        keys.add(envTemplateRef.id);
-      }
-      return;
-    }
-
     for (const match of value.matchAll(/\$\{([A-Z][A-Z0-9_]{0,127})\}/g)) {
       keys.add(match[1] ?? "");
     }
@@ -484,12 +475,6 @@ function addOpenClawTokenEnvKeys(keys: Set<string>, value: unknown, config: unkn
 
 function resolveOpenClawSecret(value: unknown, env: Record<string, string>, config?: unknown): string | undefined {
   if (typeof value === "string") {
-    const envTemplateRef = openClawEnvTemplateRef(value, config);
-
-    if (envTemplateRef) {
-      return openClawEnvSecretAllowed(envTemplateRef, config) ? env[envTemplateRef.id] : undefined;
-    }
-
     return substituteEnv(value, env);
   }
 
@@ -500,20 +485,6 @@ function resolveOpenClawSecret(value: unknown, env: Record<string, string>, conf
   }
 
   return env[ref.id];
-}
-
-function openClawEnvTemplateRef(value: string, config?: unknown): OpenClawSecretRef | undefined {
-  const match = value.trim().match(/^\$\{([A-Z][A-Z0-9_]{0,127})\}$/);
-
-  if (!match) {
-    return undefined;
-  }
-
-  return {
-    source: "env",
-    provider: openClawDefaultSecretProvider(config, "env"),
-    id: match[1] ?? ""
-  };
 }
 
 function openClawEnvSecretAllowed(ref: OpenClawSecretRef, config: unknown): boolean {

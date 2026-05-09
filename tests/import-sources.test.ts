@@ -297,6 +297,35 @@ describe("import sources", () => {
     expect(candidates.map((candidate) => candidate.token)).toEqual(["vars-token"]);
   });
 
+  it("treats OpenClaw string env templates as config substitution", () => {
+    const openclawHome = tempDir("aide-openclaw-template-substitution-");
+    writeFile(
+      path.join(openclawHome, "openclaw.json"),
+      [
+        "{",
+        "  env: { vars: { DISCORD_BOT_TOKEN: 'template-token' } },",
+        "  secrets: { providers: { default: { source: 'env', allowlist: ['OTHER_TOKEN'] } } },",
+        "  channels: {",
+        "    discord: {",
+        "      accounts: { default: { token: '${DISCORD_BOT_TOKEN}' } },",
+        "    },",
+        "  },",
+        "}",
+        ""
+      ].join("\n")
+    );
+
+    const candidates = readyImportCandidates(discoverImportCandidates("openclaw", {
+      openclawHome,
+      env: {},
+      cwd: tempDir("aide-openclaw-cwd-")
+    }));
+
+    expect(candidates.map((candidate) => [candidate.sourceName, candidate.endpointId, candidate.token])).toEqual([
+      ["default", "openclaw", "template-token"]
+    ]);
+  });
+
   it("reads missing OpenClaw Discord token env values from shellEnv", () => {
     const openclawHome = tempDir("aide-openclaw-shell-env-");
     const shellPath = path.join(openclawHome, "shell-env.sh");
