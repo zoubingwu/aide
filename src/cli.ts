@@ -10,6 +10,7 @@ import {
   WEEKDAY_LIST
 } from "./commands/help.js";
 import { homeFromOptions } from "./commands/options.js";
+import packageJson from "../package.json" with { type: "json" };
 
 const runArgv = subcommandArgv(process.argv, "__run", "aide __run");
 const configArgv = subcommandArgv(process.argv, "config", "aide config");
@@ -52,7 +53,7 @@ function runRootCli(argv: string[]): void {
 
   cli
     .option("--home <path>", "Aide home directory")
-    .version("0.1.0")
+    .version(packageJson.version)
     .help();
 
   cli
