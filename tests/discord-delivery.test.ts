@@ -74,6 +74,144 @@ describe("discord delivery", () => {
     expect(chunks[1]).toMatch(/^```ts\n/);
   });
 
+  it("escapes nested code fences inside markdown code blocks", () => {
+    const response = [
+      "**Body**",
+      "",
+      "```markdown",
+      "Aide keeps the model simple:",
+      "",
+      "```text",
+      "Discord / scheduled prompt -> Codex CLI -> response",
+      "```",
+      "",
+      "Current features:",
+      "",
+      "- Discord endpoint backed by Codex CLI",
+      "```"
+    ].join("\n");
+    const chunks = chunkDiscordMessage(response);
+    const chunk = chunks[0] ?? "";
+
+    expect(chunks).toHaveLength(1);
+    expect(chunk).toContain("```markdown\n");
+    expect(chunk).toContain("`\u200B``text\n");
+    expect(chunk).toContain("`\u200B``\n\nCurrent features:");
+    expect(chunk.trimEnd()).toMatch(/\n```$/);
+    expect(hasBalancedBacktickFences(chunk)).toBe(true);
+  });
+
+  it("escapes unlabeled nested code fences inside markdown code blocks", () => {
+    const response = [
+      "**Body**",
+      "",
+      "```markdown",
+      "Aide keeps the model simple:",
+      "",
+      "```",
+      "Discord / scheduled prompt -> Codex CLI -> response",
+      "```",
+      "",
+      "Current features:",
+      "",
+      "- Discord endpoint backed by Codex CLI",
+      "```"
+    ].join("\n");
+    const chunks = chunkDiscordMessage(response);
+    const chunk = chunks[0] ?? "";
+
+    expect(chunks).toHaveLength(1);
+    expect(chunk).toContain("```markdown\n");
+    expect(chunk).toContain("`\u200B``\nDiscord / scheduled prompt -> Codex CLI -> response\n`\u200B``");
+    expect(chunk).toContain("\n\nCurrent features:");
+    expect(chunk.trimEnd()).toMatch(/\n```$/);
+    expect(hasBalancedBacktickFences(chunk)).toBe(true);
+  });
+
+  it("escapes unlabeled nested code fences followed by plain markdown paragraphs", () => {
+    const response = [
+      "```markdown",
+      "Example:",
+      "",
+      "```",
+      "plain text",
+      "```",
+      "This is a paragraph.",
+      "```"
+    ].join("\n");
+    const chunks = chunkDiscordMessage(response);
+    const chunk = chunks[0] ?? "";
+
+    expect(chunks).toHaveLength(1);
+    expect(chunk).toContain("`\u200B``\nplain text\n`\u200B``");
+    expect(chunk).toContain("\nThis is a paragraph.\n```");
+    expect(hasBalancedBacktickFences(chunk)).toBe(true);
+  });
+
+  it("escapes unlabeled nested code fences after plain prose", () => {
+    const response = [
+      "```markdown",
+      "Here is code",
+      "```",
+      "plain text",
+      "```",
+      "This is a paragraph.",
+      "```"
+    ].join("\n");
+    const chunks = chunkDiscordMessage(response);
+    const chunk = chunks[0] ?? "";
+
+    expect(chunks).toHaveLength(1);
+    expect(chunk).toContain("Here is code\n`\u200B``\nplain text\n`\u200B``");
+    expect(chunk).toContain("\nThis is a paragraph.\n```");
+    expect(hasBalancedBacktickFences(chunk)).toBe(true);
+  });
+
+  it("keeps later standalone code blocks outside markdown code blocks", () => {
+    const response = [
+      "```markdown",
+      "# Aide",
+      "```",
+      "",
+      "A separate example:",
+      "",
+      "```",
+      "plain text",
+      "```"
+    ].join("\n");
+    const chunks = chunkDiscordMessage(response);
+
+    expect(chunks).toEqual([response]);
+  });
+
+  it("keeps adjacent standalone code blocks outside markdown code blocks", () => {
+    const response = [
+      "```markdown",
+      "# Aide",
+      "```",
+      "A separate example:",
+      "```",
+      "plain text",
+      "```"
+    ].join("\n");
+    const chunks = chunkDiscordMessage(response);
+
+    expect(chunks).toEqual([response]);
+  });
+
+  it("keeps shorter nested code fences inside longer markdown code blocks", () => {
+    const response = [
+      "````markdown",
+      "```text",
+      "example",
+      "```",
+      "````"
+    ].join("\n");
+    const chunks = chunkDiscordMessage(response);
+
+    expect(chunks).toEqual([response]);
+  });
+
   it("keeps split long code lines inside balanced fences", () => {
     const response = ["```js", "x".repeat(4_001), "```"].join("\n");
     const chunks = chunkDiscordMessage(response);
