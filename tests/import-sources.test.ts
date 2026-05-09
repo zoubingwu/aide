@@ -639,6 +639,56 @@ describe("import sources", () => {
     expect(resolved.token).toBe("exec-token");
   });
 
+  it.each([
+    {
+      name: "reported errors",
+      output: '{"protocolVersion":1,"errors":{"discord/token":{"message":"denied"}}}',
+      message: "Exec SecretRef failed for discord/token: denied"
+    },
+    {
+      name: "missing values",
+      output: '{"protocolVersion":1,"values":{"other/token":"wrong"}}',
+      message: "Exec SecretRef response missing id: discord/token"
+    }
+  ])("propagates OpenClaw exec JSON protocol failures with plaintext fallback enabled: $name", async ({ output, message }) => {
+    const openclawHome = tempDir("aide-openclaw-exec-json-error-");
+    const scriptPath = path.join(openclawHome, "resolve-secret.sh");
+    writeFile(
+      scriptPath,
+      [
+        "#!/bin/sh",
+        "cat >/dev/null",
+        `printf '${output}'`,
+        ""
+      ].join("\n")
+    );
+    fs.chmodSync(scriptPath, 0o700);
+    writeFile(
+      path.join(openclawHome, "openclaw.json"),
+      [
+        "{",
+        "  secrets: {",
+        "    providers: {",
+        `      vault: { source: 'exec', command: '${scriptPath}', jsonOnly: false },`,
+        "    },",
+        "  },",
+        "  channels: {",
+        "    discord: { token: { source: 'exec', provider: 'vault', id: 'discord/token' } },",
+        "  },",
+        "}",
+        ""
+      ].join("\n")
+    );
+
+    const [candidate] = discoverImportCandidates("openclaw", { openclawHome, env: {}, cwd: openclawHome });
+
+    expect(candidate?.kind).toBe("secret");
+    if (!candidate || candidate.kind !== "secret") {
+      throw new Error("Expected OpenClaw exec SecretRef candidate.");
+    }
+    await expect(resolveSecretImportCandidate(candidate)).rejects.toThrow(message);
+  });
+
   it("isolates OpenClaw exec SecretRef environment to passEnv and provider env", async () => {
     const openclawHome = tempDir("aide-openclaw-exec-env-");
     const scriptPath = path.join(openclawHome, "resolve-secret-env.sh");

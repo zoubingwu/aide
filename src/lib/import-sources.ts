@@ -730,15 +730,15 @@ async function resolveOpenClawExecSecret(
 function parseOpenClawExecOutput(params: { stdout: string; id: string; jsonOnly: boolean }): unknown {
   const trimmed = params.stdout.trim();
 
-  if (!params.jsonOnly) {
-    try {
-      return parseOpenClawExecJsonOutput(JSON.parse(trimmed), params.id, params.jsonOnly);
-    } catch {
+  try {
+    return parseOpenClawExecJsonOutput(JSON.parse(trimmed), params.id, params.jsonOnly);
+  } catch (error) {
+    if (!params.jsonOnly && error instanceof SyntaxError) {
       return trimmed;
     }
-  }
 
-  return parseOpenClawExecJsonOutput(JSON.parse(trimmed), params.id, params.jsonOnly);
+    throw error;
+  }
 }
 
 function parseOpenClawExecJsonOutput(parsed: unknown, id: string, jsonOnly: boolean): unknown {
