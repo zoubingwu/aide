@@ -5,7 +5,14 @@ import { execa } from "execa";
 import prompts from "prompts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { initCommand } from "../src/commands/system.js";
-import { defaultCodexAgentConfig, defaultEndpointTriggerConfig, ensureAideHome, loadEndpoints, writeEndpoints } from "../src/lib/config.js";
+import {
+  defaultCodexAgentConfig,
+  defaultEndpointTriggerConfig,
+  ensureAideHome,
+  loadEndpoints,
+  writeEndpoints,
+  writeRuntimeState
+} from "../src/lib/config.js";
 import { configPath } from "../src/lib/paths.js";
 import { ensureEndpointWorkspace } from "../src/lib/workspace.js";
 import type { Endpoint } from "../src/lib/types.js";
@@ -89,6 +96,30 @@ describe("init onboarding", () => {
     expect(output).toContain("Imported:");
     expect(output).toContain("hermes");
     expect(output).not.toContain("hermes-token");
+  });
+
+  it("prompts for restart when imports add endpoints to a running runtime", async () => {
+    const home = tempDir("aide-init-home-");
+    const hermesHome = tempDir("aide-init-hermes-");
+    seedDiscoveryEnv({ hermesHome });
+    writeFile(path.join(hermesHome, ".env"), "DISCORD_BOT_TOKEN=hermes-token\n");
+    ensureAideHome(home);
+    writeRuntimeState(home, {
+      status: "running",
+      home,
+      pid: process.pid,
+      startedAt: new Date("2026-05-09T00:00:00.000Z").toISOString()
+    });
+    withStdinTty(true);
+    prompts.inject([true, false]);
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await initCommand({ home });
+
+    const output = loggedText(log);
+    expect(loadEndpoints(home).map((endpoint) => endpoint.id)).toEqual(["hermes"]);
+    expect(output).toContain("Run `aide restart` to use imported endpoints.");
+    expect(output).not.toContain("Aide runtime is running with PID");
   });
 });
 

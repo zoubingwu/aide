@@ -5,7 +5,7 @@ import { loadEndpoints } from "../lib/config.js";
 import { runDoctorChecks } from "../lib/doctor.js";
 import { detectInstalledAgents, type InstalledAgent } from "../lib/agents.js";
 import { checkMark } from "../lib/format.js";
-import { startRuntimeInBackground } from "../lib/runtime.js";
+import { startRuntimeInBackground, stopRuntime } from "../lib/runtime.js";
 import { runtimeDisplayStatus } from "../lib/runtime-state.js";
 import type { DoctorCheck } from "../lib/types.js";
 
@@ -13,14 +13,14 @@ export async function runInitOnboarding(home: string): Promise<void> {
   const installedAgents = await detectInstalledAgents();
   printAgentStatus(installedAgents);
 
-  await importKnownEndpoints(home);
+  const importedCount = await importKnownEndpoints(home);
 
   if (loadEndpoints(home).length === 0) {
     await createFirstEndpoint(home, installedAgents);
   }
 
   const checks = await printDoctorSummary(home);
-  await promptRuntimeStart(home, checks);
+  await promptRuntimeStart(home, checks, importedCount);
 }
 
 function printAgentStatus(installedAgents: InstalledAgent[]): void {
@@ -36,16 +36,20 @@ function printAgentStatus(installedAgents: InstalledAgent[]): void {
   }
 }
 
-async function importKnownEndpoints(home: string): Promise<void> {
+async function importKnownEndpoints(home: string): Promise<number> {
   console.log("\nExisting endpoint discovery");
+  let importedCount = 0;
 
   for (const source of ["hermes", "openclaw"] as const) {
     try {
-      await runEndpointImport(home, source, { promptRuntime: false });
+      const result = await runEndpointImport(home, source, { promptRuntime: false });
+      importedCount += result.importedCount;
     } catch (error) {
       console.log(`${source} import discovery skipped: ${errorMessage(error)}.`);
     }
   }
+
+  return importedCount;
 }
 
 async function createFirstEndpoint(home: string, installedAgents: InstalledAgent[]): Promise<void> {
@@ -76,12 +80,23 @@ async function printDoctorSummary(home: string): Promise<DoctorCheck[]> {
   return checks;
 }
 
-async function promptRuntimeStart(home: string, checks: DoctorCheck[]): Promise<void> {
+async function promptRuntimeStart(home: string, checks: DoctorCheck[], importedCount: number): Promise<void> {
   const endpoints = loadEndpoints(home).filter((endpoint) => endpoint.enabled);
   const runtime = runtimeDisplayStatus(home);
+  const failedChecks = checks.filter((check) => check.status === "fail");
 
   if (runtime.status === "running") {
-    console.log(`\nAide runtime is running with PID ${runtime.pid}.`);
+    if (importedCount === 0) {
+      console.log(`\nAide runtime is running with PID ${runtime.pid}.`);
+      return;
+    }
+
+    if (failedChecks.length > 0) {
+      console.log("\nRuntime restart needs passing doctor checks.");
+      return;
+    }
+
+    await promptRuntimeRestart(home);
     return;
   }
 
@@ -89,8 +104,6 @@ async function promptRuntimeStart(home: string, checks: DoctorCheck[]): Promise<
     console.log("\nRuntime start needs an enabled endpoint.");
     return;
   }
-
-  const failedChecks = checks.filter((check) => check.status === "fail");
 
   if (failedChecks.length > 0) {
     console.log("\nRuntime start needs passing doctor checks.");
@@ -109,6 +122,23 @@ async function promptRuntimeStart(home: string, checks: DoctorCheck[]): Promise<
     return;
   }
 
+  await startRuntimeInBackground(home);
+}
+
+async function promptRuntimeRestart(home: string): Promise<void> {
+  const response = await prompts({
+    type: "confirm",
+    name: "confirmed",
+    message: "Restart Aide now to use imported endpoints?",
+    initial: true
+  });
+
+  if (!response.confirmed) {
+    console.log("\nRun `aide restart` to use imported endpoints.");
+    return;
+  }
+
+  stopRuntime(home);
   await startRuntimeInBackground(home);
 }
 
