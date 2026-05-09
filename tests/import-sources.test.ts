@@ -209,6 +209,68 @@ describe("import sources", () => {
     ]);
   });
 
+  it("rejects OpenClaw config includes outside the config directory by default", () => {
+    const root = tempDir("aide-openclaw-include-root-");
+    const openclawHome = path.join(root, "home");
+    const externalDir = path.join(root, "external");
+    writeFile(
+      path.join(openclawHome, "openclaw.json"),
+      [
+        "{",
+        "  '$include': '../external/discord.json5',",
+        "}",
+        ""
+      ].join("\n")
+    );
+    writeFile(
+      path.join(externalDir, "discord.json5"),
+      [
+        "{",
+        "  channels: { discord: { token: 'external-token' } },",
+        "}",
+        ""
+      ].join("\n")
+    );
+
+    expect(() => discoverImportCandidates("openclaw", {
+      openclawHome,
+      env: {},
+      cwd: openclawHome
+    })).toThrow("OpenClaw config include outside allowed roots");
+  });
+
+  it("allows OpenClaw config includes from OPENCLAW_INCLUDE_ROOTS", () => {
+    const root = tempDir("aide-openclaw-include-allowed-root-");
+    const openclawHome = path.join(root, "home");
+    const externalDir = path.join(root, "external");
+    writeFile(
+      path.join(openclawHome, "openclaw.json"),
+      [
+        "{",
+        "  '$include': '../external/discord.json5',",
+        "}",
+        ""
+      ].join("\n")
+    );
+    writeFile(
+      path.join(externalDir, "discord.json5"),
+      [
+        "{",
+        "  channels: { discord: { token: 'external-token' } },",
+        "}",
+        ""
+      ].join("\n")
+    );
+
+    const candidates = readyImportCandidates(discoverImportCandidates("openclaw", {
+      openclawHome,
+      env: { OPENCLAW_INCLUDE_ROOTS: externalDir },
+      cwd: openclawHome
+    }));
+
+    expect(candidates.map((candidate) => candidate.token)).toEqual(["external-token"]);
+  });
+
   it("uses OPENCLAW_HOME for OpenClaw config and env discovery", () => {
     const openclawHome = tempDir("aide-openclaw-home-");
     writeFile(path.join(openclawHome, ".env"), "DISCORD_BOT_TOKEN=home-token\n");

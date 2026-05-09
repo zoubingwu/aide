@@ -30,6 +30,7 @@ export interface OpenClawShellEnvPlan {
 export function resolveOpenClawConfig(options: OpenClawConfigOptions = {}): OpenClawConfigResolution {
   const home = resolveOpenClawHome(options);
   const configPath = openClawConfigPath(options, home);
+  const includeRoots = openClawIncludeRoots(options);
 
   if (configPath.explicit && !configPath.exists) {
     throw new Error(`OpenClaw config not found: ${configPath.path}`);
@@ -40,7 +41,7 @@ export function resolveOpenClawConfig(options: OpenClawConfigOptions = {}): Open
     path: configPath.path,
     exists: configPath.exists,
     explicit: configPath.explicit,
-    config: readOpenClawConfigObject(configPath.exists ? configPath.path : undefined)
+    config: readOpenClawConfigObject(configPath.exists ? configPath.path : undefined, includeRoots)
   };
 }
 
@@ -49,15 +50,15 @@ export function resolveOpenClawHome(options: OpenClawConfigOptions): string {
   return expandHome(options.openclawHome ?? env.OPENCLAW_HOME ?? env.OPENCLAW_STATE_DIR ?? "~/.openclaw");
 }
 
-export function readOpenClawConfigObject(filePath: string | undefined): unknown {
+export function readOpenClawConfigObject(filePath: string | undefined, includeRoots: string[] = []): unknown {
   const config = readJson5Object(filePath);
 
   if (!filePath || config === undefined) {
     return config;
   }
 
-  const resolvedPath = path.resolve(filePath);
-  return resolveOpenClawConfigIncludes(config, resolvedPath, new Set([resolvedPath]), 0);
+  const resolvedPath = fs.realpathSync(path.resolve(filePath));
+  return resolveOpenClawConfigIncludes(config, resolvedPath, new Set([resolvedPath]), 0, includeRoots);
 }
 
 export function openClawConfigEnvValues(value: Record<string, unknown>): Record<string, string> {
@@ -132,6 +133,11 @@ function openClawConfigPath(options: OpenClawConfigOptions, home: string): { pat
     exists: fs.existsSync(fallbackPath),
     explicit: false
   };
+}
+
+function openClawIncludeRoots(options: OpenClawConfigOptions): string[] {
+  const env = options.env ?? process.env;
+  return parsePathList(env.OPENCLAW_INCLUDE_ROOTS).map((entry) => realOrResolvedPath(expandHome(entry)));
 }
 
 function readJson5Object(filePath: string | undefined): unknown {
@@ -214,10 +220,11 @@ function resolveOpenClawConfigIncludes(
   value: unknown,
   baseFilePath: string,
   seenPaths: Set<string>,
-  depth: number
+  depth: number,
+  includeRoots: string[]
 ): unknown {
   if (Array.isArray(value)) {
-    return value.map((entry) => resolveOpenClawConfigIncludes(entry, baseFilePath, seenPaths, depth));
+    return value.map((entry) => resolveOpenClawConfigIncludes(entry, baseFilePath, seenPaths, depth, includeRoots));
   }
 
   if (!isRecord(value)) {
@@ -225,7 +232,7 @@ function resolveOpenClawConfigIncludes(
   }
 
   if (objectHasOwn(value, OPENCLAW_INCLUDE_KEY)) {
-    const included = resolveOpenClawConfigInclude(value[OPENCLAW_INCLUDE_KEY], baseFilePath, seenPaths, depth);
+    const included = resolveOpenClawConfigInclude(value[OPENCLAW_INCLUDE_KEY], baseFilePath, seenPaths, depth, includeRoots);
     const local: Record<string, unknown> = {};
 
     for (const [key, entry] of Object.entries(value)) {
@@ -233,7 +240,7 @@ function resolveOpenClawConfigIncludes(
         continue;
       }
 
-      local[key] = resolveOpenClawConfigIncludes(entry, baseFilePath, seenPaths, depth);
+      local[key] = resolveOpenClawConfigIncludes(entry, baseFilePath, seenPaths, depth, includeRoots);
     }
 
     return Object.keys(local).length > 0 ? deepMergeOpenClawConfig(included, local) : included;
@@ -243,7 +250,7 @@ function resolveOpenClawConfigIncludes(
 
   for (const [key, entry] of Object.entries(value)) {
     if (!isUnsafeObjectKey(key)) {
-      result[key] = resolveOpenClawConfigIncludes(entry, baseFilePath, seenPaths, depth);
+      result[key] = resolveOpenClawConfigIncludes(entry, baseFilePath, seenPaths, depth, includeRoots);
     }
   }
 
@@ -254,17 +261,18 @@ function resolveOpenClawConfigInclude(
   includeValue: unknown,
   baseFilePath: string,
   seenPaths: Set<string>,
-  depth: number
+  depth: number,
+  includeRoots: string[]
 ): unknown {
   if (typeof includeValue === "string") {
-    return loadOpenClawConfigInclude(includeValue, baseFilePath, seenPaths, depth);
+    return loadOpenClawConfigInclude(includeValue, baseFilePath, seenPaths, depth, includeRoots);
   }
 
   if (Array.isArray(includeValue)) {
     return includeValue.reduce<unknown>(
       (merged, entry) => deepMergeOpenClawConfig(
         merged,
-        resolveOpenClawConfigInclude(entry, baseFilePath, seenPaths, depth)
+        resolveOpenClawConfigInclude(entry, baseFilePath, seenPaths, depth, includeRoots)
       ),
       {}
     );
@@ -277,40 +285,70 @@ function loadOpenClawConfigInclude(
   includePath: string,
   baseFilePath: string,
   seenPaths: Set<string>,
-  depth: number
+  depth: number,
+  includeRoots: string[]
 ): unknown {
   if (depth >= OPENCLAW_MAX_INCLUDE_DEPTH) {
     throw new Error(`OpenClaw config include depth exceeded at ${includePath}.`);
   }
 
   const resolvedPath = resolveOpenClawIncludePath(includePath, baseFilePath);
+  const realPath = fs.realpathSync(resolvedPath);
 
-  if (seenPaths.has(resolvedPath)) {
-    throw new Error(`OpenClaw config include cycle detected at ${resolvedPath}.`);
+  if (!openClawIncludeAllowed(realPath, baseFilePath, includeRoots)) {
+    throw new Error(`OpenClaw config include outside allowed roots: ${realPath}`);
   }
 
-  const stats = fs.statSync(resolvedPath);
+  if (seenPaths.has(realPath)) {
+    throw new Error(`OpenClaw config include cycle detected at ${realPath}.`);
+  }
+
+  const stats = fs.statSync(realPath);
 
   if (!stats.isFile()) {
-    throw new Error(`OpenClaw config include is not a file: ${resolvedPath}`);
+    throw new Error(`OpenClaw config include is not a file: ${realPath}`);
   }
 
   if (stats.size > OPENCLAW_MAX_INCLUDE_FILE_BYTES) {
-    throw new Error(`OpenClaw config include exceeds max size: ${resolvedPath}`);
+    throw new Error(`OpenClaw config include exceeds max size: ${realPath}`);
   }
 
-  seenPaths.add(resolvedPath);
+  seenPaths.add(realPath);
 
   try {
-    return resolveOpenClawConfigIncludes(readJson5Object(resolvedPath), resolvedPath, seenPaths, depth + 1);
+    return resolveOpenClawConfigIncludes(readJson5Object(realPath), realPath, seenPaths, depth + 1, includeRoots);
   } finally {
-    seenPaths.delete(resolvedPath);
+    seenPaths.delete(realPath);
   }
 }
 
 function resolveOpenClawIncludePath(includePath: string, baseFilePath: string): string {
   const expandedPath = includePath === "~" || includePath.startsWith("~/") ? expandHome(includePath) : includePath;
   return path.isAbsolute(expandedPath) ? expandedPath : path.resolve(path.dirname(baseFilePath), expandedPath);
+}
+
+function openClawIncludeAllowed(filePath: string, baseFilePath: string, includeRoots: string[]): boolean {
+  const roots = [path.dirname(baseFilePath), ...includeRoots];
+  return roots.some((root) => isPathInside(filePath, root));
+}
+
+function isPathInside(filePath: string, root: string): boolean {
+  const relative = path.relative(root, filePath);
+  return relative === "" || (relative.length > 0 && !relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function parsePathList(value: string | undefined): string[] {
+  if (!value) {
+    return [];
+  }
+
+  const delimiter = value.includes(path.delimiter) ? path.delimiter : ",";
+  return value.split(delimiter).map((entry) => entry.trim()).filter((entry) => entry.length > 0);
+}
+
+function realOrResolvedPath(filePath: string): string {
+  const resolvedPath = path.resolve(filePath);
+  return fs.existsSync(resolvedPath) ? fs.realpathSync(resolvedPath) : resolvedPath;
 }
 
 function deepMergeOpenClawConfig(target: unknown, source: unknown): unknown {
