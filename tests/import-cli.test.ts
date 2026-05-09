@@ -78,6 +78,45 @@ describe("import CLI", () => {
     expect(config).toContain("endpoints = []");
   });
 
+  it("skips OpenClaw shellEnv imports in scripted imports without executing the shell", async () => {
+    const aideHome = tempDir("aide-import-home-");
+    const openclawHome = tempDir("aide-import-openclaw-");
+    const shellPath = path.join(openclawHome, "shell-env.sh");
+    const markerPath = path.join(openclawHome, "shell-env-ran");
+    writeFile(
+      shellPath,
+      [
+        "#!/bin/sh",
+        `printf ran > '${markerPath}'`,
+        "printf 'DISCORD_BOT_TOKEN=shell-token\\n'",
+        ""
+      ].join("\n")
+    );
+    fs.chmodSync(shellPath, 0o700);
+    writeFile(
+      path.join(openclawHome, "openclaw.json"),
+      [
+        "{",
+        "  env: { shellEnv: { enabled: true, timeoutMs: 5000 } },",
+        "  channels: { discord: { token: '${DISCORD_BOT_TOKEN}' } },",
+        "}",
+        ""
+      ].join("\n")
+    );
+
+    const { stdout } = await runCli(["--home", aideHome, "import", "openclaw"], {
+      OPENCLAW_CONFIG_PATH: path.join(openclawHome, "openclaw.json"),
+      SHELL: shellPath
+    });
+    const config = fs.readFileSync(path.join(aideHome, "config.toml"), "utf8");
+
+    expect(stdout).toContain("SecretRef requires confirmation");
+    expect(stdout).toContain("SecretRef shellEnv");
+    expect(stdout).not.toContain("shell-token");
+    expect(fs.existsSync(markerPath)).toBe(false);
+    expect(config).toContain("endpoints = []");
+  });
+
   it("imports OpenClaw access-controlled endpoints disabled", async () => {
     const aideHome = tempDir("aide-import-home-");
     const openclawHome = tempDir("aide-import-openclaw-");

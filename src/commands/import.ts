@@ -153,7 +153,7 @@ function importCandidateTable(candidates: ImportCandidate[]): string {
 
 function importCandidateTokenLabel(candidate: ImportCandidate): string {
   if (candidate.kind === "secret") {
-    return `SecretRef ${candidate.secret.ref.source}`;
+    return `SecretRef ${candidate.secret.provider.source}`;
   }
 
   return tokenFingerprint(candidate.token).slice(0, 15);

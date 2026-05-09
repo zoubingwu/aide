@@ -11,6 +11,7 @@ import {
 import {
   openClawConfigEnvValues,
   openClawShellEnvValues,
+  planOpenClawShellEnv,
   resolveOpenClawConfig,
   type OpenClawConfigResolution
 } from "./openclaw-config.js";
@@ -52,7 +53,10 @@ export interface OpenClawSecretRef {
   id: string;
 }
 
-export type OpenClawSecretProvider = OpenClawFileSecretProvider | OpenClawExecSecretProvider;
+export type OpenClawSecretProvider =
+  OpenClawFileSecretProvider |
+  OpenClawExecSecretProvider |
+  OpenClawShellEnvSecretProvider;
 
 export interface OpenClawFileSecretProvider {
   source: "file";
@@ -71,6 +75,17 @@ export interface OpenClawExecSecretProvider {
   jsonOnly?: boolean | undefined;
   timeoutMs?: number | undefined;
   maxOutputBytes?: number | undefined;
+}
+
+export interface OpenClawShellEnvSecretProvider {
+  source: "shellEnv";
+  keys: string[];
+  command: string;
+  values: Record<string, string>;
+  configEnv?: Record<string, unknown> | undefined;
+  tokenInput?: unknown;
+  fallbackKey?: string | undefined;
+  config: unknown;
 }
 
 export interface ImportPlanEntry {
@@ -154,6 +169,10 @@ export function describeSecretImportCandidate(candidate: SecretImportCandidate):
 
   if (provider.source === "file") {
     return `file ${provider.path} (${provider.mode ?? "json"}:${ref.id})`;
+  }
+
+  if (provider.source === "shellEnv") {
+    return `shellEnv ${provider.keys.join(", ")} via ${provider.command}`;
   }
 
   return `exec ${[provider.command, ...(provider.args ?? [])].join(" ")} (${ref.id})`;
@@ -323,13 +342,7 @@ function discoverOpenClawCandidates(options: ImportDiscoveryOptions): ImportCand
   );
   const defaultTokenInput = hasDefaultAccountToken ? defaultAccount?.token : discord?.token;
   const hasConfiguredDefaultToken = hasDefaultAccountToken || hasTopLevelToken;
-  const env = openClawEnv(options, openclawConfig, openClawTokenEnvKeys({
-    accounts,
-    config,
-    defaultAccountDisabled,
-    hasConfiguredDefaultToken,
-    defaultTokenInput
-  }));
+  const env = openClawEnv(options, openclawConfig);
   const defaultToken = resolveOpenClawSecret(defaultTokenInput, env.values, config) ??
     (hasConfiguredDefaultToken ? undefined : env.values.DISCORD_BOT_TOKEN);
   const defaultCandidate = {
@@ -349,7 +362,13 @@ function discoverOpenClawCandidates(options: ImportDiscoveryOptions): ImportCand
         token: defaultToken
       });
     } else {
-      const secret = openClawConfirmableSecret(defaultTokenInput, config);
+      const secret = openClawConfirmableSecret(defaultTokenInput, config) ??
+        openClawConfirmableShellEnvSecret({
+          tokenInput: defaultTokenInput,
+          fallbackKey: hasConfiguredDefaultToken ? undefined : "DISCORD_BOT_TOKEN",
+          config,
+          env
+        });
 
       if (secret) {
         candidates.push({
@@ -387,7 +406,12 @@ function discoverOpenClawCandidates(options: ImportDiscoveryOptions): ImportCand
         continue;
       }
 
-      const secret = openClawConfirmableSecret(account.token, config);
+      const secret = openClawConfirmableSecret(account.token, config) ??
+        openClawConfirmableShellEnvSecret({
+          tokenInput: account.token,
+          config,
+          env
+        });
 
       if (secret) {
         candidates.push({
@@ -404,8 +428,7 @@ function discoverOpenClawCandidates(options: ImportDiscoveryOptions): ImportCand
 
 function openClawEnv(
   options: ImportDiscoveryOptions,
-  openclawConfig: OpenClawConfigResolution = resolveOpenClawConfig(options),
-  shellEnvKeys: Iterable<string> = []
+  openclawConfig: OpenClawConfigResolution = resolveOpenClawConfig(options)
 ): SourceEnv {
   const env = options.env ?? process.env;
   const cwd = options.cwd ?? process.cwd();
@@ -428,7 +451,6 @@ function openClawEnv(
   }
 
   Object.assign(values, envToStrings(env));
-  Object.assign(values, openClawShellEnvValues({ configEnv, values, keys: shellEnvKeys }));
 
   return {
     values,
@@ -505,32 +527,48 @@ function hasSpecificGuildConfig(guilds: Record<string, unknown>): boolean {
   return Object.keys(guilds).some((guildId) => guildId !== "*");
 }
 
-function openClawTokenEnvKeys(params: {
-  accounts: Record<string, unknown> | undefined;
-  config: unknown;
-  defaultAccountDisabled: boolean;
-  hasConfiguredDefaultToken: boolean;
-  defaultTokenInput: unknown;
-}): string[] {
+function openClawTokenInputEnvKeys(value: unknown, config: unknown): string[] {
   const keys = new Set<string>();
-
-  if (!params.defaultAccountDisabled) {
-    addOpenClawTokenEnvKeys(keys, params.defaultTokenInput, params.config);
-
-    if (!params.hasConfiguredDefaultToken) {
-      keys.add("DISCORD_BOT_TOKEN");
-    }
-  }
-
-  if (params.accounts) {
-    for (const [accountId, account] of Object.entries(params.accounts)) {
-      if (accountId !== "default" && isRecord(account) && getBoolean(account.enabled) !== false) {
-        addOpenClawTokenEnvKeys(keys, account.token, params.config);
-      }
-    }
-  }
-
+  addOpenClawTokenEnvKeys(keys, value, config);
   return [...keys];
+}
+
+function openClawConfirmableShellEnvSecret(params: {
+  tokenInput: unknown;
+  fallbackKey?: string | undefined;
+  config: unknown;
+  env: SourceEnv;
+}): OpenClawSecretResolution | undefined {
+  const configEnv = objectPath(params.config, ["env"]);
+  const keys = openClawTokenInputEnvKeys(params.tokenInput, params.config);
+
+  if (params.fallbackKey) {
+    keys.push(params.fallbackKey);
+  }
+
+  const plan = planOpenClawShellEnv({ configEnv, values: params.env.values, keys });
+
+  if (!plan) {
+    return undefined;
+  }
+
+  return {
+    ref: {
+      source: "env",
+      provider: "shellEnv",
+      id: plan.keys.join(",")
+    },
+    provider: {
+      source: "shellEnv",
+      keys: plan.keys,
+      command: plan.command,
+      values: params.env.values,
+      configEnv,
+      tokenInput: params.tokenInput,
+      fallbackKey: params.fallbackKey,
+      config: params.config
+    }
+  };
 }
 
 function addOpenClawTokenEnvKeys(keys: Set<string>, value: unknown, config: unknown): void {
@@ -665,7 +703,25 @@ async function resolveOpenClawSecretCandidate(
       return resolveOpenClawFileSecret(secret.ref, secret.provider);
     case "exec":
       return resolveOpenClawExecSecret(secret.ref, secret.provider, options.env ?? process.env);
+    case "shellEnv":
+      return resolveOpenClawShellEnvSecret(secret.provider);
   }
+}
+
+function resolveOpenClawShellEnvSecret(provider: OpenClawShellEnvSecretProvider): string {
+  const env = {
+    ...provider.values,
+    ...openClawShellEnvValues({
+      configEnv: provider.configEnv,
+      values: provider.values,
+      keys: provider.keys
+    })
+  };
+  const token = provider.tokenInput === undefined && provider.fallbackKey
+    ? env[provider.fallbackKey]
+    : resolveOpenClawSecret(provider.tokenInput, env, provider.config);
+
+  return normalizeSecretString(token, `shellEnv:${provider.keys.join(",")}`);
 }
 
 function resolveOpenClawFileSecret(ref: OpenClawSecretRef, provider: OpenClawFileSecretProvider): string {

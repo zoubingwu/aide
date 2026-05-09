@@ -22,6 +22,11 @@ export interface OpenClawConfigResolution {
   config: unknown;
 }
 
+export interface OpenClawShellEnvPlan {
+  keys: string[];
+  command: string;
+}
+
 export function resolveOpenClawConfig(options: OpenClawConfigOptions = {}): OpenClawConfigResolution {
   const home = resolveOpenClawHome(options);
   const configPath = openClawConfigPath(options, home);
@@ -67,20 +72,16 @@ export function openClawShellEnvValues(params: {
   values: Record<string, string>;
   keys: Iterable<string>;
 }): Record<string, string> {
-  if (!openClawShellEnvEnabled(params.configEnv, params.values)) {
-    return {};
-  }
+  const plan = planOpenClawShellEnv(params);
 
-  const missingKeys = [...new Set(params.keys)].filter((key) => params.values[key] === undefined);
-
-  if (missingKeys.length === 0) {
+  if (!plan) {
     return {};
   }
 
   const shellEnv = readLoginShellEnv(params.values, openClawShellEnvTimeoutMs(params.configEnv, params.values));
   const values: Record<string, string> = {};
 
-  for (const key of missingKeys) {
+  for (const key of plan.keys) {
     const value = shellEnv[key];
 
     if (value !== undefined) {
@@ -89,6 +90,27 @@ export function openClawShellEnvValues(params: {
   }
 
   return values;
+}
+
+export function planOpenClawShellEnv(params: {
+  configEnv?: Record<string, unknown> | undefined;
+  values: Record<string, string>;
+  keys: Iterable<string>;
+}): OpenClawShellEnvPlan | undefined {
+  if (!openClawShellEnvEnabled(params.configEnv, params.values)) {
+    return undefined;
+  }
+
+  const keys = [...new Set(params.keys)].filter((key) => params.values[key] === undefined);
+
+  if (keys.length === 0) {
+    return undefined;
+  }
+
+  return {
+    keys,
+    command: openClawShellEnvCommand(params.values)
+  };
 }
 
 function openClawConfigPath(options: OpenClawConfigOptions, home: string): { path?: string | undefined; exists: boolean; explicit: boolean } {
@@ -144,7 +166,7 @@ function readLoginShellEnv(values: Record<string, string>, timeoutMs: number): R
 
 function readShellEnvOutput(values: Record<string, string>, timeoutMs: number): string {
   if (process.platform === "win32") {
-    return execFileSync(values.ComSpec ?? process.env.ComSpec ?? "cmd.exe", ["/d", "/s", "/c", "set"], {
+    return execFileSync(openClawShellEnvCommand(values), ["/d", "/s", "/c", "set"], {
       encoding: "utf8",
       env: values,
       stdio: ["ignore", "pipe", "ignore"],
@@ -152,11 +174,10 @@ function readShellEnvOutput(values: Record<string, string>, timeoutMs: number): 
     });
   }
 
-  const shellPath = values.SHELL ?? process.env.SHELL ?? "/bin/sh";
   const envCommand = fs.existsSync("/usr/bin/env") ? "/usr/bin/env" : "env";
 
   try {
-    return execFileSync(shellPath, ["-lc", envCommand], {
+    return execFileSync(openClawShellEnvCommand(values), ["-lc", envCommand], {
       encoding: "utf8",
       env: values,
       stdio: ["ignore", "pipe", "ignore"],
@@ -165,6 +186,14 @@ function readShellEnvOutput(values: Record<string, string>, timeoutMs: number): 
   } catch (error) {
     throw new Error(`OpenClaw shellEnv import failed: ${errorMessage(error)}`);
   }
+}
+
+function openClawShellEnvCommand(values: Record<string, string>): string {
+  if (process.platform === "win32") {
+    return values.ComSpec ?? process.env.ComSpec ?? "cmd.exe";
+  }
+
+  return values.SHELL ?? process.env.SHELL ?? "/bin/sh";
 }
 
 function parseEnvOutput(output: string): Record<string, string> {

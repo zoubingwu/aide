@@ -402,13 +402,16 @@ describe("import sources", () => {
     ]);
   });
 
-  it("reads missing OpenClaw Discord token env values from shellEnv", () => {
+  it("resolves missing OpenClaw Discord token env values from shellEnv after confirmation", async () => {
     const openclawHome = tempDir("aide-openclaw-shell-env-");
+    const cwd = tempDir("aide-openclaw-shell-env-cwd-");
     const shellPath = path.join(openclawHome, "shell-env.sh");
+    const markerPath = path.join(openclawHome, "shell-env-ran");
     writeFile(
       shellPath,
       [
         "#!/bin/sh",
+        `printf ran > '${markerPath}'`,
         "printf 'DISCORD_BOT_TOKEN=shell-token\\n'",
         ""
       ].join("\n")
@@ -418,20 +421,26 @@ describe("import sources", () => {
       path.join(openclawHome, "openclaw.json"),
       [
         "{",
-        "  env: { shellEnv: { enabled: true, timeoutMs: 5000 } },",
         "  channels: { discord: { token: '${DISCORD_BOT_TOKEN}' } },",
         "}",
         ""
       ].join("\n")
     );
+    writeFile(path.join(cwd, ".env"), `OPENCLAW_LOAD_SHELL_ENV=1\nSHELL=${shellPath}\n`);
 
-    const candidates = readyImportCandidates(discoverImportCandidates("openclaw", {
+    const candidates = discoverImportCandidates("openclaw", {
       openclawHome,
-      env: { SHELL: shellPath },
-      cwd: tempDir("aide-openclaw-cwd-")
-    }));
+      env: {},
+      cwd
+    });
 
-    expect(candidates.map((candidate) => candidate.token)).toEqual(["shell-token"]);
+    expect(fs.existsSync(markerPath)).toBe(false);
+    expect(candidates[0]?.kind).toBe("secret");
+    if (!candidates[0] || candidates[0].kind !== "secret") {
+      throw new Error("Expected OpenClaw shellEnv SecretRef candidate.");
+    }
+    expect((await resolveSecretImportCandidate(candidates[0])).token).toBe("shell-token");
+    expect(fs.existsSync(markerPath)).toBe(true);
   });
 
   it("deduplicates by token and allocates endpoint ids around conflicts", () => {
