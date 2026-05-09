@@ -148,6 +148,25 @@ describe("discord delivery", () => {
     expect(hasBalancedBacktickFences(chunk)).toBe(true);
   });
 
+  it("escapes unlabeled nested code fences after plain prose", () => {
+    const response = [
+      "```markdown",
+      "Here is code",
+      "```",
+      "plain text",
+      "```",
+      "This is a paragraph.",
+      "```"
+    ].join("\n");
+    const chunks = chunkDiscordMessage(response);
+    const chunk = chunks[0] ?? "";
+
+    expect(chunks).toHaveLength(1);
+    expect(chunk).toContain("Here is code\n`\u200B``\nplain text\n`\u200B``");
+    expect(chunk).toContain("\nThis is a paragraph.\n```");
+    expect(hasBalancedBacktickFences(chunk)).toBe(true);
+  });
+
   it("keeps later standalone code blocks outside markdown code blocks", () => {
     const response = [
       "```markdown",

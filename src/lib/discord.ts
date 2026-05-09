@@ -394,10 +394,14 @@ function hasUnlabeledNestedFenceIntro(lines: string[], index: number): boolean {
       continue;
     }
 
-    return trimmed.endsWith(":");
+    return isUnlabeledNestedFenceIntroLine(trimmed);
   }
 
   return false;
+}
+
+function isUnlabeledNestedFenceIntroLine(line: string): boolean {
+  return !/^(#{1,6}\s|`{3,}|~{3,})/.test(line);
 }
 
 function hasImmediateNestedFenceBody(lines: string[], index: number, markdownFence: MarkdownFenceLine): boolean {
