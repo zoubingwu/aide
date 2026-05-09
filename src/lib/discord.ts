@@ -367,6 +367,10 @@ function escapeNestedDiscordMarkdownFences(response: string): string {
 }
 
 function hasUnlabeledNestedFenceClose(lines: string[], index: number, markdownFence: MarkdownFenceLine): boolean {
+  if (!hasUnlabeledNestedFenceIntro(lines, index)) {
+    return false;
+  }
+
   if (!hasImmediateNestedFenceBody(lines, index, markdownFence)) {
     return false;
   }
@@ -377,13 +381,23 @@ function hasUnlabeledNestedFenceClose(lines: string[], index: number, markdownFe
     return false;
   }
 
-  const outerCloseIndex = findClosingMarkdownFenceIndex(lines, innerCloseIndex + 1, markdownFence);
+  return findClosingMarkdownFenceIndex(lines, innerCloseIndex + 1, markdownFence) !== undefined;
+}
 
-  if (outerCloseIndex === undefined) {
-    return false;
+function hasUnlabeledNestedFenceIntro(lines: string[], index: number): boolean {
+  for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+    const rawLine = lines[cursor] ?? "";
+    const { line } = splitLineSuffix(rawLine);
+    const trimmed = line.trim();
+
+    if (trimmed.length === 0) {
+      continue;
+    }
+
+    return trimmed.endsWith(":");
   }
 
-  return hasMarkdownSourceContinuationAfterFence(lines, innerCloseIndex, outerCloseIndex);
+  return false;
 }
 
 function hasImmediateNestedFenceBody(lines: string[], index: number, markdownFence: MarkdownFenceLine): boolean {
@@ -419,27 +433,6 @@ function findClosingMarkdownFenceIndex(
   }
 
   return undefined;
-}
-
-function hasMarkdownSourceContinuationAfterFence(lines: string[], index: number, outerCloseIndex: number): boolean {
-  if (index + 1 >= outerCloseIndex) {
-    return true;
-  }
-
-  const rawLine = lines[index + 1];
-
-  if (rawLine === undefined) {
-    return false;
-  }
-
-  const { line } = splitLineSuffix(rawLine);
-
-  return line.trim().length === 0 || isLikelyMarkdownSourceLine(line);
-}
-
-function isLikelyMarkdownSourceLine(line: string): boolean {
-  const trimmed = line.trim();
-  return /^(#{1,6}\s|[-*+]\s|\d+[.)]\s|>\s?|\|)/.test(trimmed) || trimmed.endsWith(":");
 }
 
 function splitLineSuffix(rawLine: string): { line: string; suffix: string } {

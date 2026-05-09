@@ -128,6 +128,26 @@ describe("discord delivery", () => {
     expect(hasBalancedBacktickFences(chunk)).toBe(true);
   });
 
+  it("escapes unlabeled nested code fences followed by plain markdown paragraphs", () => {
+    const response = [
+      "```markdown",
+      "Example:",
+      "",
+      "```",
+      "plain text",
+      "```",
+      "This is a paragraph.",
+      "```"
+    ].join("\n");
+    const chunks = chunkDiscordMessage(response);
+    const chunk = chunks[0] ?? "";
+
+    expect(chunks).toHaveLength(1);
+    expect(chunk).toContain("`\u200B``\nplain text\n`\u200B``");
+    expect(chunk).toContain("\nThis is a paragraph.\n```");
+    expect(hasBalancedBacktickFences(chunk)).toBe(true);
+  });
+
   it("keeps later standalone code blocks outside markdown code blocks", () => {
     const response = [
       "```markdown",
@@ -136,6 +156,21 @@ describe("discord delivery", () => {
       "",
       "A separate example:",
       "",
+      "```",
+      "plain text",
+      "```"
+    ].join("\n");
+    const chunks = chunkDiscordMessage(response);
+
+    expect(chunks).toEqual([response]);
+  });
+
+  it("keeps adjacent standalone code blocks outside markdown code blocks", () => {
+    const response = [
+      "```markdown",
+      "# Aide",
+      "```",
+      "A separate example:",
       "```",
       "plain text",
       "```"
