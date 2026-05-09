@@ -1,50 +1,6 @@
 #!/usr/bin/env node
 import { cac } from "cac";
 import {
-  doctorCommand,
-  initCommand,
-  logsCommand,
-  statusCommand,
-  usageCommand
-} from "./commands/system.js";
-import {
-  restartCommand,
-  runCommand,
-  startCommand,
-  stopCommand
-} from "./commands/runtime.js";
-import {
-  getConfigCommand,
-  setConfigCommand
-} from "./commands/config.js";
-import { importCommand } from "./commands/import.js";
-import {
-  installServiceCommand,
-  statusServiceCommand,
-  uninstallServiceCommand
-} from "./commands/service.js";
-import {
-  addScheduleCommand,
-  listSchedulesCommand,
-  openScheduleConfigCommand,
-  pauseScheduleCommand,
-  removeScheduleCommand,
-  resumeScheduleCommand,
-  showScheduleCommand
-} from "./commands/schedules.js";
-import {
-  addEndpointCommand,
-  listEndpointConfigCommand,
-  listEndpointsCommand,
-  openEndpointCommand,
-  openEndpointConfigCommand,
-  pauseEndpointCommand,
-  removeEndpointCommand,
-  resumeEndpointCommand,
-  showEndpointCommand,
-  testEndpointCommand
-} from "./commands/endpoints.js";
-import {
   addExamples,
   agentHelpCommand,
   CONFIG_EXAMPLES,
@@ -53,7 +9,6 @@ import {
   SCHEDULE_KIND_LIST,
   WEEKDAY_LIST
 } from "./commands/help.js";
-import { appendRuntimeLog } from "./lib/logging.js";
 import { homeFromOptions } from "./commands/options.js";
 
 const runArgv = subcommandArgv(process.argv, "__run", "aide __run");
@@ -100,21 +55,33 @@ function runRootCli(argv: string[]): void {
     .version("0.1.0")
     .help();
 
-  cli.command("init", "Initialize Aide home").action(wrap(initCommand));
-  cli.command("start", "Start Aide runtime in the background").action(wrap(startCommand));
-  cli.command("stop", "Stop Aide runtime").action(wrap(stopCommand));
-  cli.command("restart", "Restart Aide runtime").action(wrap(restartCommand));
-  cli.command("status", "Show runtime status").action(wrap(statusCommand));
+  cli
+    .command("init", "Initialize Aide home")
+    .action(wrapLazy(async () => (await import("./commands/system.js")).initCommand));
+  cli
+    .command("start", "Start Aide runtime in the background")
+    .action(wrapLazy(async () => (await import("./commands/runtime.js")).startCommand));
+  cli
+    .command("stop", "Stop Aide runtime")
+    .action(wrapLazy(async () => (await import("./commands/runtime.js")).stopCommand));
+  cli
+    .command("restart", "Restart Aide runtime")
+    .action(wrapLazy(async () => (await import("./commands/runtime.js")).restartCommand));
+  cli
+    .command("status", "Show runtime status")
+    .action(wrapLazy(async () => (await import("./commands/system.js")).statusCommand));
   cli
     .command("logs", "Show logs")
     .option("--activity", "Show activity log")
     .option("--lines <count>", "Number of lines to show", { default: 80 })
-    .action(wrap(logsCommand));
-  cli.command("usage", "Show usage").action(wrap(usageCommand));
+    .action(wrapLazy(async () => (await import("./commands/system.js")).logsCommand));
+  cli
+    .command("usage", "Show usage")
+    .action(wrapLazy(async () => (await import("./commands/system.js")).usageCommand));
   cli
     .command("doctor", "Validate local setup")
     .option("--fix", "Create missing Aide base files and directories")
-    .action(wrap(doctorCommand));
+    .action(wrapLazy(async () => (await import("./commands/system.js")).doctorCommand));
   cli.command("config", "Manage config").action(() => runConfigCli(["node", "aide config"]));
   cli.command("endpoint", "Manage endpoints").action(() => runEndpointCli(["node", "aide endpoint"]));
   cli.command("help", "Show detailed help").action(() => runHelpCli(["node", "aide help"]));
@@ -133,14 +100,14 @@ function runConfigCli(argv: string[]): void {
     cli
       .command("get [path]", "Show config")
       .usage(`get [path]\n\nPaths: ${CONFIG_PATH_LIST}`)
-      .action(wrap(getConfigCommand)),
+      .action(wrapLazy(async () => (await import("./commands/config.js")).getConfigCommand)),
     CONFIG_EXAMPLES.slice(0, 2)
   );
   addExamples(
     cli
       .command("set <path> <value>", "Set config")
       .usage(`set <path> <value>\n\nPaths: ${CONFIG_PATH_LIST}`)
-      .action(wrap(setConfigCommand)),
+      .action(wrapLazy(async () => (await import("./commands/config.js")).setConfigCommand)),
     CONFIG_EXAMPLES.slice(2)
   );
 
@@ -161,21 +128,31 @@ function runEndpointCli(argv: string[]): void {
     .option("--agent-command <command>", "CLI agent command")
     .option("--model <model>", "Agent model")
     .option("--reasoning-effort <effort>", "Codex reasoning effort")
-    .action(wrap(addEndpointCommand));
-  cli.command("list", "List endpoints").action(wrap(listEndpointsCommand));
-  cli.command("show <id>", "Show endpoint details").action(wrap(showEndpointCommand));
-  cli.command("pause <id>", "Pause endpoint").action(wrap(pauseEndpointCommand));
-  cli.command("resume <id>", "Resume endpoint").action(wrap(resumeEndpointCommand));
+    .action(wrapLazy(async () => (await import("./commands/endpoints.js")).addEndpointCommand));
+  cli
+    .command("list", "List endpoints")
+    .action(wrapLazy(async () => (await import("./commands/endpoints.js")).listEndpointsCommand));
+  cli
+    .command("show <id>", "Show endpoint details")
+    .action(wrapLazy(async () => (await import("./commands/endpoints.js")).showEndpointCommand));
+  cli
+    .command("pause <id>", "Pause endpoint")
+    .action(wrapLazy(async () => (await import("./commands/endpoints.js")).pauseEndpointCommand));
+  cli
+    .command("resume <id>", "Resume endpoint")
+    .action(wrapLazy(async () => (await import("./commands/endpoints.js")).resumeEndpointCommand));
   cli
     .command("remove <id>", "Remove endpoint")
     .option("--yes", "Skip confirmation")
     .option("--delete-workspace", "Delete endpoint workspace")
-    .action(wrap(removeEndpointCommand));
+    .action(wrapLazy(async () => (await import("./commands/endpoints.js")).removeEndpointCommand));
   cli
     .command("test <id>", "Run a local agent request through an endpoint")
     .option("--message <message>", "Message to send")
-    .action(wrap(testEndpointCommand));
-  cli.command("open <id>", "Open endpoint workspace").action(wrap(openEndpointCommand));
+    .action(wrapLazy(async () => (await import("./commands/endpoints.js")).testEndpointCommand));
+  cli
+    .command("open <id>", "Open endpoint workspace")
+    .action(wrapLazy(async () => (await import("./commands/endpoints.js")).openEndpointCommand));
   cli.command("config", "Manage endpoint config").action(() => runEndpointConfigCli(["node", "aide endpoint config"]));
 
   try {
@@ -190,8 +167,12 @@ function runEndpointConfigCli(argv: string[]): void {
   const cli = cac("aide endpoint config");
 
   cli.option("--home <path>", "Aide home directory").help();
-  cli.command("list <id>", "List endpoint config files").action(wrap(listEndpointConfigCommand));
-  cli.command("open <id>", "Open endpoint config files").action(wrap(openEndpointConfigCommand));
+  cli
+    .command("list <id>", "List endpoint config files")
+    .action(wrapLazy(async () => (await import("./commands/endpoints.js")).listEndpointConfigCommand));
+  cli
+    .command("open <id>", "Open endpoint config files")
+    .action(wrapLazy(async () => (await import("./commands/endpoints.js")).openEndpointConfigCommand));
 
   handleNoMatch(cli, cli.parse(argv));
 }
@@ -221,14 +202,28 @@ Targets: channel:<id> or user:<id>`)
       .option("--run-at <timestamp>", "One-shot run time")
       .option("--minute <minute>", "Minute for hourly schedules")
       .option("--day <day>", "Day of month")
-      .action(wrap(addScheduleCommand)),
+      .action(wrapLazy(async () => (await import("./commands/schedules.js")).addScheduleCommand)),
     SCHEDULE_ADD_EXAMPLES
   );
-  cli.command("list", "List schedules").action(wrap(listSchedulesCommand));
-  cli.command("show", "Show schedule details").option("--id <id>", "Schedule id").action(wrap(showScheduleCommand));
-  cli.command("pause", "Pause schedule").option("--id <id>", "Schedule id").action(wrap(pauseScheduleCommand));
-  cli.command("resume", "Resume schedule").option("--id <id>", "Schedule id").action(wrap(resumeScheduleCommand));
-  cli.command("remove", "Remove schedule").option("--id <id>", "Schedule id").action(wrap(removeScheduleCommand));
+  cli
+    .command("list", "List schedules")
+    .action(wrapLazy(async () => (await import("./commands/schedules.js")).listSchedulesCommand));
+  cli
+    .command("show", "Show schedule details")
+    .option("--id <id>", "Schedule id")
+    .action(wrapLazy(async () => (await import("./commands/schedules.js")).showScheduleCommand));
+  cli
+    .command("pause", "Pause schedule")
+    .option("--id <id>", "Schedule id")
+    .action(wrapLazy(async () => (await import("./commands/schedules.js")).pauseScheduleCommand));
+  cli
+    .command("resume", "Resume schedule")
+    .option("--id <id>", "Schedule id")
+    .action(wrapLazy(async () => (await import("./commands/schedules.js")).resumeScheduleCommand));
+  cli
+    .command("remove", "Remove schedule")
+    .option("--id <id>", "Schedule id")
+    .action(wrapLazy(async () => (await import("./commands/schedules.js")).removeScheduleCommand));
   cli.command("config", "Manage schedule config").action(() => runScheduleConfigCli(["node", "aide schedule config"]));
 
   handleNoMatch(cli, cli.parse(argv));
@@ -247,7 +242,9 @@ function runImportCli(argv: string[]): void {
   const cli = cac("aide import");
 
   cli.option("--home <path>", "Aide home directory").help();
-  cli.command("<source>", "Import endpoints from hermes, openclaw, or all").action(wrap(importCommand));
+  cli
+    .command("<source>", "Import endpoints from hermes, openclaw, or all")
+    .action(wrapLazy(async () => (await import("./commands/import.js")).importCommand));
 
   handleNoMatch(cli, cli.parse(argv));
 }
@@ -256,7 +253,9 @@ function runScheduleConfigCli(argv: string[]): void {
   const cli = cac("aide schedule config");
 
   cli.option("--home <path>", "Aide home directory").help();
-  cli.command("open", "Open schedules config").action(wrap(openScheduleConfigCommand));
+  cli
+    .command("open", "Open schedules config")
+    .action(wrapLazy(async () => (await import("./commands/schedules.js")).openScheduleConfigCommand));
 
   handleNoMatch(cli, cli.parse(argv));
 }
@@ -265,9 +264,15 @@ function runServiceCli(argv: string[]): void {
   const cli = cac("aide service");
 
   cli.option("--home <path>", "Aide home directory").help();
-  cli.command("install", "Install runtime service").action(wrap(installServiceCommand));
-  cli.command("uninstall", "Uninstall runtime service").action(wrap(uninstallServiceCommand));
-  cli.command("status", "Show service status").action(wrap(statusServiceCommand));
+  cli
+    .command("install", "Install runtime service")
+    .action(wrapLazy(async () => (await import("./commands/service.js")).installServiceCommand));
+  cli
+    .command("uninstall", "Uninstall runtime service")
+    .action(wrapLazy(async () => (await import("./commands/service.js")).uninstallServiceCommand));
+  cli
+    .command("status", "Show service status")
+    .action(wrapLazy(async () => (await import("./commands/service.js")).statusServiceCommand));
 
   handleNoMatch(cli, cli.parse(argv));
 }
@@ -277,8 +282,10 @@ async function runInternalRuntimeCli(argv: string[]): Promise<void> {
   cli.option("--home <path>", "Aide home directory");
   const parsed = cli.parse(argv, { run: false });
   const home = homeFromOptions(parsed.options);
+  const { appendRuntimeLog } = await import("./lib/logging.js");
 
   try {
+    const { runCommand } = await import("./commands/runtime.js");
     appendRuntimeLog(home, "runtime_internal_starting", { pid: process.pid });
     await runCommand(parsed.options);
   } catch (error) {
@@ -375,6 +382,13 @@ function wrap<T extends unknown[]>(handler: (...args: T) => Promise<void> | void
       process.exitCode = 1;
     }
   };
+}
+
+function wrapLazy<T extends unknown[]>(loadHandler: () => Promise<(...args: T) => Promise<void> | void>) {
+  return wrap(async (...args: T) => {
+    const handler = await loadHandler();
+    await handler(...args);
+  });
 }
 
 function errorMessage(error: unknown): string {
