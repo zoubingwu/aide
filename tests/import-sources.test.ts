@@ -32,7 +32,7 @@ describe("import sources", () => {
         "  platforms:",
         "    discord:",
         "      free_response_channels:",
-        "        - channel:123",
+        "        - '123'",
         ""
       ].join("\n")
     );
@@ -56,6 +56,18 @@ describe("import sources", () => {
       requireMention: false,
       freeResponseSources: ["channel:123"]
     });
+  });
+
+  it("normalizes Hermes env free-response channel ids", () => {
+    const hermesHome = tempDir("aide-hermes-env-channels-");
+    writeFile(
+      path.join(hermesHome, ".env"),
+      "DISCORD_BOT_TOKEN=default-token\nDISCORD_FREE_RESPONSE_CHANNELS=123,channel:456\n"
+    );
+
+    const candidates = readyImportCandidates(discoverImportCandidates("hermes", { hermesHome, env: {} }));
+
+    expect(candidates[0]?.trigger.freeResponseSources).toEqual(["channel:123", "channel:456"]);
   });
 
   it("discovers OpenClaw default and account Discord tokens", () => {

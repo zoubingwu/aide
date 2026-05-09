@@ -927,8 +927,18 @@ function discordChannelSources(value: string[] | string | undefined): string[] |
   }
 
   const entries = Array.isArray(value) ? value : value.split(",");
-  const sources = entries.map((entry) => entry.trim()).filter(Boolean);
+  const sources = entries.map(normalizeDiscordChannelSource).filter((entry): entry is string => entry !== undefined);
   return sources.length > 0 ? sources : undefined;
+}
+
+function normalizeDiscordChannelSource(value: string): string | undefined {
+  const entry = value.trim();
+
+  if (entry.length === 0) {
+    return undefined;
+  }
+
+  return entry.startsWith("channel:") ? entry : `channel:${entry}`;
 }
 
 function parseBoolean(value: unknown): boolean | undefined {
