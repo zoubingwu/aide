@@ -54,3 +54,5 @@ bun run typecheck
 bun run test
 bun run build
 ```
+
+Use `bun run test` for test runs so the repository's Vitest script and configuration are always used.
