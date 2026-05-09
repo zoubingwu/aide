@@ -111,9 +111,9 @@ describe("import sources", () => {
     const candidates = readyImportCandidates(discoverImportCandidates("openclaw", { openclawHome, env: {}, cwd: openclawHome }));
 
     expect(candidates.map((candidate) => [candidate.sourceName, candidate.endpointId, candidate.token])).toEqual([
-      ["default", "openclaw", "default-token"],
-      ["work", "openclaw-work", "work-token"],
-      ["duplicate", "openclaw-duplicate", "work-token"]
+      ["default", "discord", "default-token"],
+      ["work", "discord-work", "work-token"],
+      ["duplicate", "discord-duplicate", "work-token"]
     ]);
   });
 
@@ -142,7 +142,7 @@ describe("import sources", () => {
     }));
 
     expect(candidates.map((candidate) => [candidate.sourceName, candidate.endpointId, candidate.token])).toEqual([
-      ["default", "openclaw", "account-token"]
+      ["default", "discord", "account-token"]
     ]);
   });
 
@@ -173,7 +173,7 @@ describe("import sources", () => {
     }));
 
     expect(candidates.map((candidate) => [candidate.sourceName, candidate.endpointId, candidate.token])).toEqual([
-      ["work", "openclaw-work", "work-token"]
+      ["work", "discord-work", "work-token"]
     ]);
   });
 
@@ -205,7 +205,7 @@ describe("import sources", () => {
     }));
 
     expect(candidates.map((candidate) => [candidate.sourceName, candidate.endpointId, candidate.token])).toEqual([
-      ["default", "openclaw", "included-token"]
+      ["default", "discord", "included-token"]
     ]);
   });
 
@@ -461,7 +461,7 @@ describe("import sources", () => {
     }));
 
     expect(candidates.map((candidate) => [candidate.sourceName, candidate.endpointId, candidate.token])).toEqual([
-      ["default", "openclaw", "template-token"]
+      ["default", "discord", "template-token"]
     ]);
   });
 
@@ -507,24 +507,24 @@ describe("import sources", () => {
   });
 
   it("deduplicates by token and allocates endpoint ids around conflicts", () => {
-    const existing = [endpoint("openclaw-work", "existing-token"), endpoint("already", "default-token")];
+    const existing = [endpoint("discord-work", "existing-token"), endpoint("already", "default-token")];
     const candidates = [
-      candidate("openclaw", "default", "openclaw", "default-token"),
-      candidate("openclaw", "work", "openclaw-work", "work-token"),
-      candidate("openclaw", "duplicate", "openclaw-duplicate", "work-token")
+      candidate("openclaw", "default", "discord", "default-token"),
+      candidate("openclaw", "work", "discord-work", "work-token"),
+      candidate("openclaw", "duplicate", "discord-duplicate", "work-token")
     ];
 
     const plan = planEndpointImports(existing, candidates);
 
     expect(plan.map((entry) => [entry.endpointId, entry.action, entry.reason])).toEqual([
       ["already", "skip", "already imported as already"],
-      ["openclaw-work-2", "create", undefined],
-      ["openclaw-work-2", "skip", "same token as openclaw-work-2"]
+      ["discord-work-2", "create", undefined],
+      ["discord-work-2", "skip", "same token as discord-work-2"]
     ]);
-    expect(importPlanEntryEndpoint(plan[1]!).id).toBe("openclaw-work-2");
+    expect(importPlanEntryEndpoint(plan[1]!).id).toBe("discord-work-2");
   });
 
-  it("imports OpenClaw endpoints with access controls disabled", () => {
+  it("imports OpenClaw endpoints with unsupported access fields enabled", () => {
     const openclawHome = tempDir("aide-openclaw-access-controls-");
     writeFile(
       path.join(openclawHome, "openclaw.json"),
@@ -550,13 +550,13 @@ describe("import sources", () => {
       cwd: openclawHome
     }));
 
-    expect(candidate?.disabledReason).toBe("OpenClaw access controls need manual review");
+    expect(candidate?.warning).toBe("Aide uses its Discord trigger settings for OpenClaw access fields: dmPolicy, allowFrom, groupPolicy, groupAllowFrom");
     const [entry] = planEndpointImports([], candidate ? [candidate] : []);
     expect(entry).toBeDefined();
-    expect(importPlanEntryEndpoint(entry!).enabled).toBe(false);
+    expect(importPlanEntryEndpoint(entry!).enabled).toBe(true);
   });
 
-  it("imports minimal OpenClaw endpoints disabled for default access policies", () => {
+  it("imports minimal OpenClaw endpoints enabled without access warnings", () => {
     const openclawHome = tempDir("aide-openclaw-default-access-controls-");
     writeFile(
       path.join(openclawHome, "openclaw.json"),
@@ -574,12 +574,12 @@ describe("import sources", () => {
       cwd: openclawHome
     }));
 
-    expect(candidate?.disabledReason).toBe("OpenClaw access controls need manual review");
+    expect(candidate?.warning).toBeUndefined();
     const [entry] = planEndpointImports([], candidate ? [candidate] : []);
-    expect(importPlanEntryEndpoint(entry!).enabled).toBe(false);
+    expect(importPlanEntryEndpoint(entry!).enabled).toBe(true);
   });
 
-  it("keeps OpenClaw endpoints enabled when effective access policies are open", () => {
+  it("warns for explicit OpenClaw access fields while keeping endpoints enabled", () => {
     const openclawHome = tempDir("aide-openclaw-open-access-controls-");
     writeFile(
       path.join(openclawHome, "openclaw.json"),
@@ -600,7 +600,7 @@ describe("import sources", () => {
       cwd: openclawHome
     }));
 
-    expect(candidate?.disabledReason).toBeUndefined();
+    expect(candidate?.warning).toBe("Aide uses its Discord trigger settings for OpenClaw access fields: groupPolicy, dmPolicy");
     const [entry] = planEndpointImports([], candidate ? [candidate] : []);
     expect(importPlanEntryEndpoint(entry!).enabled).toBe(true);
   });
@@ -698,7 +698,7 @@ describe("import sources", () => {
     if (!candidate || candidate.kind !== "secret") {
       throw new Error("Expected OpenClaw file SecretRef candidate.");
     }
-    expect(candidate.endpointId).toBe("openclaw");
+    expect(candidate.endpointId).toBe("discord");
     expect((await resolveSecretImportCandidate(candidate)).token).toBe("file-token");
   });
 
@@ -901,6 +901,8 @@ function candidate(
     source,
     sourceName,
     sourcePath: "/tmp/source",
+    provider: "discord",
+    sourceChannel: "discord",
     endpointId,
     token,
     trigger: defaultEndpointTriggerConfig()

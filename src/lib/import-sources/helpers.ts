@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import { parse as parseYaml } from "yaml";
 import { slugifyId } from "../paths.js";
+import type { Provider } from "../types.js";
 import type { ImportSource } from "./types.js";
 
 export function readJsonPointer(target: unknown, pointer: string): unknown {
@@ -43,6 +44,11 @@ export function normalizeSecretString(value: unknown, label: string): string {
 
 export function endpointIdFor(source: Exclude<ImportSource, "all">, sourceName: string): string {
   const base = sourceName === "default" ? source : `${source}-${sourceName}`;
+  return slugifyId(base);
+}
+
+export function providerEndpointIdFor(provider: Provider, sourceName: string): string {
+  const base = sourceName === "default" ? provider : `${provider}-${sourceName}`;
   return slugifyId(base);
 }
 

@@ -65,6 +65,8 @@ export function discoverHermesCandidates(options: ImportDiscoveryOptions): Impor
       source: "hermes",
       sourceName: profile.name,
       sourcePath: profile.dir,
+      provider: "discord",
+      sourceChannel: "discord",
       endpointId: endpointIdFor("hermes", profile.name),
       token,
       trigger: hermesTriggerConfig(config, mergedEnv)

@@ -1,70 +1,50 @@
-import { getBoolean, objectConfig, stringConfig } from "./helpers.js";
+const OPENCLAW_DISCORD_ACCESS_FIELDS = [
+  { path: ["dmPolicy"], label: "dmPolicy" },
+  { path: ["dm", "policy"], label: "dm.policy" },
+  { path: ["allowFrom"], label: "allowFrom" },
+  { path: ["dm", "allowFrom"], label: "dm.allowFrom" },
+  { path: ["groupPolicy"], label: "groupPolicy" },
+  { path: ["groupAllowFrom"], label: "groupAllowFrom" },
+  { path: ["guildAllowFrom"], label: "guildAllowFrom" },
+  { path: ["allowedGuilds"], label: "allowedGuilds" },
+  { path: ["allowedUsers"], label: "allowedUsers" },
+  { path: ["guilds"], label: "guilds" }
+] as const;
 
-export function openClawAccessControlDisabledReason(...configs: Array<Record<string, unknown> | undefined>): string | undefined {
-  const effectiveConfigs = configs.filter((config): config is Record<string, unknown> => config !== undefined);
+export function openClawAccessControlWarning(...configs: Array<Record<string, unknown> | undefined>): string | undefined {
+  const fields = [
+    ...new Set(
+      configs
+        .filter((config): config is Record<string, unknown> => config !== undefined)
+        .flatMap(openClawDiscordAccessFields)
+    )
+  ];
 
-  return hasRestrictedOpenClawAccessPolicy(effectiveConfigs) ||
-    effectiveConfigs.some(hasOpenClawAccessList)
-    ? "OpenClaw access controls need manual review"
+  return fields.length > 0
+    ? `Aide uses its Discord trigger settings for OpenClaw access fields: ${fields.join(", ")}`
     : undefined;
 }
 
-function hasRestrictedOpenClawAccessPolicy(configs: Record<string, unknown>[]): boolean {
-  return isRestrictedPolicy(openClawEffectiveDmPolicy(configs), ["open", "anyone"]) ||
-    isRestrictedPolicy(openClawEffectiveGroupPolicy(configs), ["open"]);
+function openClawDiscordAccessFields(config: Record<string, unknown>): string[] {
+  return OPENCLAW_DISCORD_ACCESS_FIELDS
+    .filter((field) => hasObjectPath(config, field.path))
+    .map((field) => field.label);
 }
 
-function openClawEffectiveDmPolicy(configs: Record<string, unknown>[]): string {
-  for (const config of configs.slice().reverse()) {
-    const value = stringConfig(config.dmPolicy) ?? stringConfig(objectConfig(config.dm).policy);
+function hasObjectPath(target: Record<string, unknown>, segments: readonly string[]): boolean {
+  let current: unknown = target;
 
-    if (value) {
-      return value;
+  for (const segment of segments) {
+    if (!isRecord(current) || !Object.hasOwn(current, segment)) {
+      return false;
     }
+
+    current = current[segment];
   }
 
-  return "pairing";
+  return true;
 }
 
-function openClawEffectiveGroupPolicy(configs: Record<string, unknown>[]): string {
-  for (const config of configs.slice().reverse()) {
-    const value = stringConfig(config.groupPolicy);
-
-    if (value) {
-      return value;
-    }
-  }
-
-  return "allowlist";
-}
-
-function hasOpenClawAccessList(config: Record<string, unknown>): boolean {
-  const dm = objectConfig(config.dm);
-  return isRestrictedAccessList(config.allowFrom) ||
-    isRestrictedAccessList(dm.allowFrom) ||
-    isRestrictedAccessList(config.groupAllowFrom) ||
-    isRestrictedAccessList(config.guildAllowFrom) ||
-    isRestrictedAccessList(config.allowedGuilds) ||
-    isRestrictedAccessList(config.allowedUsers) ||
-    hasSpecificGuildConfig(objectConfig(config.guilds));
-}
-
-function isRestrictedPolicy(value: string, openValues: string[]): boolean {
-  return !openValues.includes(value.trim().toLowerCase());
-}
-
-function isRestrictedAccessList(value: unknown): boolean {
-  if (typeof value === "string") {
-    return value.trim() !== "*";
-  }
-
-  if (!Array.isArray(value)) {
-    return false;
-  }
-
-  return !value.some((entry) => String(entry).trim() === "*");
-}
-
-function hasSpecificGuildConfig(guilds: Record<string, unknown>): boolean {
-  return Object.keys(guilds).some((guildId) => guildId !== "*");
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }

@@ -28,10 +28,10 @@ describe("import CLI", () => {
     const config = fs.readFileSync(path.join(aideHome, "config.toml"), "utf8");
 
     expect(stdout).toContain("hermes");
-    expect(stdout).toContain("Discovered endpoints");
+    expect(stdout).toContain("Found endpoints");
     expect(stdout).toContain("Import plan");
     expect(stdout).toContain("hermes-work");
-    expect(stdout).toContain("Imported hermes");
+    expect(stdout).toContain("Imported:");
     expect(stdout).not.toContain("default-token");
     expect(stdout).not.toContain("work-token");
     expect(config).toContain('id = "hermes"');
@@ -71,7 +71,7 @@ describe("import CLI", () => {
     const config = fs.readFileSync(path.join(aideHome, "config.toml"), "utf8");
 
     expect(stdout).toContain("SecretRef requires confirmation");
-    expect(stdout).toContain("Discovered endpoints");
+    expect(stdout).toContain("Found endpoints");
     expect(stdout).toContain("SecretRef file");
     expect(stdout).toContain("No importable Discord bot tokens found.");
     expect(stdout).not.toContain("file-token");
@@ -117,7 +117,7 @@ describe("import CLI", () => {
     expect(config).toContain("endpoints = []");
   });
 
-  it("imports OpenClaw access-controlled endpoints disabled", async () => {
+  it("imports OpenClaw access-controlled endpoints enabled with a warning", async () => {
     const aideHome = tempDir("aide-import-home-");
     const openclawHome = tempDir("aide-import-openclaw-");
     writeFile(
@@ -141,11 +141,11 @@ describe("import CLI", () => {
     });
     const config = fs.readFileSync(path.join(aideHome, "config.toml"), "utf8");
 
-    expect(stdout).toContain("OpenClaw access controls need manual review");
-    expect(stdout).toContain("create disabled");
+    expect(stdout).toContain("Warnings:");
+    expect(stdout).toContain("Aide uses its Discord trigger settings for OpenClaw access fields: dmPolicy, allowFrom");
     expect(stdout).not.toContain("access-token");
-    expect(config).toContain('id = "openclaw"');
-    expect(config).toContain("enabled = false");
+    expect(config).toContain('id = "discord"');
+    expect(config).toContain("enabled = true");
   });
 
   it("preserves OpenClaw discovery order after confirmed SecretRefs", async () => {
@@ -172,7 +172,7 @@ describe("import CLI", () => {
     const env = withEnv("OPENCLAW_CONFIG_PATH", path.join(openclawHome, "openclaw.json"));
     const stdin = withStdinTty(true);
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
-    prompts.inject([true, true]);
+    prompts.inject([true, true, false]);
 
     try {
       await importCommand("openclaw", { home: aideHome });
@@ -183,9 +183,9 @@ describe("import CLI", () => {
     }
 
     const config = fs.readFileSync(path.join(aideHome, "config.toml"), "utf8");
-    expect(config).toContain('id = "openclaw"');
+    expect(config).toContain('id = "discord"');
     expect(config).toContain('token = "shared-token"');
-    expect(config).not.toContain('id = "openclaw-work"');
+    expect(config).not.toContain('id = "discord-work"');
   });
 });
 
