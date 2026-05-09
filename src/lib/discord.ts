@@ -316,7 +316,7 @@ function escapeNestedDiscordMarkdownFences(response: string): string {
   let nestedFence: MarkdownFenceLine | undefined;
   let changed = false;
 
-  const escaped = lines.map((rawLine) => {
+  const escaped = lines.map((rawLine, index) => {
     const { line, suffix } = splitLineSuffix(rawLine);
     const fenceLine = parseMarkdownFenceLine(line);
 
@@ -344,6 +344,12 @@ function escapeNestedDiscordMarkdownFences(response: string): string {
     }
 
     if (isClosingFenceFor(fenceLine, markdownFence) && isClosingMarkdownFenceLine(line)) {
+      if (hasUnlabeledNestedFenceClose(lines, index, markdownFence)) {
+        nestedFence = fenceLine;
+        changed = true;
+        return `${escapeMarkdownFenceLine(line)}${suffix}`;
+      }
+
       markdownFence = undefined;
       return rawLine;
     }
@@ -358,6 +364,28 @@ function escapeNestedDiscordMarkdownFences(response: string): string {
   });
 
   return changed ? escaped.join("\n") : response;
+}
+
+function hasUnlabeledNestedFenceClose(lines: string[], index: number, markdownFence: MarkdownFenceLine): boolean {
+  let closingCandidates = 0;
+
+  for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
+    const rawLine = lines[cursor] ?? "";
+    const { line } = splitLineSuffix(rawLine);
+    const fenceLine = parseMarkdownFenceLine(line);
+
+    if (!fenceLine || !isClosingMarkdownFenceLine(line) || !isClosingFenceFor(fenceLine, markdownFence)) {
+      continue;
+    }
+
+    closingCandidates += 1;
+
+    if (closingCandidates >= 2) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function splitLineSuffix(rawLine: string): { line: string; suffix: string } {

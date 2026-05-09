@@ -101,6 +101,33 @@ describe("discord delivery", () => {
     expect(hasBalancedBacktickFences(chunk)).toBe(true);
   });
 
+  it("escapes unlabeled nested code fences inside markdown code blocks", () => {
+    const response = [
+      "**Body**",
+      "",
+      "```markdown",
+      "Aide keeps the model simple:",
+      "",
+      "```",
+      "Discord / scheduled prompt -> Codex CLI -> response",
+      "```",
+      "",
+      "Current features:",
+      "",
+      "- Discord endpoint backed by Codex CLI",
+      "```"
+    ].join("\n");
+    const chunks = chunkDiscordMessage(response);
+    const chunk = chunks[0] ?? "";
+
+    expect(chunks).toHaveLength(1);
+    expect(chunk).toContain("```markdown\n");
+    expect(chunk).toContain("`\u200B``\nDiscord / scheduled prompt -> Codex CLI -> response\n`\u200B``");
+    expect(chunk).toContain("\n\nCurrent features:");
+    expect(chunk.trimEnd()).toMatch(/\n```$/);
+    expect(hasBalancedBacktickFences(chunk)).toBe(true);
+  });
+
   it("keeps shorter nested code fences inside longer markdown code blocks", () => {
     const response = [
       "````markdown",
