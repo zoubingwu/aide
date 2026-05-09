@@ -376,6 +376,38 @@ describe("import sources", () => {
     expect(importPlanEntryEndpoint(plan[1]!).id).toBe("openclaw-work-2");
   });
 
+  it("imports OpenClaw endpoints with access controls disabled", () => {
+    const openclawHome = tempDir("aide-openclaw-access-controls-");
+    writeFile(
+      path.join(openclawHome, "openclaw.json"),
+      [
+        "{",
+        "  channels: {",
+        "    discord: {",
+        "      token: 'access-token',",
+        "      dmPolicy: 'allowlist',",
+        "      allowFrom: ['user:123'],",
+        "      groupPolicy: 'allowlist',",
+        "      groupAllowFrom: ['channel:456'],",
+        "    },",
+        "  },",
+        "}",
+        ""
+      ].join("\n")
+    );
+
+    const [candidate] = readyImportCandidates(discoverImportCandidates("openclaw", {
+      openclawHome,
+      env: {},
+      cwd: openclawHome
+    }));
+
+    expect(candidate?.disabledReason).toBe("OpenClaw access controls need manual review");
+    const [entry] = planEndpointImports([], candidate ? [candidate] : []);
+    expect(entry).toBeDefined();
+    expect(importPlanEntryEndpoint(entry!).enabled).toBe(false);
+  });
+
   it("resolves OpenClaw file SecretRefs after confirmation", async () => {
     const openclawHome = tempDir("aide-openclaw-file-");
     const secretPath = path.join(openclawHome, "secrets.json");

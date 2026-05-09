@@ -78,6 +78,37 @@ describe("import CLI", () => {
     expect(config).toContain("endpoints = []");
   });
 
+  it("imports OpenClaw access-controlled endpoints disabled", async () => {
+    const aideHome = tempDir("aide-import-home-");
+    const openclawHome = tempDir("aide-import-openclaw-");
+    writeFile(
+      path.join(openclawHome, "openclaw.json"),
+      [
+        "{",
+        "  channels: {",
+        "    discord: {",
+        "      token: 'access-token',",
+        "      dmPolicy: 'allowlist',",
+        "      allowFrom: ['user:123'],",
+        "    },",
+        "  },",
+        "}",
+        ""
+      ].join("\n")
+    );
+
+    const { stdout } = await runCli(["--home", aideHome, "import", "openclaw"], {
+      OPENCLAW_CONFIG_PATH: path.join(openclawHome, "openclaw.json")
+    });
+    const config = fs.readFileSync(path.join(aideHome, "config.toml"), "utf8");
+
+    expect(stdout).toContain("OpenClaw access controls need manual review");
+    expect(stdout).toContain("create disabled");
+    expect(stdout).not.toContain("access-token");
+    expect(config).toContain('id = "openclaw"');
+    expect(config).toContain("enabled = false");
+  });
+
   it("preserves OpenClaw discovery order after confirmed SecretRefs", async () => {
     const aideHome = tempDir("aide-import-home-");
     const openclawHome = tempDir("aide-import-openclaw-");

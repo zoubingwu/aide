@@ -83,7 +83,8 @@ export async function importCommand(source: string, options: CommandOptions): Pr
   console.log("");
 
   for (const entry of createEntries) {
-    console.log(`Imported ${entry.endpointId} from ${entry.candidate.source}:${entry.candidate.sourceName}.`);
+    const status = entry.candidate.disabledReason ? ` disabled (${entry.candidate.disabledReason})` : "";
+    console.log(`Imported ${entry.endpointId} from ${entry.candidate.source}:${entry.candidate.sourceName}${status}.`);
     console.log(`Workspace ${displayPath(endpointWorkspace(home, importPlanEntryEndpoint(entry)))}`);
   }
 
@@ -138,12 +139,13 @@ function parseImportSource(value: string): ImportSource {
 
 function importCandidateTable(candidates: ImportCandidate[]): string {
   return printTable(
-    ["Source", "Name", "Endpoint", "Token", "Path"],
+    ["Source", "Name", "Endpoint", "Token", "Status", "Path"],
     candidates.map((candidate) => [
       candidate.source,
       candidate.sourceName,
       candidate.endpointId,
       importCandidateTokenLabel(candidate),
+      importCandidateStatus(candidate),
       displayPath(candidate.sourcePath)
     ])
   );
@@ -157,6 +159,10 @@ function importCandidateTokenLabel(candidate: ImportCandidate): string {
   return tokenFingerprint(candidate.token).slice(0, 15);
 }
 
+function importCandidateStatus(candidate: ImportCandidate): string {
+  return candidate.disabledReason ? `disabled (${candidate.disabledReason})` : "enabled";
+}
+
 function importPlanTable(plan: ImportPlanEntry[]): string {
   return printTable(
     ["Source", "Name", "Endpoint", "Token", "Action"],
@@ -165,9 +171,17 @@ function importPlanTable(plan: ImportPlanEntry[]): string {
       entry.candidate.sourceName,
       entry.endpointId,
       entry.tokenFingerprint.slice(0, 15),
-      entry.action === "create" ? "create" : `skip (${entry.reason ?? "already handled"})`
+      importPlanActionLabel(entry)
     ])
   );
+}
+
+function importPlanActionLabel(entry: ImportPlanEntry): string {
+  if (entry.action === "skip") {
+    return `skip (${entry.reason ?? "already handled"})`;
+  }
+
+  return entry.candidate.disabledReason ? `create disabled (${entry.candidate.disabledReason})` : "create";
 }
 
 function tokenFingerprint(token: string): string {

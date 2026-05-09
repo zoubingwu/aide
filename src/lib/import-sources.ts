@@ -28,6 +28,7 @@ export interface ImportCandidateBase {
   sourcePath: string;
   endpointId: string;
   trigger: EndpointTriggerConfig;
+  disabledReason?: string | undefined;
 }
 
 export interface ReadyImportCandidate extends ImportCandidateBase {
@@ -214,7 +215,7 @@ export function importPlanEntryEndpoint(entry: ImportPlanEntry): Endpoint {
   return {
     id: entry.endpointId,
     provider: "discord",
-    enabled: true,
+    enabled: entry.candidate.disabledReason === undefined,
     token: entry.candidate.token,
     trigger: entry.candidate.trigger,
     agent: defaultCodexAgentConfig()
@@ -335,7 +336,8 @@ function discoverOpenClawCandidates(options: ImportDiscoveryOptions): ImportCand
     sourceName: "default",
     sourcePath: openclawConfig.path ?? env.paths[0] ?? openclawConfig.home,
     endpointId: endpointIdFor("openclaw", "default"),
-    trigger: defaultEndpointTriggerConfig()
+    trigger: defaultEndpointTriggerConfig(),
+    disabledReason: openClawAccessControlDisabledReason(discord, defaultAccount)
   };
 
   if (!defaultAccountDisabled) {
@@ -371,7 +373,8 @@ function discoverOpenClawCandidates(options: ImportDiscoveryOptions): ImportCand
         sourceName: accountId,
         sourcePath: openclawConfig.path ?? env.paths[0] ?? openclawConfig.home,
         endpointId: endpointIdFor("openclaw", accountId),
-        trigger: defaultEndpointTriggerConfig()
+        trigger: defaultEndpointTriggerConfig(),
+        disabledReason: openClawAccessControlDisabledReason(discord, account)
       };
 
       if (isUsableSecret(token)) {
@@ -428,6 +431,47 @@ function openClawEnv(
     values,
     paths: paths.filter((filePath) => fs.existsSync(filePath))
   };
+}
+
+function openClawAccessControlDisabledReason(...configs: Array<Record<string, unknown> | undefined>): string | undefined {
+  return configs.some((config) => config && hasOpenClawAccessControl(config))
+    ? "OpenClaw access controls need manual review"
+    : undefined;
+}
+
+function hasOpenClawAccessControl(config: Record<string, unknown>): boolean {
+  const dm = objectConfig(config.dm);
+
+  return isRestrictedPolicy(config.dmPolicy, ["open", "anyone"]) ||
+    isRestrictedPolicy(dm.policy, ["open", "anyone"]) ||
+    isRestrictedAccessList(config.allowFrom) ||
+    isRestrictedAccessList(dm.allowFrom) ||
+    isRestrictedPolicy(config.groupPolicy, ["open"]) ||
+    isRestrictedAccessList(config.groupAllowFrom) ||
+    isRestrictedAccessList(config.guildAllowFrom) ||
+    isRestrictedAccessList(config.allowedGuilds) ||
+    isRestrictedAccessList(config.allowedUsers) ||
+    hasSpecificGuildConfig(objectConfig(config.guilds));
+}
+
+function isRestrictedPolicy(value: unknown, openValues: string[]): boolean {
+  return typeof value === "string" && !openValues.includes(value.trim().toLowerCase());
+}
+
+function isRestrictedAccessList(value: unknown): boolean {
+  if (typeof value === "string") {
+    return value.trim() !== "*";
+  }
+
+  if (!Array.isArray(value)) {
+    return false;
+  }
+
+  return !value.some((entry) => String(entry).trim() === "*");
+}
+
+function hasSpecificGuildConfig(guilds: Record<string, unknown>): boolean {
+  return Object.keys(guilds).some((guildId) => guildId !== "*");
 }
 
 function openClawTokenEnvKeys(params: {
