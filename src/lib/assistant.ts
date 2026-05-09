@@ -27,13 +27,15 @@ export async function handleAssistantRequest(
   appendActivityLog(home, endpointActivity(home, endpoint, "agent_request", { provider: endpoint.agent.provider, workspace }));
 
   const result = await runAgent(home, workspace, endpoint, prompt, { toolServers: context.toolServers });
-  const estimatedTokens = estimateTokens(prompt) + estimateTokens(result.response);
-  const tokens = result.usageTokens ?? estimatedTokens;
+  const estimatedInputTokens = estimateTokens(prompt);
+  const estimatedOutputTokens = estimateTokens(result.response);
+  const estimatedTokens = estimatedInputTokens + estimatedOutputTokens;
+  const tokens = result.usage?.totalTokens ?? estimatedTokens;
 
-  if (result.usageTokens === undefined) {
-    addEstimatedUsage(home, endpoint, tokens);
+  if (result.usage === undefined) {
+    addEstimatedUsage(home, endpoint, estimatedInputTokens, estimatedOutputTokens);
   } else {
-    addCodexUsage(home, endpoint, tokens);
+    addCodexUsage(home, endpoint, result.usage);
   }
 
   appendActivityLog(home, {
@@ -41,7 +43,9 @@ export async function handleAssistantRequest(
       provider: endpoint.agent.provider,
       exitCode: result.exitCode,
       resumed: result.resumed,
-      hasTextResponse: result.hasTextResponse
+      hasTextResponse: result.hasTextResponse,
+      inputTokens: result.usage?.inputTokens ?? estimatedInputTokens,
+      outputTokens: result.usage?.outputTokens ?? estimatedOutputTokens
     }),
     tokens
   });

@@ -72,15 +72,32 @@ export interface AgentRunResult {
   stderr: string;
   exitCode: number;
   resumed: boolean;
+  usage?: AgentUsage | undefined;
   usageTokens?: number | undefined;
 }
 
 export interface UsageEntry {
-  day: string;
+  createdAt?: string | undefined;
+  day?: string | undefined;
   endpoint: string;
   provider: Provider;
+  agent?: AgentProvider | undefined;
   tokens: number;
+  inputTokens?: number | undefined;
+  outputTokens?: number | undefined;
+  cachedInputTokens?: number | undefined;
+  reasoningOutputTokens?: number | undefined;
   source: "estimated" | "codex";
+  raw?: Record<string, unknown> | undefined;
+}
+
+export interface AgentUsage {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cachedInputTokens?: number | undefined;
+  reasoningOutputTokens?: number | undefined;
+  raw?: Record<string, unknown> | undefined;
 }
 
 export interface DoctorCheck {

@@ -6,6 +6,7 @@ import { execa } from "execa";
 import {
   buildCodexArgs,
   buildFreshCodexArgs,
+  extractCodexUsage,
   extractCodexUsageTokens,
   extractFinalResponse,
   runCodex
@@ -34,10 +35,16 @@ const endpoint: Endpoint = {
   trigger: defaultEndpointTriggerConfig(),
   agent: agentConfig
 };
+const originalCodexHome = process.env.CODEX_HOME;
 
 describe("codex", () => {
   afterEach(() => {
     vi.clearAllMocks();
+    if (originalCodexHome === undefined) {
+      delete process.env.CODEX_HOME;
+    } else {
+      process.env.CODEX_HOME = originalCodexHome;
+    }
 
     for (const target of cleanupPaths.splice(0)) {
       fs.rmSync(target, { recursive: true, force: true });
@@ -140,6 +147,93 @@ describe("codex", () => {
     expect(extractCodexUsageTokens(output)).toBe(13);
   });
 
+  it("extracts per-turn token usage from Codex session files", () => {
+    const codexHome = tempHome();
+    const threadId = "019e0dba-5b57-7160-8335-9c1576189633";
+    const prompt = "Reply with exactly: AIDE_USAGE_RESUME";
+    const sessionDir = path.join(codexHome, "sessions", "2026", "05", "10");
+    fs.mkdirSync(sessionDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(sessionDir, `rollout-2026-05-10T01-12-57-${threadId}.jsonl`),
+      [
+        JSON.stringify({
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "user",
+            content: [{ type: "input_text", text: prompt }]
+          }
+        }),
+        JSON.stringify({
+          type: "event_msg",
+          payload: {
+            type: "token_count",
+            info: {
+              total_token_usage: {
+                input_tokens: 40379,
+                cached_input_tokens: 27392,
+                output_tokens: 29,
+                reasoning_output_tokens: 9,
+                total_tokens: 40408
+              },
+              last_token_usage: {
+                input_tokens: 20207,
+                cached_input_tokens: 19840,
+                output_tokens: 9,
+                reasoning_output_tokens: 0,
+                total_tokens: 20216
+              }
+            }
+          }
+        }),
+        JSON.stringify({
+          type: "event_msg",
+          payload: {
+            type: "task_complete"
+          }
+        }),
+        JSON.stringify({
+          type: "event_msg",
+          payload: {
+            type: "token_count",
+            info: {
+              last_token_usage: {
+                input_tokens: 999,
+                output_tokens: 999,
+                total_tokens: 1998
+              }
+            }
+          }
+        })
+      ].join("\n")
+    );
+    process.env.CODEX_HOME = codexHome;
+
+    const output = [
+      JSON.stringify({ type: "thread.started", thread_id: threadId }),
+      JSON.stringify({ type: "turn.completed", usage: { input_tokens: 40379, output_tokens: 29 } })
+    ].join("\n");
+
+    expect(extractCodexUsage(output, prompt)).toMatchObject({
+      inputTokens: 20207,
+      outputTokens: 9,
+      totalTokens: 20216,
+      cachedInputTokens: 19840,
+      reasoningOutputTokens: 0,
+      raw: {
+        codex: {
+          threadId,
+          stdoutUsage: { input_tokens: 40379, output_tokens: 29 },
+          sessionTokenCount: {
+            last_token_usage: {
+              total_tokens: 20216
+            }
+          }
+        }
+      }
+    });
+  });
+
   it("uses stderr when stdout has no text", () => {
     expect(extractFinalResponse("", "missing session")).toEqual({ response: "missing session", hasTextResponse: false });
   });
@@ -165,6 +259,11 @@ describe("codex", () => {
 
     expect(result.response).toBe("done");
     expect(result.hasTextResponse).toBe(true);
+    expect(result.usage).toMatchObject({
+      inputTokens: 10,
+      outputTokens: 2,
+      totalTokens: 12
+    });
     expect(result.usageTokens).toBe(12);
     expect(events).toHaveLength(6);
     expect(events[0]).toMatchObject({

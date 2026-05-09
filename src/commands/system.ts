@@ -56,8 +56,8 @@ export async function statusCommand(options: CommandOptions): Promise<void> {
   }
 
   console.log("\nTokens");
-  console.log(`Today       ${formatTokenCount(usage.today)}`);
-  console.log(`Total       ${formatTokenCount(usage.total)}`);
+  console.log(`Today       ${formatUsageTotal(usage.today, usage.todayInputTokens, usage.todayOutputTokens)}`);
+  console.log(`Total       ${formatUsageTotal(usage.total, usage.totalInputTokens, usage.totalOutputTokens)}`);
   console.log(`Source      ${usage.source}`);
 }
 
@@ -81,14 +81,26 @@ export async function usageCommand(options: CommandOptions): Promise<void> {
   const usage = summarizeUsage(home);
 
   console.log("Usage\n");
-  console.log(`Today        ${formatTokenCount(usage.today)}`);
-  console.log(`Total        ${formatTokenCount(usage.total)}`);
+  console.log(`Today        ${formatUsageTotal(usage.today, usage.todayInputTokens, usage.todayOutputTokens)}`);
+  console.log(`Total        ${formatUsageTotal(usage.total, usage.totalInputTokens, usage.totalOutputTokens)}`);
   console.log(`Source       ${usage.source}`);
 
   if (usage.byEndpoint.length > 0) {
     console.log("\nBy Endpoint");
-    console.log(printTable(["Endpoint", "Tokens"], usage.byEndpoint.map((entry) => [entry.endpoint, formatTokenCount(entry.tokens)])));
+    console.log(printTable(
+      ["Endpoint", "Input", "Output", "Total"],
+      usage.byEndpoint.map((entry) => [
+        entry.endpoint,
+        formatTokenCount(entry.inputTokens),
+        formatTokenCount(entry.outputTokens),
+        formatTokenCount(entry.tokens)
+      ])
+    ));
   }
+}
+
+function formatUsageTotal(total: number, inputTokens: number, outputTokens: number): string {
+  return `${formatTokenCount(total)} (${formatTokenCount(inputTokens)} input, ${formatTokenCount(outputTokens)} output)`;
 }
 
 export async function doctorCommand(options: CommandOptions): Promise<void> {
