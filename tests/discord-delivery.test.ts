@@ -61,6 +61,28 @@ describe("discord delivery", () => {
     expect(chunks.join("")).toBe(response);
   });
 
+  it("keeps split code fences balanced", () => {
+    const lines = Array.from({ length: 260 }, (_, index) => `console.log("line ${index}");`);
+    const response = ["Before", "", "```ts", ...lines, "```", "", "After"].join("\n");
+    const chunks = chunkDiscordMessage(response);
+
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.every((chunk) => chunk.length <= 2_000)).toBe(true);
+    expect(chunks.every(hasBalancedBacktickFences)).toBe(true);
+    expect(chunks[0]).toContain("```ts\n");
+    expect(chunks[0]).toMatch(/\n```$/);
+    expect(chunks[1]).toMatch(/^```ts\n/);
+  });
+
+  it("keeps split long code lines inside balanced fences", () => {
+    const response = ["```js", "x".repeat(4_001), "```"].join("\n");
+    const chunks = chunkDiscordMessage(response);
+
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.every((chunk) => chunk.length <= 2_000)).toBe(true);
+    expect(chunks.every(hasBalancedBacktickFences)).toBe(true);
+  });
+
   it("keeps default mention-only endpoints off the privileged message content intent", () => {
     expect(discordGatewayIntents(endpoint)).not.toContain(GatewayIntentBits.MessageContent);
   });
@@ -413,6 +435,15 @@ function agentResult(overrides: Partial<AgentRunResult>): AgentRunResult {
     resumed: true,
     ...overrides
   };
+}
+
+function hasBalancedBacktickFences(content: string): boolean {
+  const fenceCount = content
+    .split(/\r?\n/)
+    .filter((line) => /^[ \t]*```/.test(line))
+    .length;
+
+  return fenceCount % 2 === 0;
 }
 
 type FakeMessage = Message & {

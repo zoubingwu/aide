@@ -19,6 +19,11 @@ const DISCORD_MESSAGE_CHUNK_SIZE = DISCORD_MESSAGE_CONTENT_LIMIT - DISCORD_MESSA
 const EMPTY_SUCCESS_REACTION = "✅";
 const EMPTY_SUCCESS_REACTION_FALLBACK = "Done.";
 
+interface MarkdownFenceState {
+  marker: string;
+  info: string;
+}
+
 export function discordGatewayIntents(endpoint: Endpoint): GatewayIntentBits[] {
   const intents = [
     GatewayIntentBits.Guilds,
@@ -259,17 +264,120 @@ async function startDiscordContextTools(
 }
 
 export function chunkDiscordMessage(response: string): string[] {
-  if (response.length <= DISCORD_MESSAGE_CHUNK_SIZE) {
+  if (response.length <= DISCORD_MESSAGE_CONTENT_LIMIT) {
     return [response];
   }
 
   const chunks: string[] = [];
+  let fenceState: MarkdownFenceState | undefined;
+  let index = 0;
 
-  for (let index = 0; index < response.length; index += DISCORD_MESSAGE_CHUNK_SIZE) {
-    chunks.push(response.slice(index, index + DISCORD_MESSAGE_CHUNK_SIZE));
+  while (index < response.length) {
+    const prefix = fenceState ? openMarkdownFence(fenceState) : "";
+    let bodyLimit = Math.max(1, DISCORD_MESSAGE_CHUNK_SIZE - prefix.length);
+    let chunk = "";
+    let nextIndex = index;
+    let nextFenceState: MarkdownFenceState | undefined;
+
+    while (chunk.length === 0 || (chunk.length > DISCORD_MESSAGE_CONTENT_LIMIT && bodyLimit > 1)) {
+      nextIndex = findDiscordChunkEnd(response, index, bodyLimit);
+
+      const body = response.slice(index, nextIndex);
+      nextFenceState = scanMarkdownFenceState(body, fenceState);
+      chunk = `${prefix}${body}${nextFenceState ? closeMarkdownFence(body, nextFenceState) : ""}`;
+
+      if (chunk.length > DISCORD_MESSAGE_CONTENT_LIMIT) {
+        bodyLimit = Math.max(1, bodyLimit - (chunk.length - DISCORD_MESSAGE_CONTENT_LIMIT));
+      }
+    }
+
+    chunks.push(chunk);
+    index = nextIndex;
+    fenceState = nextFenceState;
   }
 
   return chunks;
+}
+
+function findDiscordChunkEnd(response: string, start: number, limit: number): number {
+  const hardEnd = Math.min(response.length, start + limit);
+
+  if (hardEnd >= response.length) {
+    return response.length;
+  }
+
+  const minimumEnd = start + Math.max(1, Math.floor(limit * 0.6));
+
+  return findLastBreak(response, "\n\n", start, minimumEnd, hardEnd)
+    ?? findLastBreak(response, "\n", start, minimumEnd, hardEnd)
+    ?? findLastBreak(response, " ", start, minimumEnd, hardEnd)
+    ?? hardEnd;
+}
+
+function findLastBreak(response: string, token: string, start: number, minimumEnd: number, hardEnd: number): number | undefined {
+  const index = response.lastIndexOf(token, hardEnd - token.length);
+  const end = index + token.length;
+
+  if (index < start || end < minimumEnd || end <= start) {
+    return undefined;
+  }
+
+  return end;
+}
+
+function scanMarkdownFenceState(text: string, initialState: MarkdownFenceState | undefined): MarkdownFenceState | undefined {
+  let state = initialState;
+
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+    state = nextMarkdownFenceState(line, state);
+  }
+
+  return state;
+}
+
+function nextMarkdownFenceState(line: string, state: MarkdownFenceState | undefined): MarkdownFenceState | undefined {
+  if (state) {
+    return isClosingMarkdownFence(line, state) ? undefined : state;
+  }
+
+  return parseOpeningMarkdownFence(line);
+}
+
+function parseOpeningMarkdownFence(line: string): MarkdownFenceState | undefined {
+  const match = line.match(/^[ \t]{0,3}(`{3,}|~{3,})(.*)$/);
+
+  if (!match) {
+    return undefined;
+  }
+
+  const marker = match[1] ?? "";
+  const info = (match[2] ?? "").trimEnd();
+
+  if (marker.length === 0) {
+    return undefined;
+  }
+
+  if (marker.startsWith("`") && info.includes("`")) {
+    return undefined;
+  }
+
+  return { marker, info };
+}
+
+function isClosingMarkdownFence(line: string, state: MarkdownFenceState): boolean {
+  const match = line.match(/^[ \t]{0,3}(`{3,}|~{3,})[ \t]*$/);
+  const marker = match?.[1];
+
+  return Boolean(marker && marker.startsWith(state.marker.slice(0, 1)) && marker.length >= state.marker.length);
+}
+
+function openMarkdownFence(state: MarkdownFenceState): string {
+  return `${state.marker}${state.info}\n`;
+}
+
+function closeMarkdownFence(body: string, state: MarkdownFenceState): string {
+  return `${body.endsWith("\n") ? "" : "\n"}${state.marker}`;
 }
 
 export function discordMessageSource(message: { author: { id: string }; channelId: string; guildId: string | null }): string {
