@@ -70,6 +70,22 @@ describe("import sources", () => {
     expect(candidates[0]?.trigger.freeResponseSources).toEqual(["channel:123", "channel:456"]);
   });
 
+  it("lets process env override Hermes profile dotenv values", () => {
+    const hermesHome = tempDir("aide-hermes-env-override-");
+    writeFile(path.join(hermesHome, ".env"), "DISCORD_BOT_TOKEN=stale-file-token\nDISCORD_REQUIRE_MENTION=true\n");
+
+    const candidates = readyImportCandidates(discoverImportCandidates("hermes", {
+      hermesHome,
+      env: {
+        DISCORD_BOT_TOKEN: "process-token",
+        DISCORD_REQUIRE_MENTION: "false"
+      }
+    }));
+
+    expect(candidates.map((candidate) => candidate.token)).toEqual(["process-token"]);
+    expect(candidates[0]?.trigger.requireMention).toBe(false);
+  });
+
   it("discovers OpenClaw default and account Discord tokens", () => {
     const openclawHome = tempDir("aide-openclaw-");
     writeFile(

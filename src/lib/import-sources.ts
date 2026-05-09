@@ -229,7 +229,7 @@ function discoverHermesCandidates(options: ImportDiscoveryOptions): ImportCandid
 
   for (const profile of profileDirs) {
     const profileEnv = readEnvFile(path.join(profile.dir, ".env"));
-    const mergedEnv = { ...envToStrings(env), ...profileEnv };
+    const mergedEnv = { ...profileEnv, ...envToStrings(env) };
     const configPath = path.join(profile.dir, "config.yaml");
     const config = readYamlObject(configPath);
     const token = firstStringPath(config, HERMES_TOKEN_PATHS, mergedEnv) ?? mergedEnv.DISCORD_BOT_TOKEN;
