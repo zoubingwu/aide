@@ -468,6 +468,55 @@ describe("import sources", () => {
     expect(importPlanEntryEndpoint(entry!).enabled).toBe(false);
   });
 
+  it("imports minimal OpenClaw endpoints disabled for default access policies", () => {
+    const openclawHome = tempDir("aide-openclaw-default-access-controls-");
+    writeFile(
+      path.join(openclawHome, "openclaw.json"),
+      [
+        "{",
+        "  channels: { discord: { token: 'default-policy-token' } },",
+        "}",
+        ""
+      ].join("\n")
+    );
+
+    const [candidate] = readyImportCandidates(discoverImportCandidates("openclaw", {
+      openclawHome,
+      env: {},
+      cwd: openclawHome
+    }));
+
+    expect(candidate?.disabledReason).toBe("OpenClaw access controls need manual review");
+    const [entry] = planEndpointImports([], candidate ? [candidate] : []);
+    expect(importPlanEntryEndpoint(entry!).enabled).toBe(false);
+  });
+
+  it("keeps OpenClaw endpoints enabled when effective access policies are open", () => {
+    const openclawHome = tempDir("aide-openclaw-open-access-controls-");
+    writeFile(
+      path.join(openclawHome, "openclaw.json"),
+      [
+        "{",
+        "  channels: {",
+        "    defaults: { groupPolicy: 'open' },",
+        "    discord: { dmPolicy: 'open', token: 'open-policy-token' },",
+        "  },",
+        "}",
+        ""
+      ].join("\n")
+    );
+
+    const [candidate] = readyImportCandidates(discoverImportCandidates("openclaw", {
+      openclawHome,
+      env: {},
+      cwd: openclawHome
+    }));
+
+    expect(candidate?.disabledReason).toBeUndefined();
+    const [entry] = planEndpointImports([], candidate ? [candidate] : []);
+    expect(importPlanEntryEndpoint(entry!).enabled).toBe(true);
+  });
+
   it("resolves OpenClaw file SecretRefs after confirmation", async () => {
     const openclawHome = tempDir("aide-openclaw-file-");
     const secretPath = path.join(openclawHome, "secrets.json");
