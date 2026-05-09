@@ -1,8 +1,11 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { execa } from "execa";
 import { defaultCodexFreshArgs, defaultCodexResumeArgs } from "./codex-args.js";
 import { appendActivityLog, endpointActivity } from "./logging.js";
 import type { AgentRunOptions, AgentToolServer } from "./agent-tools.js";
-import type { AgentRunResult, CodexAgentConfig, Endpoint } from "./types.js";
+import type { AgentRunResult, AgentUsage, CodexAgentConfig, Endpoint } from "./types.js";
 
 export function buildCodexArgs(
   agent: CodexAgentConfig,
@@ -70,11 +73,13 @@ export async function runCodex(
 
   if (resumed.exitCode === 0) {
     const response = extractFinalResponse(resumed.stdout, resumed.stderr);
+    const usage = extractCodexUsage(resumed.stdout, prompt);
 
     return {
       ...resumed,
       ...response,
-      usageTokens: extractCodexUsageTokens(resumed.stdout),
+      usage,
+      usageTokens: usage?.totalTokens,
       resumed: true
     };
   }
@@ -89,11 +94,13 @@ export async function runCodex(
     attempt: "fresh"
   });
   const response = extractFinalResponse(fresh.stdout, fresh.stderr);
+  const usage = extractCodexUsage(fresh.stdout, prompt);
 
   return {
     ...fresh,
     ...response,
-    usageTokens: extractCodexUsageTokens(fresh.stdout),
+    usage,
+    usageTokens: usage?.totalTokens,
     resumed: false
   };
 }
@@ -138,23 +145,44 @@ export function extractFinalResponse(stdout: string, stderr = ""): ExtractedCode
 }
 
 export function extractCodexUsageTokens(stdout: string): number | undefined {
-  let tokens: number | undefined;
+  return extractCodexUsage(stdout)?.totalTokens;
+}
+
+export function extractCodexUsage(stdout: string, prompt?: string): AgentUsage | undefined {
+  let threadId: string | undefined;
+  let stdoutUsage: Record<string, unknown> | undefined;
 
   for (const line of stdout.split(/\r?\n/)) {
     const payload = parseJsonObjectLine(line);
 
-    if (payload?.type !== "turn.completed") {
+    if (payload?.type === "thread.started" && typeof payload.thread_id === "string") {
+      threadId = payload.thread_id;
       continue;
     }
 
-    const usageTokens = codexUsageTokens(payload.usage);
-
-    if (usageTokens !== undefined) {
-      tokens = usageTokens;
+    if (payload?.type === "turn.completed" && isRecord(payload.usage)) {
+      stdoutUsage = payload.usage;
     }
   }
 
-  return tokens;
+  const sessionUsage = threadId ? readCodexSessionUsage(threadId, prompt) : undefined;
+  const usage = sessionUsage?.usage ?? codexUsageDetails(stdoutUsage);
+
+  if (!usage) {
+    return undefined;
+  }
+
+  return {
+    ...usage,
+    raw: {
+      codex: {
+        threadId,
+        stdoutUsage,
+        sessionStartTokenCount: sessionUsage?.startRaw,
+        sessionTokenCount: sessionUsage?.raw
+      }
+    }
+  };
 }
 
 interface CodexExecution {
@@ -300,26 +328,183 @@ function extractAgentMessage(value: unknown): string | undefined {
   return stringifyContent(record.text) ?? stringifyContent(record.content) ?? stringifyContent(record.output);
 }
 
-function codexUsageTokens(value: unknown): number | undefined {
-  if (!value || typeof value !== "object") {
+interface CodexSessionUsage {
+  usage: AgentUsage;
+  raw: Record<string, unknown>;
+  startRaw?: Record<string, unknown> | undefined;
+}
+
+function readCodexSessionUsage(threadId: string, prompt?: string): CodexSessionUsage | undefined {
+  const filePath = findCodexSessionFile(threadId);
+
+  if (!filePath) {
     return undefined;
   }
 
-  const record = value as Record<string, unknown>;
-  const total = tokenCount(record.total_tokens);
+  let tokenCountInfo: Record<string, unknown> | undefined;
+  let matchedStartUsage: AgentUsage | undefined;
+  let matchedStartTokenCountInfo: Record<string, unknown> | undefined;
+  let matchedTokenCountInfo: Record<string, unknown> | undefined;
+  let inMatchedTurn = false;
 
-  if (total !== undefined) {
-    return total;
-  }
+  let content: string;
 
-  const input = tokenCount(record.input_tokens);
-  const output = tokenCount(record.output_tokens);
-
-  if (input === undefined && output === undefined) {
+  try {
+    content = fs.readFileSync(filePath, "utf8");
+  } catch {
     return undefined;
   }
 
-  return (input ?? 0) + (output ?? 0);
+  for (const line of content.split(/\r?\n/)) {
+    const payload = parseJsonObjectLine(line)?.payload;
+
+    if (!isRecord(payload)) {
+      continue;
+    }
+
+    if (prompt && isCodexSessionUserMessage(payload, prompt)) {
+      inMatchedTurn = true;
+      matchedStartUsage = codexTotalUsageDetails(tokenCountInfo);
+      matchedStartTokenCountInfo = tokenCountInfo;
+      matchedTokenCountInfo = undefined;
+      continue;
+    }
+
+    if (payload.type === "task_complete") {
+      inMatchedTurn = false;
+    }
+
+    if (payload.type !== "token_count" || !isRecord(payload.info)) {
+      continue;
+    }
+
+    tokenCountInfo = payload.info;
+
+    if (inMatchedTurn) {
+      matchedTokenCountInfo = payload.info;
+    }
+  }
+
+  tokenCountInfo = matchedTokenCountInfo ?? tokenCountInfo;
+
+  if (!tokenCountInfo) {
+    return undefined;
+  }
+
+  const usage =
+    usageDelta(matchedStartUsage, codexTotalUsageDetails(matchedTokenCountInfo)) ??
+    (isRecord(tokenCountInfo.last_token_usage) ? codexUsageDetails(tokenCountInfo.last_token_usage) : undefined);
+
+  if (!usage) {
+    return undefined;
+  }
+
+  return { usage, raw: tokenCountInfo, startRaw: matchedStartTokenCountInfo };
+}
+
+function isCodexSessionUserMessage(payload: Record<string, unknown>, prompt: string): boolean {
+  if (payload.type === "user_message" && payload.message === prompt) {
+    return true;
+  }
+
+  if (payload.type !== "message" || payload.role !== "user") {
+    return false;
+  }
+
+  const content = payload.content;
+
+  return Array.isArray(content) && content.some((item) => isRecord(item) && item.type === "input_text" && item.text === prompt);
+}
+
+function findCodexSessionFile(threadId: string): string | undefined {
+  const sessionsDir = path.join(process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex"), "sessions");
+  const suffix = `${threadId}.jsonl`;
+  const pending = [sessionsDir];
+
+  while (pending.length > 0) {
+    const directory = pending.pop() as string;
+    let entries: fs.Dirent[];
+
+    try {
+      entries = fs.readdirSync(directory, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      const entryPath = path.join(directory, entry.name);
+
+      if (entry.isDirectory()) {
+        pending.push(entryPath);
+        continue;
+      }
+
+      if (entry.isFile() && entry.name.endsWith(suffix)) {
+        return entryPath;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function codexUsageDetails(value: unknown): AgentUsage | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const inputTokens = tokenCount(value.input_tokens);
+  const outputTokens = tokenCount(value.output_tokens);
+
+  if (inputTokens === undefined && outputTokens === undefined) {
+    return undefined;
+  }
+
+  return {
+    inputTokens: inputTokens ?? 0,
+    outputTokens: outputTokens ?? 0,
+    totalTokens: tokenCount(value.total_tokens) ?? (inputTokens ?? 0) + (outputTokens ?? 0),
+    cachedInputTokens: tokenCount(value.cached_input_tokens),
+    reasoningOutputTokens: tokenCount(value.reasoning_output_tokens)
+  };
+}
+
+function codexTotalUsageDetails(tokenCountInfo: unknown): AgentUsage | undefined {
+  return isRecord(tokenCountInfo) ? codexUsageDetails(tokenCountInfo.total_token_usage) : undefined;
+}
+
+function usageDelta(start: AgentUsage | undefined, end: AgentUsage | undefined): AgentUsage | undefined {
+  if (!end) {
+    return undefined;
+  }
+
+  const inputTokens = tokenDelta(start?.inputTokens, end.inputTokens);
+  const outputTokens = tokenDelta(start?.outputTokens, end.outputTokens);
+
+  if (inputTokens === undefined || outputTokens === undefined) {
+    return undefined;
+  }
+
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens: tokenDelta(start?.totalTokens, end.totalTokens) ?? inputTokens + outputTokens,
+    cachedInputTokens: tokenDelta(start?.cachedInputTokens, end.cachedInputTokens),
+    reasoningOutputTokens: tokenDelta(start?.reasoningOutputTokens, end.reasoningOutputTokens)
+  };
+}
+
+function tokenDelta(start: number | undefined, end: number | undefined): number | undefined {
+  if (end === undefined) {
+    return undefined;
+  }
+
+  const value = end - (start ?? 0);
+  return value >= 0 ? value : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function tokenCount(value: unknown): number | undefined {
