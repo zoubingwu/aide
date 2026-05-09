@@ -362,7 +362,7 @@ function discoverOpenClawCandidates(options: ImportDiscoveryOptions): ImportCand
         token: defaultToken
       });
     } else {
-      const secret = openClawConfirmableSecret(defaultTokenInput, config) ??
+      const secret = openClawConfirmableSecret(defaultTokenInput, config, env.values) ??
         openClawConfirmableShellEnvSecret({
           tokenInput: defaultTokenInput,
           fallbackKey: hasConfiguredDefaultToken ? undefined : "DISCORD_BOT_TOKEN",
@@ -406,7 +406,7 @@ function discoverOpenClawCandidates(options: ImportDiscoveryOptions): ImportCand
         continue;
       }
 
-      const secret = openClawConfirmableSecret(account.token, config) ??
+      const secret = openClawConfirmableSecret(account.token, config, env.values) ??
         openClawConfirmableShellEnvSecret({
           tokenInput: account.token,
           config,
@@ -618,14 +618,18 @@ function openClawEnvSecretAllowed(ref: OpenClawSecretRef, config: unknown): bool
   return !allowlist || allowlist.includes(ref.id);
 }
 
-function openClawConfirmableSecret(value: unknown, config: unknown): OpenClawSecretResolution | undefined {
+function openClawConfirmableSecret(
+  value: unknown,
+  config: unknown,
+  env: Record<string, string>
+): OpenClawSecretResolution | undefined {
   const ref = openClawSecretRef(value, config);
 
   if (!ref || ref.source === "env") {
     return undefined;
   }
 
-  const provider = openClawSecretProvider(ref, config);
+  const provider = openClawSecretProvider(ref, config, env);
 
   if (!provider) {
     return undefined;
@@ -660,7 +664,11 @@ function openClawDefaultSecretProvider(config: unknown, source: OpenClawSecretRe
   return typeof value === "string" && value.trim() ? value.trim() : "default";
 }
 
-function openClawSecretProvider(ref: OpenClawSecretRef, config: unknown): OpenClawSecretProvider | undefined {
+function openClawSecretProvider(
+  ref: OpenClawSecretRef,
+  config: unknown,
+  env: Record<string, string>
+): OpenClawSecretProvider | undefined {
   const providers = objectPath(config, ["secrets", "providers"]);
   const provider = providers?.[ref.provider];
 
@@ -671,7 +679,7 @@ function openClawSecretProvider(ref: OpenClawSecretRef, config: unknown): OpenCl
   if (ref.source === "file" && typeof provider.path === "string") {
     return {
       source: "file",
-      path: provider.path,
+      path: substituteEnv(provider.path, env),
       mode: provider.mode === "singleValue" ? "singleValue" : "json",
       timeoutMs: numberConfig(provider.timeoutMs),
       maxBytes: numberConfig(provider.maxBytes)
@@ -681,10 +689,10 @@ function openClawSecretProvider(ref: OpenClawSecretRef, config: unknown): OpenCl
   if (ref.source === "exec" && typeof provider.command === "string") {
     return {
       source: "exec",
-      command: provider.command,
-      args: stringArrayConfig(provider.args),
+      command: substituteEnv(provider.command, env),
+      args: stringArrayConfig(provider.args)?.map((arg) => substituteEnv(arg, env)),
       passEnv: stringArrayConfig(provider.passEnv),
-      env: recordToStringMap(objectConfig(provider.env)),
+      env: substituteEnvRecord(recordToStringMap(objectConfig(provider.env)), env),
       jsonOnly: typeof provider.jsonOnly === "boolean" ? provider.jsonOnly : undefined,
       timeoutMs: numberConfig(provider.timeoutMs),
       maxOutputBytes: numberConfig(provider.maxOutputBytes)
@@ -1004,6 +1012,16 @@ function objectPath(target: unknown, segments: readonly string[]): Record<string
 
 function substituteEnv(value: string, env: Record<string, string>): string {
   return value.replace(/\$\{([A-Z0-9_]+)\}/g, (placeholder, key: string) => env[key] ?? placeholder);
+}
+
+function substituteEnvRecord(value: Record<string, string>, env: Record<string, string>): Record<string, string> {
+  const result: Record<string, string> = {};
+
+  for (const [key, entry] of Object.entries(value)) {
+    result[key] = substituteEnv(entry, env);
+  }
+
+  return result;
 }
 
 function discordChannelSources(value: string[] | string | undefined): string[] | undefined {
