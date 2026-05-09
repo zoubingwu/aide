@@ -272,7 +272,8 @@ describe("import sources", () => {
   });
 
   it("uses OPENCLAW_HOME for OpenClaw config and env discovery", () => {
-    const openclawHome = tempDir("aide-openclaw-home-");
+    const serviceHome = tempDir("aide-openclaw-service-home-");
+    const openclawHome = path.join(serviceHome, ".openclaw");
     writeFile(path.join(openclawHome, ".env"), "DISCORD_BOT_TOKEN=home-token\n");
     writeFile(
       path.join(openclawHome, "openclaw.json"),
@@ -285,7 +286,7 @@ describe("import sources", () => {
     );
 
     const candidates = readyImportCandidates(discoverImportCandidates("openclaw", {
-      env: { OPENCLAW_HOME: openclawHome },
+      env: { OPENCLAW_HOME: serviceHome },
       cwd: tempDir("aide-openclaw-cwd-")
     }));
 

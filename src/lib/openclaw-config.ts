@@ -47,7 +47,8 @@ export function resolveOpenClawConfig(options: OpenClawConfigOptions = {}): Open
 
 export function resolveOpenClawHome(options: OpenClawConfigOptions): string {
   const env = options.env ?? process.env;
-  return expandHome(options.openclawHome ?? env.OPENCLAW_HOME ?? env.OPENCLAW_STATE_DIR ?? "~/.openclaw");
+  const home = env.OPENCLAW_HOME ? path.join(env.OPENCLAW_HOME, ".openclaw") : "~/.openclaw";
+  return expandHome(options.openclawHome ?? env.OPENCLAW_STATE_DIR ?? home);
 }
 
 export function readOpenClawConfigObject(filePath: string | undefined, includeRoots: string[] = []): unknown {
