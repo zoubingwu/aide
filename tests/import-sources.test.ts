@@ -118,6 +118,37 @@ describe("import sources", () => {
     ]);
   });
 
+  it("skips the OpenClaw default endpoint when the default account is disabled", () => {
+    const openclawHome = tempDir("aide-openclaw-disabled-default-");
+    writeFile(
+      path.join(openclawHome, "openclaw.json"),
+      [
+        "{",
+        "  channels: {",
+        "    discord: {",
+        "      token: 'top-level-token',",
+        "      accounts: {",
+        "        default: { enabled: false, token: 'disabled-token' },",
+        "        work: { token: 'work-token' },",
+        "      },",
+        "    },",
+        "  },",
+        "}",
+        ""
+      ].join("\n")
+    );
+
+    const candidates = readyImportCandidates(discoverImportCandidates("openclaw", {
+      openclawHome,
+      env: { DISCORD_BOT_TOKEN: "stale-env-token" },
+      cwd: openclawHome
+    }));
+
+    expect(candidates.map((candidate) => [candidate.sourceName, candidate.endpointId, candidate.token])).toEqual([
+      ["work", "openclaw-work", "work-token"]
+    ]);
+  });
+
   it("resolves OpenClaw config includes before Discord token discovery", () => {
     const openclawHome = tempDir("aide-openclaw-include-");
     writeFile(

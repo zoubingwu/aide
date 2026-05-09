@@ -38,7 +38,8 @@ Aide is a TypeScript CLI package. Runtime code targets Node-compatible APIs and 
 - `src/lib/usage.ts`: JSONL usage events and estimated token accounting.
 - `src/lib/logging.ts`: runtime log and activity JSONL events.
 - `src/lib/format.ts`: CLI output helpers.
-- `src/lib/import-sources.ts`: Hermes/OpenClaw config discovery, token resolution, endpoint import planning, dedupe, and id allocation.
+- `src/lib/openclaw-config.ts`: OpenClaw home/config path resolution, JSON5 loading, `$include` expansion, and config env fallback extraction.
+- `src/lib/import-sources.ts`: Hermes/OpenClaw import discovery, token resolution, endpoint import planning, dedupe, and id allocation.
 - `tests/`: unit tests for non-network behavior.
 
 ## Development Rules

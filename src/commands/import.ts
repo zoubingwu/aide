@@ -4,10 +4,10 @@ import {
   discoverImportCandidates,
   importPlanEntryEndpoint,
   planEndpointImports,
-  readyImportCandidates,
   resolveSecretImportCandidate,
   type ImportCandidate,
   type ImportPlanEntry,
+  type ReadyImportCandidate,
   type ImportSource
 } from "../lib/import-sources.js";
 import {
@@ -78,11 +78,12 @@ export async function importCommand(source: string, options: CommandOptions): Pr
   console.log("\nRun `aide start` or `aide restart` to use imported endpoints.");
 }
 
-async function resolveImportCandidates(candidates: ImportCandidate[]) {
-  const ready = readyImportCandidates(candidates);
+async function resolveImportCandidates(candidates: ImportCandidate[]): Promise<ReadyImportCandidate[]> {
+  const ready: ReadyImportCandidate[] = [];
 
   for (const candidate of candidates) {
-    if (candidate.kind !== "secret") {
+    if (candidate.kind === "ready") {
+      ready.push(candidate);
       continue;
     }
 

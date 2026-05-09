@@ -3,12 +3,16 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execa } from "execa";
-import JSON5 from "json5";
 import { parse as parseYaml } from "yaml";
 import {
   defaultCodexAgentConfig,
   defaultEndpointTriggerConfig
 } from "./config.js";
+import {
+  openClawConfigEnvValues,
+  resolveOpenClawConfig,
+  type OpenClawConfigResolution
+} from "./openclaw-config.js";
 import { expandHome, slugifyId } from "./paths.js";
 import type { Endpoint, EndpointTriggerConfig } from "./types.js";
 
@@ -113,10 +117,6 @@ const HERMES_REQUIRE_MENTION_PATHS = [
   ["gateway", "platforms", "discord", "require_mention"],
   ["gateway", "platforms", "discord", "requireMention"]
 ] as const;
-
-const OPENCLAW_INCLUDE_KEY = "$include";
-const OPENCLAW_MAX_INCLUDE_DEPTH = 10;
-const OPENCLAW_MAX_INCLUDE_FILE_BYTES = 2 * 1024 * 1024;
 
 export function discoverImportCandidates(source: ImportSource, options: ImportDiscoveryOptions = {}): ImportCandidate[] {
   switch (source) {
@@ -300,10 +300,9 @@ function hermesTriggerConfig(config: unknown, env: Record<string, string>): Endp
 }
 
 function discoverOpenClawCandidates(options: ImportDiscoveryOptions): ImportCandidate[] {
-  const env = openClawEnv(options);
-  const openclawHome = resolveOpenClawHome(options);
-  const configPath = resolveOpenClawConfigPath(options);
-  const config = readOpenClawConfigObject(configPath);
+  const openclawConfig = resolveOpenClawConfig(options);
+  const env = openClawEnv(options, openclawConfig);
+  const config = openclawConfig.config;
   const discord = objectPath(config, ["channels", "discord"]);
 
   if (discord && getBoolean(discord.enabled) === false) {
@@ -313,9 +312,10 @@ function discoverOpenClawCandidates(options: ImportDiscoveryOptions): ImportCand
   const candidates: ImportCandidate[] = [];
   const accounts = objectPath(discord, ["accounts"]);
   const defaultAccount = objectPath(accounts, ["default"]);
+  const defaultAccountDisabled = Boolean(defaultAccount && getBoolean(defaultAccount.enabled) === false);
   const hasDefaultAccountToken = Boolean(
     defaultAccount &&
-    getBoolean(defaultAccount.enabled) !== false &&
+    !defaultAccountDisabled &&
     objectHasOwn(defaultAccount, "token")
   );
   const defaultTokenInput = hasDefaultAccountToken ? defaultAccount?.token : discord?.token;
@@ -324,26 +324,28 @@ function discoverOpenClawCandidates(options: ImportDiscoveryOptions): ImportCand
   const defaultCandidate = {
     source: "openclaw" as const,
     sourceName: "default",
-    sourcePath: configPath ?? env.paths[0] ?? openclawHome,
+    sourcePath: openclawConfig.path ?? env.paths[0] ?? openclawConfig.home,
     endpointId: endpointIdFor("openclaw", "default"),
     trigger: defaultEndpointTriggerConfig()
   };
 
-  if (isUsableSecret(defaultToken)) {
-    candidates.push({
-      kind: "ready",
-      ...defaultCandidate,
-      token: defaultToken
-    });
-  } else {
-    const secret = openClawConfirmableSecret(defaultTokenInput, config);
-
-    if (secret) {
+  if (!defaultAccountDisabled) {
+    if (isUsableSecret(defaultToken)) {
       candidates.push({
-        kind: "secret",
+        kind: "ready",
         ...defaultCandidate,
-        secret
+        token: defaultToken
       });
+    } else {
+      const secret = openClawConfirmableSecret(defaultTokenInput, config);
+
+      if (secret) {
+        candidates.push({
+          kind: "secret",
+          ...defaultCandidate,
+          secret
+        });
+      }
     }
   }
 
@@ -358,7 +360,7 @@ function discoverOpenClawCandidates(options: ImportDiscoveryOptions): ImportCand
       const baseCandidate = {
         source: "openclaw" as const,
         sourceName: accountId,
-        sourcePath: configPath ?? env.paths[0] ?? openclawHome,
+        sourcePath: openclawConfig.path ?? env.paths[0] ?? openclawConfig.home,
         endpointId: endpointIdFor("openclaw", accountId),
         trigger: defaultEndpointTriggerConfig()
       };
@@ -387,17 +389,19 @@ function discoverOpenClawCandidates(options: ImportDiscoveryOptions): ImportCand
   return candidates;
 }
 
-function openClawEnv(options: ImportDiscoveryOptions): SourceEnv {
+function openClawEnv(
+  options: ImportDiscoveryOptions,
+  openclawConfig: OpenClawConfigResolution = resolveOpenClawConfig(options)
+): SourceEnv {
   const env = options.env ?? process.env;
   const cwd = options.cwd ?? process.cwd();
-  const openclawHome = resolveOpenClawHome(options);
   const paths = [
     path.join(os.homedir(), ".config", "openclaw", "gateway.env"),
-    path.join(openclawHome, ".env"),
+    path.join(openclawConfig.home, ".env"),
     path.join(cwd, ".env")
   ];
   const values: Record<string, string> = {};
-  const configEnv = objectPath(readOpenClawConfigObject(resolveOpenClawConfigPath(options)), ["env"]);
+  const configEnv = objectPath(openclawConfig.config, ["env"]);
 
   if (configEnv) {
     Object.assign(values, openClawConfigEnvValues(configEnv));
@@ -413,19 +417,6 @@ function openClawEnv(options: ImportDiscoveryOptions): SourceEnv {
     values,
     paths: paths.filter((filePath) => fs.existsSync(filePath))
   };
-}
-
-function resolveOpenClawHome(options: ImportDiscoveryOptions): string {
-  const env = options.env ?? process.env;
-  return expandHome(options.openclawHome ?? env.OPENCLAW_HOME ?? env.OPENCLAW_STATE_DIR ?? "~/.openclaw");
-}
-
-function resolveOpenClawConfigPath(options: ImportDiscoveryOptions): string | undefined {
-  const env = options.env ?? process.env;
-  const explicitPath = options.openclawConfigPath ?? env.OPENCLAW_CONFIG_PATH;
-  const fallbackPath = path.join(resolveOpenClawHome(options), "openclaw.json");
-  const candidates = [explicitPath ? expandHome(explicitPath) : undefined, fallbackPath].filter(Boolean) as string[];
-  return candidates.find((filePath) => fs.existsSync(filePath));
 }
 
 function resolveOpenClawSecret(value: unknown, env: Record<string, string>, config?: unknown): string | undefined {
@@ -737,155 +728,6 @@ function readYamlObject(filePath: string): unknown {
   return content.length > 0 ? parseYaml(content) : undefined;
 }
 
-function readJson5Object(filePath: string | undefined): unknown {
-  if (!filePath || !fs.existsSync(filePath)) {
-    return undefined;
-  }
-
-  const content = fs.readFileSync(filePath, "utf8").trim();
-  return content.length > 0 ? JSON5.parse(content) : undefined;
-}
-
-function readOpenClawConfigObject(filePath: string | undefined): unknown {
-  const config = readJson5Object(filePath);
-
-  if (!filePath || config === undefined) {
-    return config;
-  }
-
-  const resolvedPath = path.resolve(filePath);
-  return resolveOpenClawConfigIncludes(config, resolvedPath, new Set([resolvedPath]), 0);
-}
-
-function resolveOpenClawConfigIncludes(
-  value: unknown,
-  baseFilePath: string,
-  seenPaths: Set<string>,
-  depth: number
-): unknown {
-  if (Array.isArray(value)) {
-    return value.map((entry) => resolveOpenClawConfigIncludes(entry, baseFilePath, seenPaths, depth));
-  }
-
-  if (!isRecord(value)) {
-    return value;
-  }
-
-  if (objectHasOwn(value, OPENCLAW_INCLUDE_KEY)) {
-    const included = resolveOpenClawConfigInclude(value[OPENCLAW_INCLUDE_KEY], baseFilePath, seenPaths, depth);
-    const local: Record<string, unknown> = {};
-
-    for (const [key, entry] of Object.entries(value)) {
-      if (key === OPENCLAW_INCLUDE_KEY || isUnsafeObjectKey(key)) {
-        continue;
-      }
-
-      local[key] = resolveOpenClawConfigIncludes(entry, baseFilePath, seenPaths, depth);
-    }
-
-    return Object.keys(local).length > 0 ? deepMergeOpenClawConfig(included, local) : included;
-  }
-
-  const result: Record<string, unknown> = {};
-
-  for (const [key, entry] of Object.entries(value)) {
-    if (!isUnsafeObjectKey(key)) {
-      result[key] = resolveOpenClawConfigIncludes(entry, baseFilePath, seenPaths, depth);
-    }
-  }
-
-  return result;
-}
-
-function resolveOpenClawConfigInclude(
-  includeValue: unknown,
-  baseFilePath: string,
-  seenPaths: Set<string>,
-  depth: number
-): unknown {
-  if (typeof includeValue === "string") {
-    return loadOpenClawConfigInclude(includeValue, baseFilePath, seenPaths, depth);
-  }
-
-  if (Array.isArray(includeValue)) {
-    return includeValue.reduce<unknown>(
-      (merged, entry) => deepMergeOpenClawConfig(
-        merged,
-        resolveOpenClawConfigInclude(entry, baseFilePath, seenPaths, depth)
-      ),
-      {}
-    );
-  }
-
-  return undefined;
-}
-
-function loadOpenClawConfigInclude(
-  includePath: string,
-  baseFilePath: string,
-  seenPaths: Set<string>,
-  depth: number
-): unknown {
-  if (depth >= OPENCLAW_MAX_INCLUDE_DEPTH) {
-    throw new Error(`OpenClaw config include depth exceeded at ${includePath}.`);
-  }
-
-  const resolvedPath = resolveOpenClawIncludePath(includePath, baseFilePath);
-
-  if (seenPaths.has(resolvedPath)) {
-    throw new Error(`OpenClaw config include cycle detected at ${resolvedPath}.`);
-  }
-
-  const stats = fs.statSync(resolvedPath);
-
-  if (!stats.isFile()) {
-    throw new Error(`OpenClaw config include is not a file: ${resolvedPath}`);
-  }
-
-  if (stats.size > OPENCLAW_MAX_INCLUDE_FILE_BYTES) {
-    throw new Error(`OpenClaw config include exceeds max size: ${resolvedPath}`);
-  }
-
-  seenPaths.add(resolvedPath);
-
-  try {
-    return resolveOpenClawConfigIncludes(readJson5Object(resolvedPath), resolvedPath, seenPaths, depth + 1);
-  } finally {
-    seenPaths.delete(resolvedPath);
-  }
-}
-
-function resolveOpenClawIncludePath(includePath: string, baseFilePath: string): string {
-  const expandedPath = includePath === "~" || includePath.startsWith("~/") ? expandHome(includePath) : includePath;
-  return path.isAbsolute(expandedPath) ? expandedPath : path.resolve(path.dirname(baseFilePath), expandedPath);
-}
-
-function deepMergeOpenClawConfig(target: unknown, source: unknown): unknown {
-  if (Array.isArray(target) && Array.isArray(source)) {
-    return [...target, ...source];
-  }
-
-  if (isRecord(target) && isRecord(source)) {
-    const result: Record<string, unknown> = {};
-
-    for (const [key, value] of Object.entries(target)) {
-      if (!isUnsafeObjectKey(key)) {
-        result[key] = value;
-      }
-    }
-
-    for (const [key, value] of Object.entries(source)) {
-      if (!isUnsafeObjectKey(key)) {
-        result[key] = objectHasOwn(result, key) ? deepMergeOpenClawConfig(result[key], value) : value;
-      }
-    }
-
-    return result;
-  }
-
-  return source;
-}
-
 function readEnvFile(filePath: string): Record<string, string> {
   if (!fs.existsSync(filePath)) {
     return {};
@@ -1045,10 +887,6 @@ function objectHasOwn(value: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(value, key);
 }
 
-function isUnsafeObjectKey(key: string): boolean {
-  return key === "__proto__" || key === "constructor" || key === "prototype";
-}
-
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
@@ -1075,13 +913,6 @@ function recordToStringMap(value: Record<string, unknown>): Record<string, strin
   }
 
   return entries;
-}
-
-function openClawConfigEnvValues(value: Record<string, unknown>): Record<string, string> {
-  return {
-    ...recordToStringMap(value),
-    ...recordToStringMap(objectConfig(value.vars))
-  };
 }
 
 function objectConfig(value: unknown): Record<string, unknown> {
