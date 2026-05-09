@@ -11,6 +11,7 @@ Aide is a TypeScript CLI package. Runtime code targets Node-compatible APIs and 
 - `src/commands/config.ts`: root runtime config `get` and `set` commands.
 - `src/commands/endpoints.ts`: endpoint CRUD, config commands, local endpoint tests.
 - `src/commands/help.ts`: reusable CLI help constants, examples, and agent-facing guide.
+- `src/commands/import.ts`: import command for migrating Discord endpoints from Hermes and OpenClaw.
 - `src/commands/runtime.ts`: `start`, `stop`, `restart`, and foreground runtime dispatch.
 - `src/commands/schedules.ts`: schedule CRUD and schedule config commands.
 - `src/commands/service.ts`: OS service install, uninstall, and status commands.
@@ -37,6 +38,8 @@ Aide is a TypeScript CLI package. Runtime code targets Node-compatible APIs and 
 - `src/lib/usage.ts`: JSONL usage events and estimated token accounting.
 - `src/lib/logging.ts`: runtime log and activity JSONL events.
 - `src/lib/format.ts`: CLI output helpers.
+- `src/lib/openclaw-config.ts`: OpenClaw home/config path resolution, JSON5 loading, `$include` expansion, and config env fallback extraction.
+- `src/lib/import-sources.ts`: Hermes/OpenClaw import discovery, token resolution, endpoint import planning, dedupe, and id allocation.
 - `tests/`: unit tests for non-network behavior.
 
 ## Development Rules

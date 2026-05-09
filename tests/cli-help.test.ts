@@ -20,6 +20,7 @@ describe("CLI help", () => {
     expect(stdout).toContain("start     Start Aide runtime in the background");
     expect(stdout).toContain("config    Manage config");
     expect(stdout).toContain("help      Show detailed help");
+    expect(stdout).toContain("import    Import endpoints");
     expect(stdout).toContain("usage     Show usage");
   });
 
