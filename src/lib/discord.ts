@@ -18,6 +18,7 @@ const DISCORD_MESSAGE_CHUNK_BUFFER = 100;
 const DISCORD_MESSAGE_CHUNK_SIZE = DISCORD_MESSAGE_CONTENT_LIMIT - DISCORD_MESSAGE_CHUNK_BUFFER;
 const EMPTY_SUCCESS_REACTION = "✅";
 const EMPTY_SUCCESS_REACTION_FALLBACK = "Done.";
+const MARKDOWN_FENCE_INFO_REOPEN_LIMIT = 80;
 
 interface MarkdownFenceState {
   marker: string;
@@ -362,7 +363,7 @@ function parseOpeningMarkdownFence(line: string): MarkdownFenceState | undefined
     return undefined;
   }
 
-  return { marker, info };
+  return { marker, info: reopenMarkdownFenceInfo(info) };
 }
 
 function isClosingMarkdownFence(line: string, state: MarkdownFenceState): boolean {
@@ -378,6 +379,10 @@ function openMarkdownFence(state: MarkdownFenceState): string {
 
 function closeMarkdownFence(body: string, state: MarkdownFenceState): string {
   return `${body.endsWith("\n") ? "" : "\n"}${state.marker}`;
+}
+
+function reopenMarkdownFenceInfo(info: string): string {
+  return info.length <= MARKDOWN_FENCE_INFO_REOPEN_LIMIT ? info : "";
 }
 
 export function discordMessageSource(message: { author: { id: string }; channelId: string; guildId: string | null }): string {
