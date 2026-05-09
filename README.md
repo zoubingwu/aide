@@ -45,11 +45,11 @@ aide --help
 
 ```bash
 aide init
-aide endpoint add
-aide start
 ```
 
-The setup asks for:
+The setup checks your local agent CLI, discovers existing Hermes or OpenClaw Discord tokens, imports usable endpoints, creates a Discord endpoint when needed, runs doctor, and can start the runtime.
+
+When Aide needs a new endpoint, setup asks for:
 
 - An endpoint provider. Discord is the currently runnable endpoint.
 - An endpoint id, used to name this assistant surface and its local settings.
