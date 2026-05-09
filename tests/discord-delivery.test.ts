@@ -128,6 +128,23 @@ describe("discord delivery", () => {
     expect(hasBalancedBacktickFences(chunk)).toBe(true);
   });
 
+  it("keeps later standalone code blocks outside markdown code blocks", () => {
+    const response = [
+      "```markdown",
+      "# Aide",
+      "```",
+      "",
+      "A separate example:",
+      "",
+      "```",
+      "plain text",
+      "```"
+    ].join("\n");
+    const chunks = chunkDiscordMessage(response);
+
+    expect(chunks).toEqual([response]);
+  });
+
   it("keeps shorter nested code fences inside longer markdown code blocks", () => {
     const response = [
       "````markdown",

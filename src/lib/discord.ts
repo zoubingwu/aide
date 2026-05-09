@@ -367,25 +367,79 @@ function escapeNestedDiscordMarkdownFences(response: string): string {
 }
 
 function hasUnlabeledNestedFenceClose(lines: string[], index: number, markdownFence: MarkdownFenceLine): boolean {
-  let closingCandidates = 0;
+  if (!hasImmediateNestedFenceBody(lines, index, markdownFence)) {
+    return false;
+  }
 
-  for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
+  const innerCloseIndex = findClosingMarkdownFenceIndex(lines, index + 1, markdownFence);
+
+  if (innerCloseIndex === undefined) {
+    return false;
+  }
+
+  const outerCloseIndex = findClosingMarkdownFenceIndex(lines, innerCloseIndex + 1, markdownFence);
+
+  if (outerCloseIndex === undefined) {
+    return false;
+  }
+
+  return hasMarkdownSourceContinuationAfterFence(lines, innerCloseIndex, outerCloseIndex);
+}
+
+function hasImmediateNestedFenceBody(lines: string[], index: number, markdownFence: MarkdownFenceLine): boolean {
+  const rawLine = lines[index + 1];
+
+  if (rawLine === undefined) {
+    return false;
+  }
+
+  const { line } = splitLineSuffix(rawLine);
+  const fenceLine = parseMarkdownFenceLine(line);
+
+  if (line.trim().length === 0) {
+    return false;
+  }
+
+  return !(fenceLine && isClosingMarkdownFenceLine(line) && isClosingFenceFor(fenceLine, markdownFence));
+}
+
+function findClosingMarkdownFenceIndex(
+  lines: string[],
+  startIndex: number,
+  markdownFence: MarkdownFenceLine
+): number | undefined {
+  for (let cursor = startIndex; cursor < lines.length; cursor += 1) {
     const rawLine = lines[cursor] ?? "";
     const { line } = splitLineSuffix(rawLine);
     const fenceLine = parseMarkdownFenceLine(line);
 
-    if (!fenceLine || !isClosingMarkdownFenceLine(line) || !isClosingFenceFor(fenceLine, markdownFence)) {
-      continue;
-    }
-
-    closingCandidates += 1;
-
-    if (closingCandidates >= 2) {
-      return true;
+    if (fenceLine && isClosingMarkdownFenceLine(line) && isClosingFenceFor(fenceLine, markdownFence)) {
+      return cursor;
     }
   }
 
-  return false;
+  return undefined;
+}
+
+function hasMarkdownSourceContinuationAfterFence(lines: string[], index: number, outerCloseIndex: number): boolean {
+  if (index + 1 >= outerCloseIndex) {
+    return true;
+  }
+
+  const rawLine = lines[index + 1];
+
+  if (rawLine === undefined) {
+    return false;
+  }
+
+  const { line } = splitLineSuffix(rawLine);
+
+  return line.trim().length === 0 || isLikelyMarkdownSourceLine(line);
+}
+
+function isLikelyMarkdownSourceLine(line: string): boolean {
+  const trimmed = line.trim();
+  return /^(#{1,6}\s|[-*+]\s|\d+[.)]\s|>\s?|\|)/.test(trimmed) || trimmed.endsWith(":");
 }
 
 function splitLineSuffix(rawLine: string): { line: string; suffix: string } {
