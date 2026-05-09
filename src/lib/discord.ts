@@ -332,6 +332,10 @@ function escapeNestedDiscordMarkdownFences(response: string): string {
     }
 
     if (nestedFence) {
+      if (!isClosingFenceFor(fenceLine, markdownFence)) {
+        return rawLine;
+      }
+
       if (isClosingFenceFor(fenceLine, nestedFence) && isClosingMarkdownFenceLine(line)) {
         nestedFence = undefined;
       }
@@ -341,6 +345,10 @@ function escapeNestedDiscordMarkdownFences(response: string): string {
 
     if (isClosingFenceFor(fenceLine, markdownFence) && isClosingMarkdownFenceLine(line)) {
       markdownFence = undefined;
+      return rawLine;
+    }
+
+    if (!isClosingFenceFor(fenceLine, markdownFence)) {
       return rawLine;
     }
 

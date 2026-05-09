@@ -101,6 +101,19 @@ describe("discord delivery", () => {
     expect(hasBalancedBacktickFences(chunk)).toBe(true);
   });
 
+  it("keeps shorter nested code fences inside longer markdown code blocks", () => {
+    const response = [
+      "````markdown",
+      "```text",
+      "example",
+      "```",
+      "````"
+    ].join("\n");
+    const chunks = chunkDiscordMessage(response);
+
+    expect(chunks).toEqual([response]);
+  });
+
   it("keeps split long code lines inside balanced fences", () => {
     const response = ["```js", "x".repeat(4_001), "```"].join("\n");
     const chunks = chunkDiscordMessage(response);
