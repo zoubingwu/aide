@@ -28,6 +28,8 @@ describe("import CLI", () => {
     const config = fs.readFileSync(path.join(aideHome, "config.toml"), "utf8");
 
     expect(stdout).toContain("hermes");
+    expect(stdout).toContain("Discovered endpoints");
+    expect(stdout).toContain("Import plan");
     expect(stdout).toContain("hermes-work");
     expect(stdout).toContain("Imported hermes");
     expect(stdout).not.toContain("default-token");
@@ -69,6 +71,9 @@ describe("import CLI", () => {
     const config = fs.readFileSync(path.join(aideHome, "config.toml"), "utf8");
 
     expect(stdout).toContain("SecretRef requires confirmation");
+    expect(stdout).toContain("Discovered endpoints");
+    expect(stdout).toContain("SecretRef file");
+    expect(stdout).toContain("No importable Discord bot tokens found.");
     expect(stdout).not.toContain("file-token");
     expect(config).toContain("endpoints = []");
   });

@@ -313,21 +313,23 @@ function discoverOpenClawCandidates(options: ImportDiscoveryOptions): ImportCand
   const accounts = objectPath(discord, ["accounts"]);
   const defaultAccount = objectPath(accounts, ["default"]);
   const defaultAccountDisabled = Boolean(defaultAccount && getBoolean(defaultAccount.enabled) === false);
+  const hasTopLevelToken = Boolean(discord && objectHasOwn(discord, "token"));
   const hasDefaultAccountToken = Boolean(
     defaultAccount &&
     !defaultAccountDisabled &&
     objectHasOwn(defaultAccount, "token")
   );
   const defaultTokenInput = hasDefaultAccountToken ? defaultAccount?.token : discord?.token;
+  const hasConfiguredDefaultToken = hasDefaultAccountToken || hasTopLevelToken;
   const env = openClawEnv(options, openclawConfig, openClawTokenEnvKeys({
     accounts,
     config,
     defaultAccountDisabled,
-    hasDefaultAccountToken,
+    hasConfiguredDefaultToken,
     defaultTokenInput
   }));
   const defaultToken = resolveOpenClawSecret(defaultTokenInput, env.values, config) ??
-    (hasDefaultAccountToken ? undefined : env.values.DISCORD_BOT_TOKEN);
+    (hasConfiguredDefaultToken ? undefined : env.values.DISCORD_BOT_TOKEN);
   const defaultCandidate = {
     source: "openclaw" as const,
     sourceName: "default",
@@ -432,7 +434,7 @@ function openClawTokenEnvKeys(params: {
   accounts: Record<string, unknown> | undefined;
   config: unknown;
   defaultAccountDisabled: boolean;
-  hasDefaultAccountToken: boolean;
+  hasConfiguredDefaultToken: boolean;
   defaultTokenInput: unknown;
 }): string[] {
   const keys = new Set<string>();
@@ -440,7 +442,7 @@ function openClawTokenEnvKeys(params: {
   if (!params.defaultAccountDisabled) {
     addOpenClawTokenEnvKeys(keys, params.defaultTokenInput, params.config);
 
-    if (!params.hasDefaultAccountToken) {
+    if (!params.hasConfiguredDefaultToken) {
       keys.add("DISCORD_BOT_TOKEN");
     }
   }

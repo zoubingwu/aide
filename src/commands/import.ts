@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import prompts from "prompts";
 import {
   describeSecretImportCandidate,
@@ -29,17 +30,28 @@ export async function importCommand(source: string, options: CommandOptions): Pr
   ensureAideHome(home);
 
   const endpoints = loadEndpoints(home);
-  const candidates = await resolveImportCandidates(discoverImportCandidates(importSource));
-  const plan = planEndpointImports(endpoints, candidates);
-  const createEntries = plan.filter((entry) => entry.action === "create");
+  const discoveredCandidates = discoverImportCandidates(importSource);
 
   console.log(`Aide Import: ${importSource}\n`);
 
-  if (plan.length === 0) {
+  if (discoveredCandidates.length === 0) {
     console.log("No Discord bot tokens found.");
     return;
   }
 
+  console.log("Discovered endpoints:");
+  console.log(importCandidateTable(discoveredCandidates));
+
+  const candidates = await resolveImportCandidates(discoveredCandidates);
+  const plan = planEndpointImports(endpoints, candidates);
+  const createEntries = plan.filter((entry) => entry.action === "create");
+
+  if (plan.length === 0) {
+    console.log("\nNo importable Discord bot tokens found.");
+    return;
+  }
+
+  console.log("\nImport plan:");
   console.log(importPlanTable(plan));
 
   if (createEntries.length === 0) {
@@ -124,6 +136,27 @@ function parseImportSource(value: string): ImportSource {
   throw new Error(`Import source must be one of: ${IMPORT_SOURCES.join(", ")}.`);
 }
 
+function importCandidateTable(candidates: ImportCandidate[]): string {
+  return printTable(
+    ["Source", "Name", "Endpoint", "Token", "Path"],
+    candidates.map((candidate) => [
+      candidate.source,
+      candidate.sourceName,
+      candidate.endpointId,
+      importCandidateTokenLabel(candidate),
+      displayPath(candidate.sourcePath)
+    ])
+  );
+}
+
+function importCandidateTokenLabel(candidate: ImportCandidate): string {
+  if (candidate.kind === "secret") {
+    return `SecretRef ${candidate.secret.ref.source}`;
+  }
+
+  return tokenFingerprint(candidate.token).slice(0, 15);
+}
+
 function importPlanTable(plan: ImportPlanEntry[]): string {
   return printTable(
     ["Source", "Name", "Endpoint", "Token", "Action"],
@@ -135,6 +168,10 @@ function importPlanTable(plan: ImportPlanEntry[]): string {
       entry.action === "create" ? "create" : `skip (${entry.reason ?? "already handled"})`
     ])
   );
+}
+
+function tokenFingerprint(token: string): string {
+  return `sha256:${crypto.createHash("sha256").update(token).digest("hex")}`;
 }
 
 function errorMessage(error: unknown): string {

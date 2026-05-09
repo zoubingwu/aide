@@ -407,6 +407,41 @@ describe("import sources", () => {
     expect(resolved.token).toBe("file-token");
   });
 
+  it("uses configured OpenClaw SecretRefs before env fallback", async () => {
+    const openclawHome = tempDir("aide-openclaw-secret-over-env-");
+    const secretPath = path.join(openclawHome, "secrets.json");
+    writeFile(secretPath, JSON.stringify({ discord: { token: "file-token" } }));
+    writeFile(
+      path.join(openclawHome, "openclaw.json"),
+      [
+        "{",
+        "  secrets: {",
+        "    providers: {",
+        `      localfile: { source: 'file', path: '${secretPath}', mode: 'json' },`,
+        "    },",
+        "  },",
+        "  channels: {",
+        "    discord: { token: { source: 'file', provider: 'localfile', id: '/discord/token' } },",
+        "  },",
+        "}",
+        ""
+      ].join("\n")
+    );
+
+    const [candidate] = discoverImportCandidates("openclaw", {
+      openclawHome,
+      env: { DISCORD_BOT_TOKEN: "stale-env-token" },
+      cwd: openclawHome
+    });
+
+    expect(candidate?.kind).toBe("secret");
+    if (!candidate || candidate.kind !== "secret") {
+      throw new Error("Expected OpenClaw file SecretRef candidate.");
+    }
+    expect(candidate.endpointId).toBe("openclaw");
+    expect((await resolveSecretImportCandidate(candidate)).token).toBe("file-token");
+  });
+
   it("resolves OpenClaw exec SecretRefs after confirmation", async () => {
     const openclawHome = tempDir("aide-openclaw-exec-");
     const scriptPath = path.join(openclawHome, "resolve-secret.sh");
