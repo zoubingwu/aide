@@ -5,6 +5,7 @@ import { execa } from "execa";
 import { afterEach, describe, expect, it } from "vitest";
 import { discordPreparationGuide } from "../src/commands/endpoints.js";
 import { ensureAideHome, writeConfig } from "../src/lib/config.js";
+import packageJson from "../package.json" with { type: "json" };
 
 const cleanupPaths: string[] = [];
 
@@ -18,6 +19,7 @@ describe("CLI help", () => {
   it("shows background start command", async () => {
     const { stdout } = await runCli("--help");
 
+    expect(stdout.split("\n")[0]).toBe(`aide/${packageJson.version}`);
     expect(stdout).toContain("start     Start Aide runtime in the background");
     expect(stdout).toContain("config    Manage config");
     expect(stdout).toContain("help      Show detailed help");
