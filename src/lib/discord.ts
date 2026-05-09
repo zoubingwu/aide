@@ -18,6 +18,7 @@ const DISCORD_MESSAGE_CHUNK_BUFFER = 100;
 const DISCORD_MESSAGE_CHUNK_SIZE = DISCORD_MESSAGE_CONTENT_LIMIT - DISCORD_MESSAGE_CHUNK_BUFFER;
 const EMPTY_SUCCESS_REACTION = "✅";
 const EMPTY_SUCCESS_REACTION_FALLBACK = "Done.";
+const MARKDOWN_FENCE_MARKER_REOPEN_LIMIT = 80;
 const MARKDOWN_FENCE_INFO_REOPEN_LIMIT = 80;
 
 interface MarkdownFenceState {
@@ -356,6 +357,10 @@ function parseOpeningMarkdownFence(line: string): MarkdownFenceState | undefined
   const info = (match[2] ?? "").trimEnd();
 
   if (marker.length === 0) {
+    return undefined;
+  }
+
+  if (marker.length > MARKDOWN_FENCE_MARKER_REOPEN_LIMIT) {
     return undefined;
   }
 

@@ -93,6 +93,15 @@ describe("discord delivery", () => {
     expect(chunks.at(1)).toMatch(/^```\n/);
   });
 
+  it("keeps overlong code fence markers within the Discord limit", () => {
+    const fence = "`".repeat(1_000);
+    const response = [fence, "a".repeat(2_500), fence].join("\n");
+    const chunks = chunkDiscordMessage(response);
+
+    expect(chunks.length).toBeLessThanOrEqual(3);
+    expect(chunks.every((chunk) => chunk.length <= 2_000)).toBe(true);
+  });
+
   it("keeps default mention-only endpoints off the privileged message content intent", () => {
     expect(discordGatewayIntents(endpoint)).not.toContain(GatewayIntentBits.MessageContent);
   });
