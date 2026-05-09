@@ -227,6 +227,54 @@ describe("import sources", () => {
     ]);
   });
 
+  it("fails missing explicit OpenClaw config paths without falling back", () => {
+    const openclawHome = tempDir("aide-openclaw-explicit-missing-home-");
+    const explicitHome = tempDir("aide-openclaw-explicit-missing-");
+    writeFile(
+      path.join(openclawHome, "openclaw.json"),
+      [
+        "{",
+        "  channels: { discord: { token: 'fallback-token' } },",
+        "}",
+        ""
+      ].join("\n")
+    );
+
+    expect(() => discoverImportCandidates("openclaw", {
+      openclawHome,
+      openclawConfigPath: path.join(explicitHome, "missing.json"),
+      env: { DISCORD_BOT_TOKEN: "env-token" },
+      cwd: tempDir("aide-openclaw-cwd-")
+    })).toThrow("OpenClaw config not found");
+  });
+
+  it("reads dotenv files next to explicit OpenClaw config paths", () => {
+    const openclawHome = tempDir("aide-openclaw-explicit-home-");
+    const explicitHome = tempDir("aide-openclaw-explicit-");
+    writeFile(path.join(openclawHome, ".env"), "DISCORD_BOT_TOKEN=home-token\n");
+    writeFile(path.join(explicitHome, ".env"), "DISCORD_BOT_TOKEN=explicit-token\n");
+    writeFile(
+      path.join(explicitHome, "custom-openclaw.json"),
+      [
+        "{",
+        "  channels: { discord: { token: '${DISCORD_BOT_TOKEN}' } },",
+        "}",
+        ""
+      ].join("\n")
+    );
+
+    const candidates = readyImportCandidates(discoverImportCandidates("openclaw", {
+      openclawHome,
+      openclawConfigPath: path.join(explicitHome, "custom-openclaw.json"),
+      env: {},
+      cwd: tempDir("aide-openclaw-cwd-")
+    }));
+
+    expect(candidates.map((candidate) => [candidate.sourcePath, candidate.token])).toEqual([
+      [path.join(explicitHome, "custom-openclaw.json"), "explicit-token"]
+    ]);
+  });
+
   it("skips OpenClaw account token templates that cannot be resolved", () => {
     const openclawHome = tempDir("aide-openclaw-missing-account-env-");
     writeFile(

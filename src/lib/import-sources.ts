@@ -411,8 +411,10 @@ function openClawEnv(
   const paths = [
     path.join(os.homedir(), ".config", "openclaw", "gateway.env"),
     path.join(openclawConfig.home, ".env"),
+    openclawConfig.path ? path.join(path.dirname(openclawConfig.path), ".env") : undefined,
     path.join(cwd, ".env")
-  ];
+  ].filter((filePath): filePath is string => filePath !== undefined);
+  const envPaths = [...new Set(paths)];
   const values: Record<string, string> = {};
   const configEnv = objectPath(openclawConfig.config, ["env"]);
 
@@ -420,7 +422,7 @@ function openClawEnv(
     Object.assign(values, openClawConfigEnvValues(configEnv));
   }
 
-  for (const filePath of paths) {
+  for (const filePath of envPaths) {
     Object.assign(values, readEnvFile(filePath));
   }
 
@@ -429,7 +431,7 @@ function openClawEnv(
 
   return {
     values,
-    paths: paths.filter((filePath) => fs.existsSync(filePath))
+    paths: envPaths.filter((filePath) => fs.existsSync(filePath))
   };
 }
 

@@ -17,17 +17,25 @@ export interface OpenClawConfigOptions {
 export interface OpenClawConfigResolution {
   home: string;
   path?: string | undefined;
+  exists: boolean;
+  explicit: boolean;
   config: unknown;
 }
 
 export function resolveOpenClawConfig(options: OpenClawConfigOptions = {}): OpenClawConfigResolution {
   const home = resolveOpenClawHome(options);
-  const configPath = resolveOpenClawConfigPath(options, home);
+  const configPath = openClawConfigPath(options, home);
+
+  if (configPath.explicit && !configPath.exists) {
+    throw new Error(`OpenClaw config not found: ${configPath.path}`);
+  }
 
   return {
     home,
-    path: configPath,
-    config: readOpenClawConfigObject(configPath)
+    path: configPath.path,
+    exists: configPath.exists,
+    explicit: configPath.explicit,
+    config: readOpenClawConfigObject(configPath.exists ? configPath.path : undefined)
   };
 }
 
@@ -83,12 +91,25 @@ export function openClawShellEnvValues(params: {
   return values;
 }
 
-function resolveOpenClawConfigPath(options: OpenClawConfigOptions, home: string): string | undefined {
+function openClawConfigPath(options: OpenClawConfigOptions, home: string): { path?: string | undefined; exists: boolean; explicit: boolean } {
   const env = options.env ?? process.env;
   const explicitPath = options.openclawConfigPath ?? env.OPENCLAW_CONFIG_PATH;
+
+  if (explicitPath) {
+    const filePath = expandHome(explicitPath);
+    return {
+      path: filePath,
+      exists: fs.existsSync(filePath),
+      explicit: true
+    };
+  }
+
   const fallbackPath = path.join(home, "openclaw.json");
-  const candidates = [explicitPath ? expandHome(explicitPath) : undefined, fallbackPath].filter(Boolean) as string[];
-  return candidates.find((filePath) => fs.existsSync(filePath));
+  return {
+    path: fs.existsSync(fallbackPath) ? fallbackPath : undefined,
+    exists: fs.existsSync(fallbackPath),
+    explicit: false
+  };
 }
 
 function readJson5Object(filePath: string | undefined): unknown {
