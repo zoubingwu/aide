@@ -83,7 +83,7 @@ async function printDoctorSummary(home: string): Promise<DoctorCheck[]> {
 async function promptRuntimeStart(home: string, checks: DoctorCheck[], importedCount: number): Promise<void> {
   const endpoints = loadEndpoints(home).filter((endpoint) => endpoint.enabled);
   const runtime = runtimeDisplayStatus(home);
-  const failedChecks = checks.filter((check) => check.status === "fail");
+  const failedChecks = blockingDoctorFailures(checks, runtime.status);
 
   if (runtime.status === "running") {
     if (importedCount === 0) {
@@ -140,6 +140,20 @@ async function promptRuntimeRestart(home: string): Promise<void> {
 
   stopRuntime(home);
   await startRuntimeInBackground(home);
+}
+
+function blockingDoctorFailures(
+  checks: DoctorCheck[],
+  runtimeStatus: ReturnType<typeof runtimeDisplayStatus>["status"]
+): DoctorCheck[] {
+  return checks.filter((check) => check.status === "fail" && isBlockingDoctorFailure(check, runtimeStatus));
+}
+
+function isBlockingDoctorFailure(
+  check: DoctorCheck,
+  runtimeStatus: ReturnType<typeof runtimeDisplayStatus>["status"]
+): boolean {
+  return check.label !== "runtime PID" || runtimeStatus === "running";
 }
 
 function errorMessage(error: unknown): string {

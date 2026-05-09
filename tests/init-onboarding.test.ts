@@ -121,6 +121,31 @@ describe("init onboarding", () => {
     expect(output).toContain("Run `aide restart` to use imported endpoints.");
     expect(output).not.toContain("Aide runtime is running with PID");
   });
+
+  it("allows startup when only the stale runtime PID doctor check fails", async () => {
+    const home = tempDir("aide-init-home-");
+    seedDiscoveryEnv();
+    withStdinTty(true);
+    prompts.inject([false]);
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    writeEndpoints(home, [endpoint]);
+    ensureEndpointWorkspace(home, endpoint);
+    writeRuntimeState(home, {
+      status: "running",
+      home,
+      pid: 999_999_999,
+      startedAt: new Date("2026-05-09T00:00:00.000Z").toISOString()
+    });
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await initCommand({ home });
+
+    const output = loggedText(log);
+    expect(output).toContain("x runtime PID - 999999999");
+    expect(output).toContain("Run `aide start` when ready.");
+    expect(output).not.toContain("Runtime start needs passing doctor checks.");
+  });
 });
 
 function mockExeca() {
