@@ -157,11 +157,55 @@ describe("codex", () => {
       path.join(sessionDir, `rollout-2026-05-10T01-12-57-${threadId}.jsonl`),
       [
         JSON.stringify({
+          type: "event_msg",
+          payload: {
+            type: "token_count",
+            info: {
+              total_token_usage: {
+                input_tokens: 20172,
+                cached_input_tokens: 7552,
+                output_tokens: 20,
+                reasoning_output_tokens: 9,
+                total_tokens: 20192
+              },
+              last_token_usage: {
+                input_tokens: 20172,
+                cached_input_tokens: 7552,
+                output_tokens: 20,
+                reasoning_output_tokens: 9,
+                total_tokens: 20192
+              }
+            }
+          }
+        }),
+        JSON.stringify({
           type: "response_item",
           payload: {
             type: "message",
             role: "user",
             content: [{ type: "input_text", text: prompt }]
+          }
+        }),
+        JSON.stringify({
+          type: "event_msg",
+          payload: {
+            type: "token_count",
+            info: {
+              total_token_usage: {
+                input_tokens: 30000,
+                cached_input_tokens: 17392,
+                output_tokens: 24,
+                reasoning_output_tokens: 9,
+                total_tokens: 30024
+              },
+              last_token_usage: {
+                input_tokens: 9828,
+                cached_input_tokens: 9840,
+                output_tokens: 4,
+                reasoning_output_tokens: 0,
+                total_tokens: 9832
+              }
+            }
           }
         }),
         JSON.stringify({
@@ -177,11 +221,11 @@ describe("codex", () => {
                 total_tokens: 40408
               },
               last_token_usage: {
-                input_tokens: 20207,
-                cached_input_tokens: 19840,
-                output_tokens: 9,
+                input_tokens: 10379,
+                cached_input_tokens: 10000,
+                output_tokens: 5,
                 reasoning_output_tokens: 0,
-                total_tokens: 20216
+                total_tokens: 10384
               }
             }
           }
@@ -224,9 +268,17 @@ describe("codex", () => {
         codex: {
           threadId,
           stdoutUsage: { input_tokens: 40379, output_tokens: 29 },
+          sessionStartTokenCount: {
+            total_token_usage: {
+              total_tokens: 20192
+            }
+          },
           sessionTokenCount: {
             last_token_usage: {
-              total_tokens: 20216
+              total_tokens: 10384
+            },
+            total_token_usage: {
+              total_tokens: 40408
             }
           }
         }

@@ -178,6 +178,7 @@ export function extractCodexUsage(stdout: string, prompt?: string): AgentUsage |
       codex: {
         threadId,
         stdoutUsage,
+        sessionStartTokenCount: sessionUsage?.startRaw,
         sessionTokenCount: sessionUsage?.raw
       }
     }
@@ -327,7 +328,13 @@ function extractAgentMessage(value: unknown): string | undefined {
   return stringifyContent(record.text) ?? stringifyContent(record.content) ?? stringifyContent(record.output);
 }
 
-function readCodexSessionUsage(threadId: string, prompt?: string): { usage: AgentUsage; raw: Record<string, unknown> } | undefined {
+interface CodexSessionUsage {
+  usage: AgentUsage;
+  raw: Record<string, unknown>;
+  startRaw?: Record<string, unknown> | undefined;
+}
+
+function readCodexSessionUsage(threadId: string, prompt?: string): CodexSessionUsage | undefined {
   const filePath = findCodexSessionFile(threadId);
 
   if (!filePath) {
@@ -335,6 +342,8 @@ function readCodexSessionUsage(threadId: string, prompt?: string): { usage: Agen
   }
 
   let tokenCountInfo: Record<string, unknown> | undefined;
+  let matchedStartUsage: AgentUsage | undefined;
+  let matchedStartTokenCountInfo: Record<string, unknown> | undefined;
   let matchedTokenCountInfo: Record<string, unknown> | undefined;
   let inMatchedTurn = false;
 
@@ -355,6 +364,8 @@ function readCodexSessionUsage(threadId: string, prompt?: string): { usage: Agen
 
     if (prompt && isCodexSessionUserMessage(payload, prompt)) {
       inMatchedTurn = true;
+      matchedStartUsage = codexTotalUsageDetails(tokenCountInfo);
+      matchedStartTokenCountInfo = tokenCountInfo;
       matchedTokenCountInfo = undefined;
       continue;
     }
@@ -376,17 +387,19 @@ function readCodexSessionUsage(threadId: string, prompt?: string): { usage: Agen
 
   tokenCountInfo = matchedTokenCountInfo ?? tokenCountInfo;
 
-  if (!tokenCountInfo || !isRecord(tokenCountInfo.last_token_usage)) {
+  if (!tokenCountInfo) {
     return undefined;
   }
 
-  const usage = codexUsageDetails(tokenCountInfo.last_token_usage);
+  const usage =
+    usageDelta(matchedStartUsage, codexTotalUsageDetails(matchedTokenCountInfo)) ??
+    (isRecord(tokenCountInfo.last_token_usage) ? codexUsageDetails(tokenCountInfo.last_token_usage) : undefined);
 
   if (!usage) {
     return undefined;
   }
 
-  return { usage, raw: tokenCountInfo };
+  return { usage, raw: tokenCountInfo, startRaw: matchedStartTokenCountInfo };
 }
 
 function isCodexSessionUserMessage(payload: Record<string, unknown>, prompt: string): boolean {
@@ -454,6 +467,40 @@ function codexUsageDetails(value: unknown): AgentUsage | undefined {
     cachedInputTokens: tokenCount(value.cached_input_tokens),
     reasoningOutputTokens: tokenCount(value.reasoning_output_tokens)
   };
+}
+
+function codexTotalUsageDetails(tokenCountInfo: unknown): AgentUsage | undefined {
+  return isRecord(tokenCountInfo) ? codexUsageDetails(tokenCountInfo.total_token_usage) : undefined;
+}
+
+function usageDelta(start: AgentUsage | undefined, end: AgentUsage | undefined): AgentUsage | undefined {
+  if (!end) {
+    return undefined;
+  }
+
+  const inputTokens = tokenDelta(start?.inputTokens, end.inputTokens);
+  const outputTokens = tokenDelta(start?.outputTokens, end.outputTokens);
+
+  if (inputTokens === undefined || outputTokens === undefined) {
+    return undefined;
+  }
+
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens: tokenDelta(start?.totalTokens, end.totalTokens) ?? inputTokens + outputTokens,
+    cachedInputTokens: tokenDelta(start?.cachedInputTokens, end.cachedInputTokens),
+    reasoningOutputTokens: tokenDelta(start?.reasoningOutputTokens, end.reasoningOutputTokens)
+  };
+}
+
+function tokenDelta(start: number | undefined, end: number | undefined): number | undefined {
+  if (end === undefined) {
+    return undefined;
+  }
+
+  const value = end - (start ?? 0);
+  return value >= 0 ? value : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
