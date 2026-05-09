@@ -62,8 +62,8 @@ export function planEndpointImports(existingEndpoints: Endpoint[], candidates: R
 export function importPlanEntryEndpoint(entry: ImportPlanEntry): Endpoint {
   return {
     id: entry.endpointId,
-    provider: "discord",
-    enabled: entry.candidate.disabledReason === undefined,
+    provider: entry.candidate.provider,
+    enabled: true,
     token: entry.candidate.token,
     trigger: entry.candidate.trigger,
     agent: defaultCodexAgentConfig()

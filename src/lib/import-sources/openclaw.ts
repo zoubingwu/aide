@@ -9,15 +9,15 @@ import {
 } from "../openclaw-config.js";
 import {
   envToStrings,
-  endpointIdFor,
   getBoolean,
   isRecord,
   isUsableSecret,
   objectHasOwn,
   objectPath,
+  providerEndpointIdFor,
   readEnvFile
 } from "./helpers.js";
-import { openClawAccessControlDisabledReason } from "./openclaw-access.js";
+import { openClawAccessControlWarning } from "./openclaw-access.js";
 import {
   openClawConfirmableSecret,
   openClawConfirmableShellEnvSecret,
@@ -54,9 +54,11 @@ export function discoverOpenClawCandidates(options: ImportDiscoveryOptions): Imp
     source: "openclaw" as const,
     sourceName: "default",
     sourcePath: openclawConfig.path ?? env.paths[0] ?? openclawConfig.home,
-    endpointId: endpointIdFor("openclaw", "default"),
+    provider: "discord" as const,
+    sourceChannel: "discord",
+    endpointId: providerEndpointIdFor("discord", "default"),
     trigger: defaultEndpointTriggerConfig(),
-    disabledReason: openClawAccessControlDisabledReason(channelDefaults, discord, defaultAccount)
+    warning: openClawAccessControlWarning(channelDefaults, discord, defaultAccount)
   };
 
   if (!defaultAccountDisabled) {
@@ -97,9 +99,11 @@ export function discoverOpenClawCandidates(options: ImportDiscoveryOptions): Imp
         source: "openclaw" as const,
         sourceName: accountId,
         sourcePath: openclawConfig.path ?? env.paths[0] ?? openclawConfig.home,
-        endpointId: endpointIdFor("openclaw", accountId),
+        provider: "discord" as const,
+        sourceChannel: "discord",
+        endpointId: providerEndpointIdFor("discord", accountId),
         trigger: defaultEndpointTriggerConfig(),
-        disabledReason: openClawAccessControlDisabledReason(channelDefaults, discord, account)
+        warning: openClawAccessControlWarning(channelDefaults, discord, account)
       };
 
       if (isUsableSecret(token)) {

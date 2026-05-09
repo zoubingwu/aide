@@ -1,4 +1,4 @@
-import type { EndpointTriggerConfig } from "../types.js";
+import type { EndpointTriggerConfig, Provider } from "../types.js";
 
 export type ImportSource = "hermes" | "openclaw" | "all";
 
@@ -9,9 +9,11 @@ export interface ImportCandidateBase {
   source: Exclude<ImportSource, "all">;
   sourceName: string;
   sourcePath: string;
+  provider: Provider;
+  sourceChannel: string;
   endpointId: string;
   trigger: EndpointTriggerConfig;
-  disabledReason?: string | undefined;
+  warning?: string | undefined;
 }
 
 export interface ReadyImportCandidate extends ImportCandidateBase {
