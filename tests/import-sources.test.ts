@@ -297,6 +297,38 @@ describe("import sources", () => {
     expect(candidates.map((candidate) => candidate.token)).toEqual(["vars-token"]);
   });
 
+  it("reads missing OpenClaw Discord token env values from shellEnv", () => {
+    const openclawHome = tempDir("aide-openclaw-shell-env-");
+    const shellPath = path.join(openclawHome, "shell-env.sh");
+    writeFile(
+      shellPath,
+      [
+        "#!/bin/sh",
+        "printf 'DISCORD_BOT_TOKEN=shell-token\\n'",
+        ""
+      ].join("\n")
+    );
+    fs.chmodSync(shellPath, 0o700);
+    writeFile(
+      path.join(openclawHome, "openclaw.json"),
+      [
+        "{",
+        "  env: { shellEnv: { enabled: true, timeoutMs: 5000 } },",
+        "  channels: { discord: { token: '${DISCORD_BOT_TOKEN}' } },",
+        "}",
+        ""
+      ].join("\n")
+    );
+
+    const candidates = readyImportCandidates(discoverImportCandidates("openclaw", {
+      openclawHome,
+      env: { SHELL: shellPath },
+      cwd: tempDir("aide-openclaw-cwd-")
+    }));
+
+    expect(candidates.map((candidate) => candidate.token)).toEqual(["shell-token"]);
+  });
+
   it("deduplicates by token and allocates endpoint ids around conflicts", () => {
     const existing = [endpoint("openclaw-work", "existing-token"), endpoint("already", "default-token")];
     const candidates = [

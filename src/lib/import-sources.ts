@@ -10,6 +10,7 @@ import {
 } from "./config.js";
 import {
   openClawConfigEnvValues,
+  openClawShellEnvValues,
   resolveOpenClawConfig,
   type OpenClawConfigResolution
 } from "./openclaw-config.js";
@@ -301,7 +302,6 @@ function hermesTriggerConfig(config: unknown, env: Record<string, string>): Endp
 
 function discoverOpenClawCandidates(options: ImportDiscoveryOptions): ImportCandidate[] {
   const openclawConfig = resolveOpenClawConfig(options);
-  const env = openClawEnv(options, openclawConfig);
   const config = openclawConfig.config;
   const discord = objectPath(config, ["channels", "discord"]);
 
@@ -319,6 +319,13 @@ function discoverOpenClawCandidates(options: ImportDiscoveryOptions): ImportCand
     objectHasOwn(defaultAccount, "token")
   );
   const defaultTokenInput = hasDefaultAccountToken ? defaultAccount?.token : discord?.token;
+  const env = openClawEnv(options, openclawConfig, openClawTokenEnvKeys({
+    accounts,
+    config,
+    defaultAccountDisabled,
+    hasDefaultAccountToken,
+    defaultTokenInput
+  }));
   const defaultToken = resolveOpenClawSecret(defaultTokenInput, env.values, config) ??
     (hasDefaultAccountToken ? undefined : env.values.DISCORD_BOT_TOKEN);
   const defaultCandidate = {
@@ -391,7 +398,8 @@ function discoverOpenClawCandidates(options: ImportDiscoveryOptions): ImportCand
 
 function openClawEnv(
   options: ImportDiscoveryOptions,
-  openclawConfig: OpenClawConfigResolution = resolveOpenClawConfig(options)
+  openclawConfig: OpenClawConfigResolution = resolveOpenClawConfig(options),
+  shellEnvKeys: Iterable<string> = []
 ): SourceEnv {
   const env = options.env ?? process.env;
   const cwd = options.cwd ?? process.cwd();
@@ -412,11 +420,66 @@ function openClawEnv(
   }
 
   Object.assign(values, envToStrings(env));
+  Object.assign(values, openClawShellEnvValues({ configEnv, values, keys: shellEnvKeys }));
 
   return {
     values,
     paths: paths.filter((filePath) => fs.existsSync(filePath))
   };
+}
+
+function openClawTokenEnvKeys(params: {
+  accounts: Record<string, unknown> | undefined;
+  config: unknown;
+  defaultAccountDisabled: boolean;
+  hasDefaultAccountToken: boolean;
+  defaultTokenInput: unknown;
+}): string[] {
+  const keys = new Set<string>();
+
+  if (!params.defaultAccountDisabled) {
+    addOpenClawTokenEnvKeys(keys, params.defaultTokenInput, params.config);
+
+    if (!params.hasDefaultAccountToken) {
+      keys.add("DISCORD_BOT_TOKEN");
+    }
+  }
+
+  if (params.accounts) {
+    for (const [accountId, account] of Object.entries(params.accounts)) {
+      if (accountId !== "default" && isRecord(account) && getBoolean(account.enabled) !== false) {
+        addOpenClawTokenEnvKeys(keys, account.token, params.config);
+      }
+    }
+  }
+
+  return [...keys];
+}
+
+function addOpenClawTokenEnvKeys(keys: Set<string>, value: unknown, config: unknown): void {
+  if (typeof value === "string") {
+    const envTemplateRef = openClawEnvTemplateRef(value, config);
+
+    if (envTemplateRef) {
+      if (openClawEnvSecretAllowed(envTemplateRef, config)) {
+        keys.add(envTemplateRef.id);
+      }
+      return;
+    }
+
+    for (const match of value.matchAll(/\$\{([A-Z][A-Z0-9_]{0,127})\}/g)) {
+      keys.add(match[1] ?? "");
+    }
+
+    keys.delete("");
+    return;
+  }
+
+  const ref = openClawSecretRef(value, config);
+
+  if (ref?.source === "env" && openClawEnvSecretAllowed(ref, config)) {
+    keys.add(ref.id);
+  }
 }
 
 function resolveOpenClawSecret(value: unknown, env: Record<string, string>, config?: unknown): string | undefined {

@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import JSON5 from "json5";
 import { expandHome } from "./paths.js";
@@ -53,6 +54,35 @@ export function openClawConfigEnvValues(value: Record<string, unknown>): Record<
   };
 }
 
+export function openClawShellEnvValues(params: {
+  configEnv?: Record<string, unknown> | undefined;
+  values: Record<string, string>;
+  keys: Iterable<string>;
+}): Record<string, string> {
+  if (!openClawShellEnvEnabled(params.configEnv, params.values)) {
+    return {};
+  }
+
+  const missingKeys = [...new Set(params.keys)].filter((key) => params.values[key] === undefined);
+
+  if (missingKeys.length === 0) {
+    return {};
+  }
+
+  const shellEnv = readLoginShellEnv(params.values, openClawShellEnvTimeoutMs(params.configEnv, params.values));
+  const values: Record<string, string> = {};
+
+  for (const key of missingKeys) {
+    const value = shellEnv[key];
+
+    if (value !== undefined) {
+      values[key] = value;
+    }
+  }
+
+  return values;
+}
+
 function resolveOpenClawConfigPath(options: OpenClawConfigOptions, home: string): string | undefined {
   const env = options.env ?? process.env;
   const explicitPath = options.openclawConfigPath ?? env.OPENCLAW_CONFIG_PATH;
@@ -68,6 +98,66 @@ function readJson5Object(filePath: string | undefined): unknown {
 
   const content = fs.readFileSync(filePath, "utf8").trim();
   return content.length > 0 ? JSON5.parse(content) : undefined;
+}
+
+function openClawShellEnvEnabled(
+  configEnv: Record<string, unknown> | undefined,
+  values: Record<string, string>
+): boolean {
+  const shellEnv = objectConfig(configEnv?.shellEnv);
+  return getBoolean(shellEnv.enabled) ?? parseBoolean(values.OPENCLAW_LOAD_SHELL_ENV) ?? false;
+}
+
+function openClawShellEnvTimeoutMs(
+  configEnv: Record<string, unknown> | undefined,
+  values: Record<string, string>
+): number {
+  const shellEnv = objectConfig(configEnv?.shellEnv);
+  return numberConfig(shellEnv.timeoutMs) ?? numberFromString(values.OPENCLAW_SHELL_ENV_TIMEOUT_MS) ?? 15_000;
+}
+
+function readLoginShellEnv(values: Record<string, string>, timeoutMs: number): Record<string, string> {
+  const output = readShellEnvOutput(values, timeoutMs);
+  return parseEnvOutput(output);
+}
+
+function readShellEnvOutput(values: Record<string, string>, timeoutMs: number): string {
+  if (process.platform === "win32") {
+    return execFileSync(values.ComSpec ?? process.env.ComSpec ?? "cmd.exe", ["/d", "/s", "/c", "set"], {
+      encoding: "utf8",
+      env: values,
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: timeoutMs
+    });
+  }
+
+  const shellPath = values.SHELL ?? process.env.SHELL ?? "/bin/sh";
+  const envCommand = fs.existsSync("/usr/bin/env") ? "/usr/bin/env" : "env";
+
+  try {
+    return execFileSync(shellPath, ["-lc", envCommand], {
+      encoding: "utf8",
+      env: values,
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: timeoutMs
+    });
+  } catch (error) {
+    throw new Error(`OpenClaw shellEnv import failed: ${errorMessage(error)}`);
+  }
+}
+
+function parseEnvOutput(output: string): Record<string, string> {
+  const values: Record<string, string> = {};
+
+  for (const line of output.split(/\r?\n/)) {
+    const equalsIndex = line.indexOf("=");
+
+    if (equalsIndex > 0) {
+      values[line.slice(0, equalsIndex)] = line.slice(equalsIndex + 1);
+    }
+  }
+
+  return values;
 }
 
 function resolveOpenClawConfigIncludes(
@@ -225,4 +315,47 @@ function objectHasOwn(value: Record<string, unknown>, key: string): boolean {
 
 function isUnsafeObjectKey(key: string): boolean {
   return key === "__proto__" || key === "constructor" || key === "prototype";
+}
+
+function parseBoolean(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase();
+
+  if (["true", "1", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+
+  if (["false", "0", "no", "off"].includes(normalized)) {
+    return false;
+  }
+
+  return undefined;
+}
+
+function getBoolean(value: unknown): boolean | undefined {
+  return parseBoolean(value);
+}
+
+function numberConfig(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function numberFromString(value: string | undefined): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
