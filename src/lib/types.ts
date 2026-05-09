@@ -104,4 +104,5 @@ export interface DoctorCheck {
   status: "ok" | "warn" | "fail";
   label: string;
   detail?: string;
+  endpointId?: string;
 }

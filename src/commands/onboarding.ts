@@ -83,7 +83,8 @@ async function printDoctorSummary(home: string): Promise<DoctorCheck[]> {
 async function promptRuntimeStart(home: string, checks: DoctorCheck[], importedCount: number): Promise<void> {
   const endpoints = loadEndpoints(home).filter((endpoint) => endpoint.enabled);
   const runtime = runtimeDisplayStatus(home);
-  const failedChecks = blockingDoctorFailures(checks, runtime.status);
+  const enabledEndpointIds = new Set(endpoints.map((endpoint) => endpoint.id));
+  const failedChecks = blockingDoctorFailures(checks, runtime.status, enabledEndpointIds);
 
   if (runtime.status === "running") {
     if (importedCount === 0) {
@@ -144,15 +145,24 @@ async function promptRuntimeRestart(home: string): Promise<void> {
 
 function blockingDoctorFailures(
   checks: DoctorCheck[],
-  runtimeStatus: ReturnType<typeof runtimeDisplayStatus>["status"]
+  runtimeStatus: ReturnType<typeof runtimeDisplayStatus>["status"],
+  enabledEndpointIds: Set<string>
 ): DoctorCheck[] {
-  return checks.filter((check) => check.status === "fail" && isBlockingDoctorFailure(check, runtimeStatus));
+  return checks.filter((check) =>
+    check.status === "fail" &&
+    isBlockingDoctorFailure(check, runtimeStatus, enabledEndpointIds)
+  );
 }
 
 function isBlockingDoctorFailure(
   check: DoctorCheck,
-  runtimeStatus: ReturnType<typeof runtimeDisplayStatus>["status"]
+  runtimeStatus: ReturnType<typeof runtimeDisplayStatus>["status"],
+  enabledEndpointIds: Set<string>
 ): boolean {
+  if (check.endpointId && !enabledEndpointIds.has(check.endpointId)) {
+    return false;
+  }
+
   return check.label !== "runtime PID" || runtimeStatus === "running";
 }
 

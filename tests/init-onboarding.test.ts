@@ -146,6 +146,32 @@ describe("init onboarding", () => {
     expect(output).toContain("Run `aide start` when ready.");
     expect(output).not.toContain("Runtime start needs passing doctor checks.");
   });
+
+  it("allows startup when disabled endpoints have doctor failures", async () => {
+    const home = tempDir("aide-init-home-");
+    seedDiscoveryEnv();
+    withStdinTty(true);
+    prompts.inject([false]);
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    writeEndpoints(home, [
+      endpoint,
+      {
+        ...discordEndpoint(),
+        id: "disabled-stale",
+        enabled: false
+      }
+    ]);
+    ensureEndpointWorkspace(home, endpoint);
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await initCommand({ home });
+
+    const output = loggedText(log);
+    expect(output).toContain("x disabled-stale workspace");
+    expect(output).toContain("Run `aide start` when ready.");
+    expect(output).not.toContain("Runtime start needs passing doctor checks.");
+  });
 });
 
 function mockExeca() {

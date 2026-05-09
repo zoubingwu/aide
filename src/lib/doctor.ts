@@ -66,15 +66,25 @@ export async function runDoctorChecks(home: string): Promise<DoctorCheck[]> {
       checks.push({
         status: workspace.exists ? "ok" : "fail",
         label: `${endpoint.id} workspace`,
-        detail: displayPath(workspace.path)
+        detail: displayPath(workspace.path),
+        endpointId: endpoint.id
       });
-      checks.push({ status: workspace.soulExists ? "ok" : "fail", label: `${endpoint.id} SOUL.md` });
-      checks.push({ status: workspace.agentsExists ? "ok" : "fail", label: `${endpoint.id} AGENTS.md` });
+      checks.push({
+        status: workspace.soulExists ? "ok" : "fail",
+        label: `${endpoint.id} SOUL.md`,
+        endpointId: endpoint.id
+      });
+      checks.push({
+        status: workspace.agentsExists ? "ok" : "fail",
+        label: `${endpoint.id} AGENTS.md`,
+        endpointId: endpoint.id
+      });
 
       if (endpoint.provider === "discord" && endpoint.enabled) {
         checks.push({
           status: endpoint.token ? "ok" : "fail",
-          label: `${endpoint.id} Discord token`
+          label: `${endpoint.id} Discord token`,
+          endpointId: endpoint.id
         });
       }
     }
@@ -100,12 +110,13 @@ async function agentCheck(provider: AgentProvider, command: string, endpointId: 
   const result = await execa(command, ["--version"], { reject: false });
 
   if (result.exitCode === 0) {
-    return { status: "ok", label, detail: result.stdout.trim() };
+    return { status: "ok", label, detail: result.stdout.trim(), endpointId };
   }
 
   return {
     status: "fail",
     label,
-    detail: `Install ${agentProviderLabel(provider)} and run \`aide doctor\` again.`
+    detail: `Install ${agentProviderLabel(provider)} and run \`aide doctor\` again.`,
+    endpointId
   };
 }
