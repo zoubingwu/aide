@@ -6,6 +6,7 @@ import {
   configPath,
   displayPath,
   logsDir,
+  pendingDeliveriesPath,
   runtimePath,
   schedulesPath,
   usagePath,
@@ -93,6 +94,7 @@ export function ensureAideHome(home: string): void {
   writeFileIfMissing(configPath(home), `${stringifyConfig(defaultConfig())}\n`, 0o600);
   secureConfigFile(home);
   writeFileIfMissing(schedulesPath(home), `${JSON.stringify({ schedules: [] }, null, 2)}\n`);
+  writeFileIfMissing(pendingDeliveriesPath(home), `${JSON.stringify({ deliveries: [] }, null, 2)}\n`);
   writeFileIfMissing(runtimePath(home), `${JSON.stringify(defaultRuntimeState(home), null, 2)}\n`);
   writeFileIfMissing(usagePath(home), "");
 }

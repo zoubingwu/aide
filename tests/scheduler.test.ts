@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { defaultCodexAgentConfig, defaultEndpointTriggerConfig, ensureAideHome, writeEndpoints } from "../src/lib/config.js";
+import { loadPendingDeliveries } from "../src/lib/delivery-retries.js";
 import { RUNTIME_LOG_FILE } from "../src/lib/logging.js";
 import { logsDir, schedulesPath } from "../src/lib/paths.js";
 import { executeScheduleOnce, RuntimeScheduler } from "../src/lib/scheduler.js";
@@ -83,7 +84,7 @@ describe("scheduler execution", () => {
     expect(content).toContain('"id": "bad-timezone"');
   });
 
-  it("keeps a once schedule after delivery failure", async () => {
+  it("queues a once schedule after delivery failure without keeping the schedule", async () => {
     const home = tempHome();
     ensureAideHome(home);
     const endpoint = discordEndpoint();
@@ -100,7 +101,17 @@ describe("scheduler execution", () => {
       deliver: vi.fn().mockRejectedValue(new Error("send failed"))
     });
 
-    expect(loadSchedules(home)).toEqual([schedule]);
+    expect(loadSchedules(home)).toEqual([]);
+    expect(loadPendingDeliveries(home)).toMatchObject([
+      {
+        scheduleId: schedule.id,
+        endpoint: endpoint.id,
+        target: schedule.target,
+        response: "done",
+        attempts: 1,
+        lastError: "send failed"
+      }
+    ]);
   });
 
   it("removes a once schedule after successful agent run with no text response", async () => {
@@ -149,7 +160,152 @@ describe("scheduler execution", () => {
     expect(loadSchedules(home)).toEqual([schedule]);
   });
 
-  it("preserves one-shot retry delays across reloads", async () => {
+  it("retries recurring schedules after agent failures", async () => {
+    vi.useFakeTimers({ now: new Date("2026-05-10T10:00:00.000Z") });
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = dailySchedule();
+    const handleRequest = vi.fn()
+      .mockResolvedValueOnce(agentResult({ exitCode: 1, response: "network unavailable" }))
+      .mockResolvedValueOnce(agentResult({ response: "done" }));
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([["discord-main", {} as never]]),
+      handleRequest,
+      deliver
+    });
+    const run = bindRun(scheduler);
+
+    await run(schedule);
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+    expect(deliver).toHaveBeenCalledTimes(0);
+
+    await vi.advanceTimersByTimeAsync(5 * 60_000 - 1);
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(handleRequest).toHaveBeenCalledTimes(2);
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "done");
+
+    const log = fs.readFileSync(path.join(logsDir(home), RUNTIME_LOG_FILE), "utf8");
+    expect(log).toContain("schedule_retry_scheduled");
+    expect(log).toContain("network unavailable");
+    scheduler.stop();
+  });
+
+  it("retries pending delivery without rerunning the agent", async () => {
+    vi.useFakeTimers({ now: new Date("2026-05-10T10:00:00.000Z") });
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = dailySchedule();
+    const handleRequest = vi.fn().mockResolvedValue(agentResult({ response: "daily brief" }));
+    const deliver = vi.fn()
+      .mockRejectedValueOnce(new Error("discord network down"))
+      .mockResolvedValueOnce(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([["discord-main", {} as never]]),
+      handleRequest,
+      deliver
+    });
+    const run = bindRun(scheduler);
+
+    await run(schedule);
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+    expect(deliver).toHaveBeenCalledTimes(1);
+    expect(loadPendingDeliveries(home)).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+    expect(deliver).toHaveBeenCalledTimes(1);
+
+    await scheduler.retryPendingDeliveries({ force: true });
+
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "daily brief");
+    expect(loadPendingDeliveries(home)).toEqual([]);
+    scheduler.stop();
+  });
+
+  it("loads pending deliveries after restart and retries due deliveries", async () => {
+    vi.useFakeTimers({ now: new Date("2026-05-10T10:00:00.000Z") });
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = dailySchedule();
+    const firstDeliver = vi.fn().mockRejectedValueOnce(new Error("discord network down"));
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+
+    const firstScheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([["discord-main", {} as never]]),
+      handleRequest: vi.fn().mockResolvedValue(agentResult({ response: "daily brief" })),
+      deliver: firstDeliver
+    });
+    await bindRun(firstScheduler)(schedule);
+    firstScheduler.stop();
+    expect(loadPendingDeliveries(home)).toHaveLength(1);
+
+    const secondDeliver = vi.fn().mockResolvedValue(undefined);
+    const secondScheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([["discord-main", {} as never]]),
+      handleRequest: vi.fn(),
+      deliver: secondDeliver
+    });
+
+    await secondScheduler.retryPendingDeliveries({ force: true });
+
+    expect(secondDeliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "daily brief");
+    expect(loadPendingDeliveries(home)).toEqual([]);
+    secondScheduler.stop();
+  });
+
+  it("stops recurring retries after the retry limit", async () => {
+    vi.useFakeTimers({ now: new Date("2026-05-10T10:00:00.000Z") });
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = dailySchedule();
+    const handleRequest = vi.fn().mockResolvedValue(agentResult({ exitCode: 1 }));
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([["discord-main", {} as never]]),
+      handleRequest,
+      deliver: vi.fn()
+    });
+    const run = bindRun(scheduler);
+
+    await run(schedule);
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+
+    expect(handleRequest).toHaveBeenCalledTimes(4);
+    expect(fs.readFileSync(path.join(logsDir(home), RUNTIME_LOG_FILE), "utf8")).toContain("schedule_retry_exhausted");
+    scheduler.stop();
+  });
+
+  it("preserves one-shot agent retry delays across reloads", async () => {
     vi.useFakeTimers({ now: new Date("2026-05-10T10:02:00.000Z") });
     const home = tempHome();
     ensureAideHome(home);
@@ -158,8 +314,8 @@ describe("scheduler execution", () => {
       ...onceSchedule(),
       runAt: "2026-05-10T10:00:00.000Z"
     };
-    const handleRequest = vi.fn().mockResolvedValue(agentResult({ response: "done" }));
-    const deliver = vi.fn().mockRejectedValue(new Error("send failed"));
+    const handleRequest = vi.fn().mockResolvedValue(agentResult({ exitCode: 1, response: "network unavailable" }));
+    const deliver = vi.fn().mockResolvedValue(undefined);
     writeEndpoints(home, [endpoint]);
     writeSchedules(home, [schedule]);
 
@@ -185,6 +341,7 @@ describe("scheduler execution", () => {
 
     await vi.advanceTimersByTimeAsync(1);
     expect(handleRequest).toHaveBeenCalledTimes(2);
+    expect(deliver).toHaveBeenCalledTimes(0);
     scheduler.stop();
   });
 
@@ -322,6 +479,23 @@ function onceSchedule(): Schedule {
     target: "user:987",
     message: "Remind me to pay rent."
   };
+}
+
+function dailySchedule(): Schedule {
+  return {
+    id: "daily-brief",
+    endpoint: "discord-main",
+    enabled: true,
+    kind: "daily",
+    timezone: "Asia/Shanghai",
+    time: "09:00",
+    target: "channel:123",
+    message: "Generate my daily brief."
+  };
+}
+
+function bindRun(scheduler: RuntimeScheduler): (schedule: Schedule) => Promise<"ran" | "skipped"> {
+  return (scheduler as unknown as { run(schedule: Schedule): Promise<"ran" | "skipped"> }).run.bind(scheduler);
 }
 
 function tempHome(): string {
