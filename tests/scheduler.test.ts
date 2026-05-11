@@ -329,6 +329,38 @@ describe("scheduler execution", () => {
     scheduler.stop();
   });
 
+  it("retries failed biweekly occurrences after local midnight", async () => {
+    vi.useFakeTimers({ now: new Date("2026-05-04T15:58:00.000Z") });
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = biweeklySchedule();
+    const handleRequest = vi.fn()
+      .mockResolvedValueOnce(agentResult({ exitCode: 1, response: "network unavailable" }))
+      .mockResolvedValueOnce(agentResult({ response: "done" }));
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([["discord-main", {} as never]]),
+      handleRequest,
+      deliver
+    });
+    const run = bindRun(scheduler);
+
+    await run(schedule);
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+
+    expect(handleRequest).toHaveBeenCalledTimes(2);
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "done");
+    scheduler.stop();
+  });
+
   it("preserves one-shot agent retry delays across reloads", async () => {
     vi.useFakeTimers({ now: new Date("2026-05-10T10:02:00.000Z") });
     const home = tempHome();
@@ -515,6 +547,21 @@ function dailySchedule(): Schedule {
     time: "09:00",
     target: "channel:123",
     message: "Generate my daily brief."
+  };
+}
+
+function biweeklySchedule(): Schedule {
+  return {
+    id: "biweekly-brief",
+    endpoint: "discord-main",
+    enabled: true,
+    kind: "biweekly",
+    timezone: "Asia/Shanghai",
+    weekday: "monday",
+    startDate: "2026-05-04",
+    time: "23:58",
+    target: "channel:123",
+    message: "Generate my biweekly brief."
   };
 }
 

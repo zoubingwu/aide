@@ -329,6 +329,7 @@ export class RuntimeScheduler {
     }
 
     if (
+      source === "scheduled" &&
       schedule.kind === "biweekly" &&
       schedule.startDate &&
       !isBiweeklyOccurrence(schedule.startDate, new Date(), schedule.timezone)
