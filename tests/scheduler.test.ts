@@ -114,6 +114,30 @@ describe("scheduler execution", () => {
     ]);
   });
 
+  it("does not queue invalid delivery targets", async () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = onceSchedule();
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+
+    await executeScheduleOnce({
+      home,
+      schedule,
+      endpoints: [endpoint],
+      clients: new Map([["discord-main", {}]]),
+      handleRequest: vi.fn().mockResolvedValue(agentResult({ response: "done" })),
+      deliver: vi.fn().mockRejectedValue(new Error("Unsupported Discord target: thread:456"))
+    });
+
+    const log = fs.readFileSync(path.join(logsDir(home), RUNTIME_LOG_FILE), "utf8");
+    expect(log).toContain("schedule_delivery_invalid");
+    expect(log).not.toContain("schedule_delivery_queued");
+    expect(loadPendingDeliveries(home)).toEqual([]);
+    expect(loadSchedules(home)).toEqual([]);
+  });
+
   it("removes a once schedule after successful agent run with no text response", async () => {
     const home = tempHome();
     ensureAideHome(home);

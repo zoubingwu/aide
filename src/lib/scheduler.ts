@@ -44,7 +44,7 @@ interface RunningJob {
 }
 
 type ScheduleRunStatus = "ran" | "skipped";
-type ScheduleExecutionStatus = "completed" | "agent_failed" | "delivery_pending" | "skipped";
+type ScheduleExecutionStatus = "completed" | "agent_failed" | "delivery_invalid" | "delivery_pending" | "skipped";
 type RunSource = "scheduled" | "retry";
 
 export async function executeScheduleOnce(execution: ScheduleExecution): Promise<ScheduleExecutionStatus> {
@@ -119,6 +119,11 @@ export async function executeScheduleOnce(execution: ScheduleExecution): Promise
       endpoint: endpoint.id,
       error: message
     });
+
+    if (event === "schedule_delivery_invalid") {
+      completeSchedule(execution);
+      return "delivery_invalid";
+    }
 
     try {
       const delivery = addPendingDelivery(execution.home, {
