@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { defaultCodexAgentConfig, defaultEndpointTriggerConfig, ensureAideHome, writeEndpoints } from "../src/lib/config.js";
-import { loadPendingDeliveries } from "../src/lib/delivery-retries.js";
+import { addPendingDelivery, loadPendingDeliveries } from "../src/lib/delivery-retries.js";
 import { RUNTIME_LOG_FILE } from "../src/lib/logging.js";
 import { logsDir, schedulesPath } from "../src/lib/paths.js";
 import { executeScheduleOnce, RuntimeScheduler } from "../src/lib/scheduler.js";
@@ -299,6 +299,62 @@ describe("scheduler execution", () => {
     secondScheduler.stop();
   });
 
+  it("serializes overlapping pending delivery drains", async () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    let releaseFirst: (() => void) | undefined;
+    const firstDelivery = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let firstStarted: (() => void) | undefined;
+    const firstStartedPromise = new Promise<void>((resolve) => {
+      firstStarted = resolve;
+    });
+    const deliver = vi.fn((_: Endpoint, __: unknown, ___: string, response: string) => {
+      if (response === "first") {
+        firstStarted?.();
+        return firstDelivery;
+      }
+
+      return Promise.resolve();
+    });
+    addPendingDelivery(home, {
+      scheduleId: "first",
+      endpoint: endpoint.id,
+      target: "channel:123",
+      response: "first"
+    }, "network down");
+    addPendingDelivery(home, {
+      scheduleId: "second",
+      endpoint: endpoint.id,
+      target: "channel:123",
+      response: "second"
+    }, "network down");
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest: vi.fn(),
+      deliver
+    });
+
+    const firstDrain = scheduler.retryPendingDeliveries({ force: true });
+    await firstStartedPromise;
+    const secondDrain = scheduler.retryPendingDeliveries({ force: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(deliveryResponses(deliver)).toEqual(["first"]);
+
+    releaseFirst?.();
+    await Promise.all([firstDrain, secondDrain]);
+
+    expect(deliveryResponses(deliver)).toEqual(["first", "second"]);
+    expect(loadPendingDeliveries(home)).toEqual([]);
+    scheduler.stop();
+  });
+
   it("stops recurring retries after the retry limit", async () => {
     vi.useFakeTimers({ now: new Date("2026-05-10T10:00:00.000Z") });
     const home = tempHome();
@@ -567,6 +623,10 @@ function biweeklySchedule(): Schedule {
 
 function bindRun(scheduler: RuntimeScheduler): (schedule: Schedule) => Promise<"ran" | "skipped"> {
   return (scheduler as unknown as { run(schedule: Schedule): Promise<"ran" | "skipped"> }).run.bind(scheduler);
+}
+
+function deliveryResponses(deliver: ReturnType<typeof vi.fn>): unknown[] {
+  return deliver.mock.calls.map((call) => call[3]);
 }
 
 function tempHome(): string {

@@ -179,6 +179,7 @@ export class RuntimeScheduler {
   private readonly runningDeliveries = new Set<string>();
   private reloadTimer: NodeJS.Timeout | undefined;
   private deliveryRetryTimer: NodeJS.Timeout | undefined;
+  private deliveryDrain: Promise<void> = Promise.resolve();
 
   constructor(private readonly options: RuntimeSchedulerOptions) {}
 
@@ -463,6 +464,15 @@ export class RuntimeScheduler {
   }
 
   async retryPendingDeliveries(options: { force?: boolean } = {}): Promise<void> {
+    const drain = this.deliveryDrain.then(
+      () => this.drainPendingDeliveries(options),
+      () => this.drainPendingDeliveries(options)
+    );
+    this.deliveryDrain = drain.catch(() => undefined);
+    await drain;
+  }
+
+  private async drainPendingDeliveries(options: { force?: boolean }): Promise<void> {
     let deliveries: PendingDelivery[];
 
     try {
