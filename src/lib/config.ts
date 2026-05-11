@@ -94,7 +94,8 @@ export function ensureAideHome(home: string): void {
   writeFileIfMissing(configPath(home), `${stringifyConfig(defaultConfig())}\n`, 0o600);
   secureConfigFile(home);
   writeFileIfMissing(schedulesPath(home), `${JSON.stringify({ schedules: [] }, null, 2)}\n`);
-  writeFileIfMissing(pendingDeliveriesPath(home), `${JSON.stringify({ deliveries: [] }, null, 2)}\n`);
+  writeFileIfMissing(pendingDeliveriesPath(home), `${JSON.stringify({ deliveries: [] }, null, 2)}\n`, 0o600);
+  securePendingDeliveriesFile(home);
   writeFileIfMissing(runtimePath(home), `${JSON.stringify(defaultRuntimeState(home), null, 2)}\n`);
   writeFileIfMissing(usagePath(home), "");
 }
@@ -194,6 +195,10 @@ function writeFileIfMissing(filePath: string, content: string, mode?: number): v
 
 function secureConfigFile(home: string): void {
   fs.chmodSync(configPath(home), 0o600);
+}
+
+function securePendingDeliveriesFile(home: string): void {
+  fs.chmodSync(pendingDeliveriesPath(home), 0o600);
 }
 
 function stringifyConfig(config: AideConfig): string {

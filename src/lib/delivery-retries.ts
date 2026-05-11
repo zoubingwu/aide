@@ -99,7 +99,9 @@ export function removePendingDelivery(home: string, id: string): void {
 
 function writePendingDeliveries(home: string, deliveries: PendingDelivery[]): void {
   const body = pendingDeliveriesFileSchema.parse({ deliveries });
-  fs.writeFileSync(pendingDeliveriesPath(home), `${JSON.stringify(body, null, 2)}\n`);
+  const filePath = pendingDeliveriesPath(home);
+  fs.writeFileSync(filePath, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600 });
+  fs.chmodSync(filePath, 0o600);
 }
 
 function retryAt(attempts: number, now: Date): string {

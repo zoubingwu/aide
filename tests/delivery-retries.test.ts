@@ -32,6 +32,9 @@ describe("delivery retries", () => {
       response: "done"
     }, "network down", now);
 
+    if (process.platform !== "win32") {
+      expect(fs.statSync(path.join(home, "pending-deliveries.json")).mode & 0o777).toBe(0o600);
+    }
     expect(loadPendingDeliveries(home)).toMatchObject([
       {
         id: delivery.id,
@@ -57,6 +60,9 @@ describe("delivery retries", () => {
       target: "channel:123",
       response: "done"
     }, "network down", new Date("2026-05-10T10:00:00.000Z"));
+    if (process.platform !== "win32") {
+      fs.chmodSync(path.join(home, "pending-deliveries.json"), 0o644);
+    }
 
     const updated = markPendingDeliveryFailed(home, delivery.id, "still down", new Date("2026-05-10T10:01:00.000Z"));
 
@@ -66,6 +72,9 @@ describe("delivery retries", () => {
       nextRetryAt: "2026-05-10T10:06:00.000Z",
       lastError: "still down"
     });
+    if (process.platform !== "win32") {
+      expect(fs.statSync(path.join(home, "pending-deliveries.json")).mode & 0o777).toBe(0o600);
+    }
 
     removePendingDelivery(home, delivery.id);
     expect(loadPendingDeliveries(home)).toEqual([]);
