@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ensureAideHome, loadConfig, loadEndpoints, writeConfig } from "../src/lib/config.js";
-import { configPath, logsDir, schedulesPath, usagePath, workspaceDir } from "../src/lib/paths.js";
+import { configPath, logsDir, pendingDeliveriesPath, schedulesPath, usagePath, workspaceDir } from "../src/lib/paths.js";
 
 const cleanupPaths: string[] = [];
 
@@ -25,6 +25,10 @@ describe("config", () => {
     }
     expect(fs.existsSync(schedulesPath(home))).toBe(true);
     expect(path.basename(schedulesPath(home))).toBe("schedules.json");
+    expect(fs.existsSync(pendingDeliveriesPath(home))).toBe(true);
+    if (process.platform !== "win32") {
+      expect(fs.statSync(pendingDeliveriesPath(home)).mode & 0o777).toBe(0o600);
+    }
     expect(fs.existsSync(usagePath(home))).toBe(true);
     expect(fs.readFileSync(usagePath(home), "utf8")).toBe("");
     expect(fs.existsSync(logsDir(home))).toBe(true);
@@ -126,6 +130,20 @@ reasoningEffort = "medium"
     ensureAideHome(home);
 
     expect(fs.statSync(configPath(home)).mode & 0o777).toBe(0o600);
+  });
+
+  it("tightens an existing pending deliveries file during initialization", () => {
+    if (process.platform === "win32") {
+      return;
+    }
+
+    const home = tempHome();
+    ensureAideHome(home);
+    fs.chmodSync(pendingDeliveriesPath(home), 0o644);
+
+    ensureAideHome(home);
+
+    expect(fs.statSync(pendingDeliveriesPath(home)).mode & 0o777).toBe(0o600);
   });
 
   it("tightens an existing config file when loading config", () => {

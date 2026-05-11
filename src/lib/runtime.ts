@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { Events, type Client } from "discord.js";
 import { loadEndpoints } from "./config.js";
 import { appendRuntimeLog } from "./logging.js";
 import { markRuntimeRunning, markRuntimeStopped, runtimeDisplayStatus, isPidAlive } from "./runtime-state.js";
@@ -6,7 +7,6 @@ import { startDiscordEndpoint } from "./discord.js";
 import { RuntimeScheduler } from "./scheduler.js";
 import { SCHEDULE_RELOAD_SIGNAL } from "./schedule-reload.js";
 import { assertEndpointWorkspace } from "./workspace.js";
-import type { Client } from "discord.js";
 
 const START_WAIT_MS = 3_000;
 
@@ -128,6 +128,9 @@ export async function startRuntime(home: string): Promise<void> {
 
   scheduler = new RuntimeScheduler({ home, endpoints, clients });
   scheduler.start();
+  const stopDeliveryRecoveryListeners = registerDeliveryRecoveryListeners(home, clients, () => {
+    void scheduler?.retryPendingDeliveries({ force: true });
+  });
   const reloadSchedules = () => {
     appendRuntimeLog(home, "schedule_reload_signal", { pid: process.pid });
     scheduler?.reload();
@@ -141,6 +144,7 @@ export async function startRuntime(home: string): Promise<void> {
     const stop = async () => {
       appendRuntimeLog(home, "runtime_stopping", { pid: process.pid });
       process.off(SCHEDULE_RELOAD_SIGNAL, reloadSchedules);
+      stopDeliveryRecoveryListeners();
       scheduler?.stop();
 
       for (const client of clients.values()) {
@@ -186,6 +190,34 @@ export function stopRuntime(home: string): void {
   }
 
   console.log(`Stop signal sent to Aide runtime PID ${current.pid}.`);
+}
+
+function registerDeliveryRecoveryListeners(home: string, clients: Map<string, Client>, retry: () => void): () => void {
+  const cleanups: Array<() => void> = [];
+
+  for (const [endpointId, client] of clients.entries()) {
+    const onShardReady = (shardId: number) => {
+      appendRuntimeLog(home, "discord_recovered", { endpoint: endpointId, event: "shardReady", shardId });
+      retry();
+    };
+    const onShardResume = (shardId: number, replayedEvents: number) => {
+      appendRuntimeLog(home, "discord_recovered", { endpoint: endpointId, event: "shardResume", shardId, replayedEvents });
+      retry();
+    };
+
+    client.on(Events.ShardReady, onShardReady);
+    client.on(Events.ShardResume, onShardResume);
+    cleanups.push(() => {
+      client.off(Events.ShardReady, onShardReady);
+      client.off(Events.ShardResume, onShardResume);
+    });
+  }
+
+  return () => {
+    for (const cleanup of cleanups) {
+      cleanup();
+    }
+  };
 }
 
 function errorMessage(error: unknown): string {

@@ -45,6 +45,10 @@ export function schedulesPath(home: string): string {
   return path.join(home, "schedules.json");
 }
 
+export function pendingDeliveriesPath(home: string): string {
+  return path.join(home, "pending-deliveries.json");
+}
+
 export function runtimePath(home: string): string {
   return path.join(home, "runtime.json");
 }

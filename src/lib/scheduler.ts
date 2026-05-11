@@ -1,6 +1,14 @@
 import { Cron } from "croner";
 import type { Client } from "discord.js";
 import { handleAssistantRequest } from "./assistant.js";
+import {
+  addPendingDelivery,
+  duePendingDeliveries,
+  loadPendingDeliveries,
+  markPendingDeliveryFailed,
+  removePendingDelivery,
+  type PendingDelivery
+} from "./delivery-retries.js";
 import { deliverDiscordMessage } from "./discord-delivery.js";
 import { appendRuntimeLog } from "./logging.js";
 import { buildSchedulePlan, isBiweeklyOccurrence } from "./schedule-plan.js";
@@ -8,7 +16,10 @@ import { loadRuntimeSchedules, removeRuntimeSchedule } from "./schedules.js";
 import type { AgentRunResult, Endpoint, Schedule } from "./types.js";
 
 const ONCE_RETRY_MS = 60_000;
+const RECURRING_RETRY_MS = 5 * 60_000;
+const RECURRING_MAX_RETRIES = 3;
 const RELOAD_MS = 30_000;
+const DELIVERY_RETRY_POLL_MS = 30_000;
 const MAX_TIMEOUT_MS = 2_147_000_000;
 
 export interface ScheduleExecution {
@@ -33,8 +44,10 @@ interface RunningJob {
 }
 
 type ScheduleRunStatus = "ran" | "skipped";
+type ScheduleExecutionStatus = "completed" | "agent_failed" | "delivery_invalid" | "delivery_pending" | "skipped";
+type RunSource = "scheduled" | "retry";
 
-export async function executeScheduleOnce(execution: ScheduleExecution): Promise<void> {
+export async function executeScheduleOnce(execution: ScheduleExecution): Promise<ScheduleExecutionStatus> {
   const endpoint = execution.endpoints.find((candidate) => candidate.id === execution.schedule.endpoint);
 
   if (!endpoint || !endpoint.enabled) {
@@ -42,7 +55,7 @@ export async function executeScheduleOnce(execution: ScheduleExecution): Promise
       schedule: execution.schedule.id,
       endpoint: execution.schedule.endpoint
     });
-    return;
+    return "skipped";
   }
 
   const client = execution.clients.get(endpoint.id);
@@ -53,7 +66,7 @@ export async function executeScheduleOnce(execution: ScheduleExecution): Promise
       endpoint: endpoint.id,
       reason: "missing client"
     });
-    return;
+    return "skipped";
   }
 
   appendRuntimeLog(execution.home, "schedule_started", {
@@ -72,16 +85,17 @@ export async function executeScheduleOnce(execution: ScheduleExecution): Promise
       endpoint: endpoint.id,
       error: errorMessage(error)
     });
-    return;
+    return "agent_failed";
   }
 
   if (result.exitCode !== 0) {
     appendRuntimeLog(execution.home, "schedule_agent_failed", {
       schedule: execution.schedule.id,
       endpoint: endpoint.id,
-      exitCode: result.exitCode
+      exitCode: result.exitCode,
+      error: result.response || result.stderr || undefined
     });
-    return;
+    return "agent_failed";
   }
 
   if (!result.hasTextResponse) {
@@ -90,7 +104,7 @@ export async function executeScheduleOnce(execution: ScheduleExecution): Promise
       endpoint: endpoint.id
     });
     completeSchedule(execution);
-    return;
+    return "completed";
   }
 
   const deliver = execution.deliver ?? deliverScheduleResponse;
@@ -98,12 +112,42 @@ export async function executeScheduleOnce(execution: ScheduleExecution): Promise
   try {
     await deliver(endpoint, client, execution.schedule.target, result.response);
   } catch (error) {
-    appendRuntimeLog(execution.home, deliveryErrorEvent(error), {
+    const message = errorMessage(error);
+    const event = deliveryErrorEvent(error);
+    appendRuntimeLog(execution.home, event, {
       schedule: execution.schedule.id,
       endpoint: endpoint.id,
-      error: errorMessage(error)
+      error: message
     });
-    return;
+
+    if (event === "schedule_delivery_invalid") {
+      completeSchedule(execution);
+      return "delivery_invalid";
+    }
+
+    try {
+      const delivery = addPendingDelivery(execution.home, {
+        scheduleId: execution.schedule.id,
+        endpoint: endpoint.id,
+        target: execution.schedule.target,
+        response: result.response
+      }, message);
+      appendRuntimeLog(execution.home, "schedule_delivery_queued", {
+        schedule: execution.schedule.id,
+        endpoint: endpoint.id,
+        delivery: delivery.id,
+        nextRetryAt: delivery.nextRetryAt
+      });
+      completeSchedule(execution);
+      return "delivery_pending";
+    } catch (queueError) {
+      appendRuntimeLog(execution.home, "schedule_delivery_queue_failed", {
+        schedule: execution.schedule.id,
+        endpoint: endpoint.id,
+        error: errorMessage(queueError)
+      });
+      return "agent_failed";
+    }
   }
 
   appendRuntimeLog(execution.home, "schedule_delivered", {
@@ -112,6 +156,7 @@ export async function executeScheduleOnce(execution: ScheduleExecution): Promise
   });
 
   completeSchedule(execution);
+  return "completed";
 }
 
 function completeSchedule(execution: ScheduleExecution): void {
@@ -129,13 +174,22 @@ export class RuntimeScheduler {
   private readonly jobs = new Map<string, RunningJob>();
   private readonly running = new Set<string>();
   private readonly onceRetryAt = new Map<string, number>();
+  private readonly retryTimers = new Map<string, NodeJS.Timeout>();
+  private readonly retryAttempts = new Map<string, number>();
+  private readonly runningDeliveries = new Set<string>();
   private reloadTimer: NodeJS.Timeout | undefined;
+  private deliveryRetryTimer: NodeJS.Timeout | undefined;
+  private deliveryDrain: Promise<void> = Promise.resolve();
 
   constructor(private readonly options: RuntimeSchedulerOptions) {}
 
   start(): void {
     this.reload();
     this.reloadTimer = setInterval(() => this.reload(), RELOAD_MS);
+    this.deliveryRetryTimer = setInterval(() => {
+      void this.retryPendingDeliveries();
+    }, DELIVERY_RETRY_POLL_MS);
+    void this.retryPendingDeliveries({ force: true });
     appendRuntimeLog(this.options.home, "schedule_loaded", { count: this.jobs.size });
   }
 
@@ -144,10 +198,16 @@ export class RuntimeScheduler {
       job.stop();
     }
     this.jobs.clear();
+    this.clearAllRecurringRetries();
 
     if (this.reloadTimer) {
       clearInterval(this.reloadTimer);
       this.reloadTimer = undefined;
+    }
+
+    if (this.deliveryRetryTimer) {
+      clearInterval(this.deliveryRetryTimer);
+      this.deliveryRetryTimer = undefined;
     }
   }
 
@@ -184,6 +244,8 @@ export class RuntimeScheduler {
         });
       }
     }
+
+    this.pruneRecurringRetries(new Set(loaded.schedules.filter((candidate) => candidate.enabled).map((schedule) => schedule.id)));
   }
 
   private createJob(schedule: Schedule): RunningJob {
@@ -200,7 +262,7 @@ export class RuntimeScheduler {
         timezone: plan.timezone
       },
       () => {
-        void this.run(schedule);
+        void this.run(schedule, "scheduled");
       }
     );
 
@@ -257,13 +319,18 @@ export class RuntimeScheduler {
     };
   }
 
-  private async run(schedule: Schedule): Promise<ScheduleRunStatus> {
+  private async run(schedule: Schedule, source: RunSource = "scheduled"): Promise<ScheduleRunStatus> {
     if (this.running.has(schedule.id)) {
       appendRuntimeLog(this.options.home, "schedule_skipped_running", { schedule: schedule.id });
       return "skipped";
     }
 
+    if (source === "scheduled" && schedule.kind !== "once") {
+      this.clearRecurringRetry(schedule.id);
+    }
+
     if (
+      source === "scheduled" &&
       schedule.kind === "biweekly" &&
       schedule.startDate &&
       !isBiweeklyOccurrence(schedule.startDate, new Date(), schedule.timezone)
@@ -274,8 +341,10 @@ export class RuntimeScheduler {
     this.running.add(schedule.id);
     appendRuntimeLog(this.options.home, "schedule_due", { schedule: schedule.id });
 
+    let status: ScheduleExecutionStatus = "agent_failed";
+
     try {
-      await executeScheduleOnce({
+      status = await executeScheduleOnce({
         home: this.options.home,
         schedule,
         endpoints: this.options.endpoints,
@@ -288,11 +357,101 @@ export class RuntimeScheduler {
         schedule: schedule.id,
         error: errorMessage(error)
       });
+      status = "agent_failed";
     } finally {
       this.running.delete(schedule.id);
     }
 
+    if (schedule.kind !== "once") {
+      this.updateRecurringRetry(schedule, status);
+    }
+
     return "ran";
+  }
+
+  private updateRecurringRetry(schedule: Schedule, status: ScheduleExecutionStatus): void {
+    if (status === "completed") {
+      this.clearRecurringRetry(schedule.id);
+      return;
+    }
+
+    if (status !== "agent_failed") {
+      return;
+    }
+
+    const nextAttempt = (this.retryAttempts.get(schedule.id) ?? 0) + 1;
+
+    if (nextAttempt > RECURRING_MAX_RETRIES) {
+      this.clearRecurringRetry(schedule.id);
+      appendRuntimeLog(this.options.home, "schedule_retry_exhausted", {
+        schedule: schedule.id,
+        attempts: RECURRING_MAX_RETRIES
+      });
+      return;
+    }
+
+    this.retryAttempts.set(schedule.id, nextAttempt);
+
+    const existing = this.retryTimers.get(schedule.id);
+    if (existing) {
+      clearTimeout(existing);
+    }
+
+    const timer = setTimeout(() => {
+      this.retryTimers.delete(schedule.id);
+      const current = this.findEnabledSchedule(schedule.id);
+
+      if (!current) {
+        this.retryAttempts.delete(schedule.id);
+        return;
+      }
+
+      void this.run(current, "retry");
+    }, RECURRING_RETRY_MS);
+
+    this.retryTimers.set(schedule.id, timer);
+    appendRuntimeLog(this.options.home, "schedule_retry_scheduled", {
+      schedule: schedule.id,
+      attempt: nextAttempt,
+      delayMs: RECURRING_RETRY_MS
+    });
+  }
+
+  private clearRecurringRetry(id: string): void {
+    const timer = this.retryTimers.get(id);
+
+    if (timer) {
+      clearTimeout(timer);
+      this.retryTimers.delete(id);
+    }
+
+    this.retryAttempts.delete(id);
+  }
+
+  private clearAllRecurringRetries(): void {
+    for (const timer of this.retryTimers.values()) {
+      clearTimeout(timer);
+    }
+
+    this.retryTimers.clear();
+    this.retryAttempts.clear();
+  }
+
+  private pruneRecurringRetries(enabledIds: Set<string>): void {
+    for (const id of this.retryTimers.keys()) {
+      if (!enabledIds.has(id)) {
+        this.clearRecurringRetry(id);
+      }
+    }
+  }
+
+  private findEnabledSchedule(id: string): Schedule | undefined {
+    try {
+      return loadRuntimeSchedules(this.options.home).schedules.find((schedule) => schedule.id === id && schedule.enabled);
+    } catch (error) {
+      appendRuntimeLog(this.options.home, "schedule_load_failed", { error: errorMessage(error) });
+      return undefined;
+    }
   }
 
   private scheduleExists(id: string): boolean {
@@ -302,6 +461,73 @@ export class RuntimeScheduler {
       appendRuntimeLog(this.options.home, "schedule_load_failed", { error: errorMessage(error) });
       return false;
     }
+  }
+
+  async retryPendingDeliveries(options: { force?: boolean } = {}): Promise<void> {
+    const drain = this.deliveryDrain.then(
+      () => this.drainPendingDeliveries(options),
+      () => this.drainPendingDeliveries(options)
+    );
+    this.deliveryDrain = drain.catch(() => undefined);
+    await drain;
+  }
+
+  private async drainPendingDeliveries(options: { force?: boolean }): Promise<void> {
+    let deliveries: PendingDelivery[];
+
+    try {
+      deliveries = options.force ? loadPendingDeliveries(this.options.home) : duePendingDeliveries(this.options.home);
+    } catch (error) {
+      appendRuntimeLog(this.options.home, "schedule_delivery_queue_load_failed", { error: errorMessage(error) });
+      return;
+    }
+
+    for (const delivery of deliveries) {
+      await this.retryPendingDelivery(delivery);
+    }
+  }
+
+  private async retryPendingDelivery(delivery: PendingDelivery): Promise<void> {
+    if (this.runningDeliveries.has(delivery.id)) {
+      return;
+    }
+
+    const endpoint = this.options.endpoints.find((candidate) => candidate.id === delivery.endpoint);
+    const client = endpoint ? this.options.clients.get(endpoint.id) : undefined;
+
+    if (!endpoint || !endpoint.enabled || !client) {
+      this.markDeliveryRetryFailed(delivery, "missing endpoint client");
+      return;
+    }
+
+    this.runningDeliveries.add(delivery.id);
+
+    try {
+      const deliver = this.options.deliver ?? deliverScheduleResponse;
+      await deliver(endpoint, client, delivery.target, delivery.response);
+      removePendingDelivery(this.options.home, delivery.id);
+      appendRuntimeLog(this.options.home, "schedule_delivery_retry_delivered", {
+        schedule: delivery.scheduleId,
+        endpoint: endpoint.id,
+        delivery: delivery.id
+      });
+    } catch (error) {
+      this.markDeliveryRetryFailed(delivery, errorMessage(error));
+    } finally {
+      this.runningDeliveries.delete(delivery.id);
+    }
+  }
+
+  private markDeliveryRetryFailed(delivery: PendingDelivery, error: string): void {
+    const updated = markPendingDeliveryFailed(this.options.home, delivery.id, error);
+    appendRuntimeLog(this.options.home, "schedule_delivery_retry_failed", {
+      schedule: delivery.scheduleId,
+      endpoint: delivery.endpoint,
+      delivery: delivery.id,
+      attempts: updated?.attempts,
+      nextRetryAt: updated?.nextRetryAt,
+      error
+    });
   }
 }
 

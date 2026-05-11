@@ -6,6 +6,7 @@ import {
   configPath,
   displayPath,
   logsDir,
+  pendingDeliveriesPath,
   runtimePath,
   schedulesPath,
   usagePath,
@@ -26,6 +27,7 @@ export function missingBasePathLabels(home: string): string[] {
     { label: "Aide home", path: home },
     { label: "config.toml", path: configPath(home) },
     { label: "schedules.json", path: schedulesPath(home) },
+    { label: "pending-deliveries.json", path: pendingDeliveriesPath(home) },
     { label: "runtime.json", path: runtimePath(home) },
     { label: "usage.jsonl", path: usagePath(home) },
     { label: "logs directory", path: logsDir(home) },
@@ -47,6 +49,7 @@ export async function runDoctorChecks(home: string): Promise<DoctorCheck[]> {
   const configExists = fs.existsSync(configPath(home));
   checks.push({ status: configExists ? "ok" : "fail", label: "config.toml" });
   checks.push({ status: fs.existsSync(schedulesPath(home)) ? "ok" : "fail", label: "schedules.json" });
+  checks.push({ status: fs.existsSync(pendingDeliveriesPath(home)) ? "ok" : "fail", label: "pending-deliveries.json" });
   checks.push({ status: fs.existsSync(runtimePath(home)) ? "ok" : "fail", label: "runtime.json" });
   checks.push({ status: fs.existsSync(usagePath(home)) ? "ok" : "fail", label: "usage.jsonl" });
   checks.push({ status: fs.existsSync(workspaceDir(home)) ? "ok" : "fail", label: "workspace directory" });
