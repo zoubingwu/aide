@@ -119,7 +119,7 @@ describe("CLI help", () => {
 
     expect(stdout).toContain("$ aide endpoint config <command> [options]");
     expect(stdout).toContain("list <id>  List endpoint config files");
-    expect(stdout).toContain("open <id>  Open endpoint config files");
+    expect(stdout).toContain("open <id>  Reveal endpoint config files");
   });
 
   it("shows schedule subcommands", async () => {

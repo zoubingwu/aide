@@ -137,7 +137,7 @@ function runEndpointCli(argv: string[]): void {
     .option("--message <message>", "Message to send")
     .action(wrapLazy(async () => (await import("./commands/endpoints.js")).testEndpointCommand));
   cli
-    .command("open <id>", "Open endpoint workspace")
+    .command("open <id>", "Reveal endpoint workspace")
     .action(wrapLazy(async () => (await import("./commands/endpoints.js")).openEndpointCommand));
   cli.command("config", "Manage endpoint config").action(() => runEndpointConfigCli(["node", "aide endpoint config"]));
 
@@ -157,7 +157,7 @@ function runEndpointConfigCli(argv: string[]): void {
     .command("list <id>", "List endpoint config files")
     .action(wrapLazy(async () => (await import("./commands/endpoints.js")).listEndpointConfigCommand));
   cli
-    .command("open <id>", "Open endpoint config files")
+    .command("open <id>", "Reveal endpoint config files")
     .action(wrapLazy(async () => (await import("./commands/endpoints.js")).openEndpointConfigCommand));
 
   handleNoMatch(cli, cli.parse(argv));
@@ -204,7 +204,7 @@ function runScheduleConfigCli(argv: string[]): void {
 
   cli.option("--home <path>", "Aide home directory").help();
   cli
-    .command("open", "Open schedules config")
+    .command("open", "Reveal schedules config")
     .action(wrapLazy(async () => (await import("./commands/schedules.js")).openScheduleConfigCommand));
 
   handleNoMatch(cli, cli.parse(argv));
