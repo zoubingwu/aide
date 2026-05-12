@@ -16,14 +16,17 @@ import type { CodexAgentConfig, Endpoint, EndpointTriggerConfig, RuntimeState } 
 
 const DEFAULT_RUNTIME_MODEL = "gpt-5.5";
 const DEFAULT_REASONING_EFFORT = "medium";
+const DEFAULT_OUTPUT_MODE = "concise";
 
 const codexReasoningEffortSchema = z.enum(["low", "medium", "high", "xhigh"]);
+const agentOutputModeSchema = z.enum(["concise", "verbose"]);
 
 const codexAgentConfigSchema = z.object({
   provider: z.literal("codex").default("codex"),
   command: z.string().min(1).default("codex"),
   model: z.string().min(1).default(DEFAULT_RUNTIME_MODEL),
-  reasoningEffort: codexReasoningEffortSchema.default(DEFAULT_REASONING_EFFORT)
+  reasoningEffort: codexReasoningEffortSchema.default(DEFAULT_REASONING_EFFORT),
+  outputMode: agentOutputModeSchema.default(DEFAULT_OUTPUT_MODE)
 });
 
 const discordTriggerSourceSchema = z.string().refine(isDiscordTriggerSource, {
@@ -68,7 +71,8 @@ export function defaultCodexAgentConfig(): CodexAgentConfig {
     provider: "codex",
     command: "codex",
     model: DEFAULT_RUNTIME_MODEL,
-    reasoningEffort: DEFAULT_REASONING_EFFORT
+    reasoningEffort: DEFAULT_REASONING_EFFORT,
+    outputMode: DEFAULT_OUTPUT_MODE
   };
 }
 
@@ -226,7 +230,8 @@ function stringifyEndpointConfig(endpoint: Endpoint): string {
       ["provider", endpoint.agent.provider],
       ["command", endpoint.agent.command],
       ["model", endpoint.agent.model],
-      ["reasoningEffort", endpoint.agent.reasoningEffort]
+      ["reasoningEffort", endpoint.agent.reasoningEffort],
+      ["outputMode", endpoint.agent.outputMode]
     ])}`
   ].join("\n");
 }

@@ -5,11 +5,12 @@ import {
   Partials,
   type Message
 } from "discord.js";
+import { formatAgentProgress } from "./agent-progress.js";
 import { handleAssistantRequest } from "./assistant.js";
 import { buildDiscordPromptMetadata, buildDiscordRequestContext } from "./discord-context.js";
 import { startDiscordContextToolServer } from "./discord-context-mcp.js";
 import { appendActivityLog, endpointActivity } from "./logging.js";
-import type { ManagedAgentToolServer } from "./agent-tools.js";
+import type { AgentRunEvent, ManagedAgentToolServer } from "./agent-tools.js";
 import type { AgentRunResult, Endpoint } from "./types.js";
 
 const DISCORD_TYPING_REFRESH_MS = 8_000;
@@ -90,6 +91,7 @@ export async function handleDiscordMessage(home: string, endpoint: Endpoint, mes
   appendActivityLog(home, endpointActivity(home, endpoint, "discord_message_received", { author: message.author.username }));
   const discordContext = buildDiscordRequestContext(endpoint, message);
   const toolServer = await startDiscordContextTools(home, endpoint, message, discordContext);
+  const progressReporter = discordProgressReporter(endpoint, message);
 
   const result = await (async () => {
     try {
@@ -97,7 +99,8 @@ export async function handleDiscordMessage(home: string, endpoint: Endpoint, mes
         handleAssistantRequest(home, endpoint, content, message.author.username, {
           source: discordContext.source,
           metadata: buildDiscordPromptMetadata(discordContext),
-          toolServers: toolServer ? [{ name: toolServer.name, url: toolServer.url }] : undefined
+          toolServers: toolServer ? [{ name: toolServer.name, url: toolServer.url }] : undefined,
+          ...(progressReporter ? { onEvent: progressReporter } : {})
         })
       );
     } finally {
@@ -199,6 +202,30 @@ async function sendResponse(message: Message, response: string): Promise<void> {
   for (const chunk of chunks) {
     await message.reply({ content: chunk });
   }
+}
+
+function discordProgressReporter(endpoint: Endpoint, message: Message): ((event: AgentRunEvent) => Promise<void>) | undefined {
+  if (endpoint.agent.outputMode !== "verbose") {
+    return undefined;
+  }
+
+  return async (event) => {
+    const content = formatAgentProgress(event, { redactions: [endpoint.token] });
+
+    if (content) {
+      await sendProgressMessage(message, content);
+    }
+  };
+}
+
+async function sendProgressMessage(message: Message, content: string): Promise<void> {
+  const channel = message.channel as Message["channel"] & { send?: (payload: { content: string }) => Promise<unknown> };
+
+  if (typeof channel.send !== "function") {
+    throw new Error("Discord channel cannot receive progress messages.");
+  }
+
+  await channel.send({ content });
 }
 
 async function deliverDiscordResponse(home: string, endpoint: Endpoint, message: Message, result: AgentRunResult): Promise<void> {

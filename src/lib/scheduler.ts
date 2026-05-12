@@ -1,5 +1,6 @@
 import { Cron } from "croner";
 import type { Client } from "discord.js";
+import { formatAgentProgress } from "./agent-progress.js";
 import { handleAssistantRequest } from "./assistant.js";
 import {
   addPendingDelivery,
@@ -13,6 +14,8 @@ import { deliverDiscordMessage } from "./discord-delivery.js";
 import { appendRuntimeLog } from "./logging.js";
 import { buildSchedulePlan, isBiweeklyOccurrence } from "./schedule-plan.js";
 import { loadRuntimeSchedules, removeRuntimeSchedule } from "./schedules.js";
+import type { AgentRunEvent } from "./agent-tools.js";
+import type { AssistantRequestContext } from "./assistant.js";
 import type { AgentRunResult, Endpoint, Schedule } from "./types.js";
 
 const ONCE_RETRY_MS = 60_000;
@@ -27,7 +30,13 @@ export interface ScheduleExecution {
   schedule: Schedule;
   endpoints: Endpoint[];
   clients: ReadonlyMap<string, unknown>;
-  handleRequest?: ((home: string, endpoint: Endpoint, message: string, author: string) => Promise<AgentRunResult>) | undefined;
+  handleRequest?: ((
+    home: string,
+    endpoint: Endpoint,
+    message: string,
+    author: string,
+    context?: AssistantRequestContext
+  ) => Promise<AgentRunResult>) | undefined;
   deliver?: ((endpoint: Endpoint, client: unknown, target: string, response: string) => Promise<void>) | undefined;
 }
 
@@ -35,7 +44,13 @@ export interface RuntimeSchedulerOptions {
   home: string;
   endpoints: Endpoint[];
   clients: ReadonlyMap<string, Client>;
-  handleRequest?: ((home: string, endpoint: Endpoint, message: string, author: string) => Promise<AgentRunResult>) | undefined;
+  handleRequest?: ((
+    home: string,
+    endpoint: Endpoint,
+    message: string,
+    author: string,
+    context?: AssistantRequestContext
+  ) => Promise<AgentRunResult>) | undefined;
   deliver?: ((endpoint: Endpoint, client: unknown, target: string, response: string) => Promise<void>) | undefined;
 }
 
@@ -75,10 +90,14 @@ export async function executeScheduleOnce(execution: ScheduleExecution): Promise
   });
 
   const request = execution.handleRequest ?? handleAssistantRequest;
+  const deliver = execution.deliver ?? deliverScheduleResponse;
+  const context: AssistantRequestContext = {
+    onEvent: scheduleProgressReporter(endpoint, client, execution.schedule.target, deliver)
+  };
   let result: AgentRunResult;
 
   try {
-    result = await request(execution.home, endpoint, execution.schedule.message, `schedule:${execution.schedule.id}`);
+    result = await request(execution.home, endpoint, execution.schedule.message, `schedule:${execution.schedule.id}`, context);
   } catch (error) {
     appendRuntimeLog(execution.home, "schedule_agent_failed", {
       schedule: execution.schedule.id,
@@ -106,8 +125,6 @@ export async function executeScheduleOnce(execution: ScheduleExecution): Promise
     completeSchedule(execution);
     return "completed";
   }
-
-  const deliver = execution.deliver ?? deliverScheduleResponse;
 
   try {
     await deliver(endpoint, client, execution.schedule.target, result.response);
@@ -538,6 +555,25 @@ async function deliverScheduleResponse(endpoint: Endpoint, client: unknown, targ
   }
 
   throw new Error(`Unsupported delivery provider: ${endpoint.provider}`);
+}
+
+function scheduleProgressReporter(
+  endpoint: Endpoint,
+  client: unknown,
+  target: string,
+  deliver: (endpoint: Endpoint, client: unknown, target: string, response: string) => Promise<void>
+): ((event: AgentRunEvent) => Promise<void>) | undefined {
+  if (endpoint.agent.outputMode !== "verbose") {
+    return undefined;
+  }
+
+  return async (event) => {
+    const content = formatAgentProgress(event, { redactions: [endpoint.token] });
+
+    if (content) {
+      await deliver(endpoint, client, target, content);
+    }
+  };
 }
 
 function deliveryErrorEvent(error: unknown): "schedule_delivery_failed" | "schedule_delivery_invalid" {

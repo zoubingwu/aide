@@ -1,6 +1,7 @@
 export type Provider = "discord";
 export type AgentProvider = "codex";
 export type CodexReasoningEffort = "low" | "medium" | "high" | "xhigh";
+export type AgentOutputMode = "concise" | "verbose";
 export type RuntimeStatus = "running" | "stopped";
 
 export interface CodexAgentConfig {
@@ -8,6 +9,7 @@ export interface CodexAgentConfig {
   command: string;
   model: string;
   reasoningEffort: CodexReasoningEffort;
+  outputMode: AgentOutputMode;
 }
 
 export type AgentConfig = CodexAgentConfig;

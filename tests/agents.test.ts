@@ -44,7 +44,8 @@ describe("agents", () => {
       provider: "codex",
       command: "codex",
       model: "gpt-5.5",
-      reasoningEffort: "medium"
+      reasoningEffort: "medium",
+      outputMode: "concise"
     });
     expect(agentProviderLabel("codex")).toBe("Codex");
     expect(parseAgentProvider("codex")).toBe("codex");
