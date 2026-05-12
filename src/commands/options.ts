@@ -13,23 +13,3 @@ export function stringOption(options: Record<string, unknown>, key: string): str
   const value = options[key];
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
-
-export function booleanOption(options: Record<string, unknown>, key: string): boolean | undefined {
-  const value = options[key];
-  return typeof value === "boolean" ? value : undefined;
-}
-
-export function numberOption(options: Record<string, unknown>, key: string): number | undefined {
-  const value = options[key];
-
-  if (typeof value === "number") {
-    return value;
-  }
-
-  if (typeof value === "string" && value.length > 0) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : undefined;
-  }
-
-  return undefined;
-}

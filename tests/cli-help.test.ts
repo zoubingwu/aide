@@ -21,9 +21,10 @@ describe("CLI help", () => {
 
     expect(stdout.split("\n")[0]).toBe(`aide/${packageJson.version}`);
     expect(stdout).toContain("start     Start Aide runtime in the background");
-    expect(stdout).toContain("config    Manage config");
+    expect(stdout).toContain("config    List config");
     expect(stdout).toContain("help      Show detailed help");
     expect(stdout).toContain("import    Import endpoints");
+    expect(stdout).toContain("schedule  Inspect schedules");
     expect(stdout).toContain("usage     Show usage");
   });
 
@@ -51,44 +52,35 @@ describe("CLI help", () => {
     expect(fs.existsSync(path.join(home, "logs"))).toBe(true);
   });
 
-  it("gets and sets config", async () => {
+  it("lists config", async () => {
     const home = tempHome();
     seedEndpointConfig(home);
 
-    await runCli("--home", home, "config", "set", "endpoints.discord-main.agent.model", "gpt-5.4");
-    await runCli("--home", home, "config", "set", "endpoints.discord-main.agent.reasoningEffort", "high");
-    await runCli("--home", home, "config", "set", "endpoints.discord-main.trigger.requireMention", "false");
-    await runCli("--home", home, "config", "set", "endpoints.discord-main.trigger.freeResponseSources", "channel:123,channel:456");
-    await runCli("--home", home, "config", "set", "endpoints.discord-main.token", "new-token");
+    const { stdout } = await runCli("--home", home, "config", "list");
 
-    const model = await runCli("--home", home, "config", "get", "endpoints.discord-main.agent.model");
-    const token = await runCli("--home", home, "config", "get", "endpoints.discord-main.token");
-    const all = await runCli("--home", home, "config", "get");
-    const config = fs.readFileSync(path.join(home, "config.toml"), "utf8");
-
-    expect(model.stdout).toContain('endpoints.discord-main.agent.model = "gpt-5.4"');
-    expect(token.stdout).toContain('endpoints.discord-main.token = "configured"');
-    expect(all.stdout).not.toContain("home");
-    expect(all.stdout).toMatch(/endpoints\.discord-main\.trigger\.requireMention\s+false/);
-    expect(all.stdout).toMatch(/endpoints\.discord-main\.trigger\.freeResponseSources\s+channel:123,channel:456/);
-    expect(config).toContain('model = "gpt-5.4"');
-    expect(config).toContain('reasoningEffort = "high"');
-    expect(config).toContain("requireMention = false");
-    expect(config).toContain('freeResponseSources = [ "channel:123", "channel:456" ]');
-    expect(config).toContain('token = "new-token"');
-    expect(config).not.toContain("home =");
+    expect(stdout).toContain("Config");
+    expect(stdout).toMatch(/endpoints\.discord-main\.token\s+configured/);
+    expect(stdout).toMatch(/endpoints\.discord-main\.trigger\.requireMention\s+true/);
+    expect(stdout).toMatch(/endpoints\.discord-main\.agent\.provider\s+codex/);
+    expect(stdout).toMatch(/endpoints\.discord-main\.agent\.model\s+gpt-5\.5/);
+    expect(stdout).not.toContain("test-token");
   });
 
-  it("shows config help examples", async () => {
-    const { stdout } = await runCli("config", "set", "--help");
+  it("shows config list help examples", async () => {
+    const { stdout } = await runCli("config", "list", "--help");
 
-    expect(stdout).toContain("endpoints.<id>.agent.model");
-    expect(stdout).toContain("endpoints.<id>.agent.reasoningEffort");
-    expect(stdout).toContain("endpoints.<id>.trigger.requireMention");
-    expect(stdout).toContain("endpoints.<id>.trigger.freeResponseSources");
-    expect(stdout).toContain("endpoints.<id>.token");
-    expect(stdout).toContain("aide config set endpoints.discord.trigger.freeResponseSources channel:123,channel:456");
-    expect(stdout).toContain("aide config set endpoints.discord.agent.reasoningEffort high");
+    expect(stdout).toContain("aide config list");
+    expect(stdout).not.toContain("aide config get");
+    expect(stdout).not.toContain("aide config set");
+  });
+
+  it("rejects removed config get and mutation commands", async () => {
+    await expect(runCli("config", "get")).rejects.toMatchObject({
+      stderr: expect.stringContaining("Unknown command: get")
+    });
+    await expect(runCli("config", "set", "endpoints.discord.token", "test-token")).rejects.toMatchObject({
+      stderr: expect.stringContaining("Unknown command: set")
+    });
   });
 
   it("shows endpoint subcommands", async () => {
@@ -133,77 +125,76 @@ describe("CLI help", () => {
   it("shows schedule subcommands", async () => {
     const { stdout } = await runCli("schedule", "--help");
 
-    expect(stdout).toContain("add <prompt>  Add a schedule");
-    expect(stdout).toContain("list          List schedules");
-    expect(stdout).toContain("config        Manage schedule config");
+    expect(stdout).toContain("list    List schedules");
+    expect(stdout).toContain("show    Show schedule details");
+    expect(stdout).toContain("config  Manage schedule config");
+    expect(stdout).not.toContain("add <prompt>");
+    expect(stdout).not.toContain("pause");
+    expect(stdout).not.toContain("resume");
+    expect(stdout).not.toContain("remove");
   });
 
-  it("shows schedule add examples and enum values", async () => {
-    const { stdout } = await runCli("schedule", "add", "--help");
-
-    expect(stdout).toContain("cron | hourly | daily | weekly | biweekly | monthly | once");
-    expect(stdout).toContain("Cron: 5 fields, minute hour day-of-month month day-of-week");
-    expect(stdout).toContain("sunday | monday | tuesday | wednesday | thursday | friday | saturday");
-    expect(stdout).toContain('aide schedule add "Check failed jobs."');
-    expect(stdout).toContain("--kind <kind>");
-    expect(stdout).toContain("--cron <expression>");
+  it("rejects removed schedule mutation commands", async () => {
+    await expect(
+      runCli(
+        "schedule",
+        "add",
+        "One-off reminder.",
+        "--id",
+        "launch-reminder",
+        "--kind",
+        "once",
+        "--endpoint",
+        "discord",
+        "--target",
+        "channel:123",
+        "--run-at",
+        "2026-05-08T09:00:00+08:00"
+      )
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining("Unknown command: add")
+    });
   });
 
-  it("adds and lists a cron schedule", async () => {
+  it("lists and shows a cron schedule", async () => {
     const home = tempHome();
     await runCli("--home", home, "init");
+    writeSchedules(home, [
+      {
+        id: "failed-jobs",
+        endpoint: "discord-main",
+        enabled: true,
+        kind: "cron",
+        target: "channel:123",
+        message: "Check failed jobs.",
+        cron: "*/15 * * * *",
+        timezone: "Asia/Shanghai"
+      }
+    ]);
 
-    await runCli(
-      "--home",
-      home,
-      "schedule",
-      "add",
-      "Check failed jobs.",
-      "--id",
-      "failed-jobs",
-      "--kind",
-      "cron",
-      "--cron",
-      "*/15 * * * *",
-      "--endpoint",
-      "discord-main",
-      "--timezone",
-      "Asia/Shanghai",
-      "--target",
-      "channel:123"
-    );
+    const list = await runCli("--home", home, "schedule", "list");
+    const show = await runCli("--home", home, "schedule", "show", "--id", "failed-jobs");
 
-    const { stdout } = await runCli("--home", home, "schedule", "show", "--id", "failed-jobs");
-    const schedules = fs.readFileSync(path.join(home, "schedules.json"), "utf8");
-
-    expect(stdout).toContain("Kind       cron");
-    expect(stdout).toContain("Cron       */15 * * * *");
-    expect(schedules).toContain('"cron": "*/15 * * * *"');
+    expect(list.stdout).toContain("failed-jobs");
+    expect(show.stdout).toContain("Kind       cron");
+    expect(show.stdout).toContain("Cron       */15 * * * *");
   });
 
-  it("adds and lists a daily schedule", async () => {
+  it("lists and shows a paused daily schedule", async () => {
     const home = tempHome();
     await runCli("--home", home, "init");
-
-    await runCli(
-      "--home",
-      home,
-      "schedule",
-      "add",
-      "Generate my daily brief.",
-      "--id",
-      "daily-brief",
-      "--kind",
-      "daily",
-      "--endpoint",
-      "discord-main",
-      "--time",
-      "09:00",
-      "--timezone",
-      "Asia/Shanghai",
-      "--target",
-      "channel:123"
-    );
+    writeSchedules(home, [
+      {
+        id: "daily-brief",
+        endpoint: "discord-main",
+        enabled: false,
+        kind: "daily",
+        target: "channel:123",
+        message: "Generate my daily brief.",
+        time: "09:00",
+        timezone: "Asia/Shanghai"
+      }
+    ]);
 
     const { stdout } = await runCli("--home", home, "schedule", "list");
     expect(stdout).toContain("daily-brief");
@@ -212,66 +203,7 @@ describe("CLI help", () => {
 
     const show = await runCli("--home", home, "schedule", "show", "--id", "daily-brief");
     expect(show.stdout).toContain("Message    Generate my daily brief.");
-
-    await runCli("--home", home, "schedule", "pause", "--id", "daily-brief");
-    const paused = await runCli("--home", home, "schedule", "show", "--id", "daily-brief");
-    expect(paused.stdout).toContain("Status     paused");
-  });
-
-  it("rejects non-numeric hourly minute values", async () => {
-    const home = tempHome();
-    await runCli("--home", home, "init");
-
-    await expect(
-      runCli(
-        "--home",
-        home,
-        "schedule",
-        "add",
-        "Generate my hourly brief.",
-        "--id",
-        "hourly-brief",
-        "--kind",
-        "hourly",
-        "--endpoint",
-        "discord-main",
-        "--minute",
-        "abc",
-        "--target",
-        "channel:123"
-      )
-    ).rejects.toMatchObject({
-      stderr: expect.stringContaining("Invalid numeric option: --minute")
-    });
-  });
-
-  it("rejects non-numeric monthly day values", async () => {
-    const home = tempHome();
-    await runCli("--home", home, "init");
-
-    await expect(
-      runCli(
-        "--home",
-        home,
-        "schedule",
-        "add",
-        "Generate my monthly brief.",
-        "--id",
-        "monthly-brief",
-        "--kind",
-        "monthly",
-        "--endpoint",
-        "discord-main",
-        "--day",
-        "foo",
-        "--time",
-        "09:00",
-        "--target",
-        "channel:123"
-      )
-    ).rejects.toMatchObject({
-      stderr: expect.stringContaining("Invalid numeric option: --day")
-    });
+    expect(show.stdout).toContain("Status     paused");
   });
 
   it("shows service subcommands", async () => {
@@ -287,16 +219,23 @@ describe("CLI help", () => {
 
     expect(stdout).toContain("Aide Agent Guide");
     expect(stdout).toContain("Source: channel:<id>");
+    expect(stdout).toContain("Config: <home>/config.toml");
+    expect(stdout).toContain("Schedules: <home>/schedules.json");
+    expect(stdout).toContain('trigger = { requireMention = true, freeResponseSources = ["channel:123"] }');
+    expect(stdout).toContain('agent = { provider = "codex", command = "codex", model = "gpt-5.5", reasoningEffort = "medium" }');
     expect(stdout).toContain("Trigger settings are per endpoint.");
-    expect(stdout).toContain("aide config set endpoints.discord.trigger.freeResponseSources channel:123,channel:456");
     expect(stdout).toContain("Mention-free server-channel triggers require Message Content Intent");
     expect(stdout).toContain("When a user asks to make the current Discord channel mention-free");
-    expect(stdout).toContain("aide config set endpoints.discord.agent.model gpt-5.5");
-    expect(stdout).toContain("aide schedule add <prompt>");
-    expect(stdout).toContain("Agents should prefer --kind cron with --cron for exact schedules.");
-    expect(stdout).toContain("Agents should use --kind once with --run-at for delayed reminders");
+    expect(stdout).toContain("Root shape: { \"schedules\": [] }");
+    expect(stdout).toContain('"kind": "cron"');
+    expect(stdout).toContain('"kind": "once"');
+    expect(stdout).toContain("Use kind \"cron\" with cron for exact schedules.");
+    expect(stdout).toContain("Use kind \"once\" with runAt for delayed reminders");
     expect(stdout).toContain("Shell sleeps and long-running waits are unsuitable for reminder requests.");
-    expect(stdout).toContain("Schedule changes reload the running runtime immediately");
+    expect(stdout).toContain("Manual schedule file changes apply after aide restart.");
+    expect(stdout).toContain("Run aide doctor after file edits.");
+    expect(stdout).not.toContain("aide config set");
+    expect(stdout).not.toContain("aide schedule add");
   });
 
   it("supports global options before endpoint", async () => {
@@ -411,6 +350,10 @@ function seedEndpointConfig(home: string): void {
       }
     ]
   });
+}
+
+function writeSchedules(home: string, schedules: unknown[]): void {
+  fs.writeFileSync(path.join(home, "schedules.json"), `${JSON.stringify({ schedules }, null, 2)}\n`);
 }
 
 function tempHome(): string {
