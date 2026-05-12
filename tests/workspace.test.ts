@@ -39,8 +39,8 @@ describe("workspace", () => {
     expect(agents).toContain("## Aide Runtime Management");
     expect(agents).toContain("aide help agent");
     expect(agents).toContain("Use Aide schedules for delayed reminders");
-    expect(agents).toContain("--kind once");
-    expect(agents).toContain("--run-at");
+    expect(agents).toContain('kind: "once"');
+    expect(agents).toContain("runAt");
     expect(agents).toContain("## Working Structure");
   });
 });

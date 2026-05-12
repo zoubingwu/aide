@@ -92,10 +92,7 @@ aide logs
 aide usage
 aide doctor
 
-aide config get
-aide config set endpoints.discord.token <discord-bot-token>
-aide config set endpoints.discord.agent.model gpt-5.5
-aide config set endpoints.discord.agent.reasoningEffort high
+aide config list
 
 aide endpoint list
 aide endpoint show <id>
@@ -106,10 +103,9 @@ aide endpoint config open <id>
 aide import hermes
 aide import openclaw
 
-aide schedule add "Check failed jobs" --id failed-jobs --kind cron --cron "*/15 * * * *" --endpoint <id> --target channel:<channel-id>
-aide schedule add "Daily brief" --id daily-brief --kind daily --endpoint <id> --target channel:<channel-id> --time 09:00
 aide schedule list
-aide schedule pause --id daily-brief
+aide schedule show --id daily-brief
+aide schedule config open
 
 aide stop
 ```

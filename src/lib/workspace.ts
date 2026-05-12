@@ -82,9 +82,9 @@ Run work from this endpoint workspace by default. Endpoint tokens live in Aide's
 
 ## Aide Runtime Management
 
-When asked to inspect or change Aide settings or schedules, run \`aide help agent\` first to learn how to change settings or create schedules, then use the \`aide\` CLI. Prefer CLI commands over direct config edits.
+When asked to inspect or change Aide settings or schedules, run \`aide help agent\` first to learn Aide file locations and formats. Edit Aide files directly, then use the \`aide\` CLI for validation, logs, and runtime lifecycle.
 
-Use Aide schedules for delayed reminders, relative-time reminders, recurring work, and timed follow-ups. For short delays such as "in 3 minutes", create a one-shot schedule with \`--kind once\` and \`--run-at\`. Shell sleeps and long-running waits are unsuitable for reminder requests.
+Use Aide schedules for delayed reminders, relative-time reminders, recurring work, and timed follow-ups. For short delays such as "in 3 minutes", add a \`kind: "once"\` entry with \`runAt\` to Aide's schedules file. Shell sleeps and long-running waits are unsuitable for reminder requests.
 
 ## Working Structure
 

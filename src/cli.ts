@@ -1,14 +1,6 @@
 #!/usr/bin/env node
 import { cac } from "cac";
-import {
-  addExamples,
-  agentHelpCommand,
-  CONFIG_EXAMPLES,
-  CONFIG_PATH_LIST,
-  SCHEDULE_ADD_EXAMPLES,
-  SCHEDULE_KIND_LIST,
-  WEEKDAY_LIST
-} from "./commands/help.js";
+import { agentHelpCommand, CONFIG_EXAMPLES } from "./commands/help.js";
 import { homeFromOptions } from "./commands/options.js";
 import packageJson from "../package.json" with { type: "json" };
 
@@ -83,11 +75,11 @@ function runRootCli(argv: string[]): void {
     .command("doctor", "Validate local setup")
     .option("--fix", "Create missing Aide base files and directories")
     .action(wrapLazy(async () => (await import("./commands/system.js")).doctorCommand));
-  cli.command("config", "Manage config").action(() => runConfigCli(["node", "aide config"]));
+  cli.command("config", "List config").action(() => runConfigCli(["node", "aide config"]));
   cli.command("endpoint", "Manage endpoints").action(() => runEndpointCli(["node", "aide endpoint"]));
   cli.command("help", "Show detailed help").action(() => runHelpCli(["node", "aide help"]));
   cli.command("import", "Import endpoints").action(() => runImportCli(["node", "aide import"]));
-  cli.command("schedule", "Manage schedules").action(() => runScheduleCli(["node", "aide schedule"]));
+  cli.command("schedule", "Inspect schedules").action(() => runScheduleCli(["node", "aide schedule"]));
   cli.command("service", "Manage runtime service").action(() => runServiceCli(["node", "aide service"]));
 
   handleNoMatch(cli, cli.parse(argv));
@@ -97,20 +89,13 @@ function runConfigCli(argv: string[]): void {
   const cli = cac("aide config");
 
   cli.option("--home <path>", "Aide home directory").help();
-  addExamples(
-    cli
-      .command("get [path]", "Show config")
-      .usage(`get [path]\n\nPaths: ${CONFIG_PATH_LIST}`)
-      .action(wrapLazy(async () => (await import("./commands/config.js")).getConfigCommand)),
-    CONFIG_EXAMPLES.slice(0, 2)
-  );
-  addExamples(
-    cli
-      .command("set <path> <value>", "Set config")
-      .usage(`set <path> <value>\n\nPaths: ${CONFIG_PATH_LIST}`)
-      .action(wrapLazy(async () => (await import("./commands/config.js")).setConfigCommand)),
-    CONFIG_EXAMPLES.slice(2)
-  );
+  const listCommand = cli
+    .command("list", "List config")
+    .action(wrapLazy(async () => (await import("./commands/config.js")).listConfigCommand));
+
+  for (const example of CONFIG_EXAMPLES) {
+    listCommand.example(example);
+  }
 
   handleNoMatch(cli, cli.parse(argv));
 }
@@ -152,7 +137,7 @@ function runEndpointCli(argv: string[]): void {
     .option("--message <message>", "Message to send")
     .action(wrapLazy(async () => (await import("./commands/endpoints.js")).testEndpointCommand));
   cli
-    .command("open <id>", "Open endpoint workspace")
+    .command("open <id>", "Reveal endpoint workspace")
     .action(wrapLazy(async () => (await import("./commands/endpoints.js")).openEndpointCommand));
   cli.command("config", "Manage endpoint config").action(() => runEndpointConfigCli(["node", "aide endpoint config"]));
 
@@ -172,7 +157,7 @@ function runEndpointConfigCli(argv: string[]): void {
     .command("list <id>", "List endpoint config files")
     .action(wrapLazy(async () => (await import("./commands/endpoints.js")).listEndpointConfigCommand));
   cli
-    .command("open <id>", "Open endpoint config files")
+    .command("open <id>", "Reveal endpoint config files")
     .action(wrapLazy(async () => (await import("./commands/endpoints.js")).openEndpointConfigCommand));
 
   handleNoMatch(cli, cli.parse(argv));
@@ -182,30 +167,6 @@ function runScheduleCli(argv: string[]): void {
   const cli = cac("aide schedule");
 
   cli.option("--home <path>", "Aide home directory").help();
-  addExamples(
-    cli
-      .command("add <prompt>", "Add a schedule")
-      .usage(`add <prompt> --id <id> --kind <kind> --endpoint <id> --target <target> [options]
-
-Kinds: ${SCHEDULE_KIND_LIST}
-Cron: 5 fields, minute hour day-of-month month day-of-week
-Weekdays: ${WEEKDAY_LIST}
-Targets: channel:<id> or user:<id>`)
-      .option("--id <id>", "Schedule id")
-      .option("--kind <kind>", `Schedule kind: ${SCHEDULE_KIND_LIST}`)
-      .option("--cron <expression>", "5-field cron expression")
-      .option("--endpoint <id>", "Endpoint id")
-      .option("--target <target>", "Delivery target: channel:<id> or user:<id>")
-      .option("--timezone <timezone>", "IANA timezone")
-      .option("--time <HH:mm>", "Local time")
-      .option("--weekday <weekday>", `Weekday: ${WEEKDAY_LIST}`)
-      .option("--start-date <date>", "Biweekly start date")
-      .option("--run-at <timestamp>", "One-shot run time")
-      .option("--minute <minute>", "Minute for hourly schedules")
-      .option("--day <day>", "Day of month")
-      .action(wrapLazy(async () => (await import("./commands/schedules.js")).addScheduleCommand)),
-    SCHEDULE_ADD_EXAMPLES
-  );
   cli
     .command("list", "List schedules")
     .action(wrapLazy(async () => (await import("./commands/schedules.js")).listSchedulesCommand));
@@ -213,18 +174,6 @@ Targets: channel:<id> or user:<id>`)
     .command("show", "Show schedule details")
     .option("--id <id>", "Schedule id")
     .action(wrapLazy(async () => (await import("./commands/schedules.js")).showScheduleCommand));
-  cli
-    .command("pause", "Pause schedule")
-    .option("--id <id>", "Schedule id")
-    .action(wrapLazy(async () => (await import("./commands/schedules.js")).pauseScheduleCommand));
-  cli
-    .command("resume", "Resume schedule")
-    .option("--id <id>", "Schedule id")
-    .action(wrapLazy(async () => (await import("./commands/schedules.js")).resumeScheduleCommand));
-  cli
-    .command("remove", "Remove schedule")
-    .option("--id <id>", "Schedule id")
-    .action(wrapLazy(async () => (await import("./commands/schedules.js")).removeScheduleCommand));
   cli.command("config", "Manage schedule config").action(() => runScheduleConfigCli(["node", "aide schedule config"]));
 
   handleNoMatch(cli, cli.parse(argv));
@@ -255,7 +204,7 @@ function runScheduleConfigCli(argv: string[]): void {
 
   cli.option("--home <path>", "Aide home directory").help();
   cli
-    .command("open", "Open schedules config")
+    .command("open", "Reveal schedules config")
     .action(wrapLazy(async () => (await import("./commands/schedules.js")).openScheduleConfigCommand));
 
   handleNoMatch(cli, cli.parse(argv));

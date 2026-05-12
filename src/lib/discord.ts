@@ -52,7 +52,7 @@ export async function startDiscordEndpoint(home: string, endpoint: Endpoint): Pr
 
   if (!token) {
     throw new Error(
-      `Discord token is missing for endpoint ${endpoint.id}. Run \`aide config set endpoints.${endpoint.id}.token <discord-bot-token>\`.`
+      `Discord token is missing for endpoint ${endpoint.id}. Edit the endpoint token in Aide config.toml, then run \`aide restart\`.`
     );
   }
 
