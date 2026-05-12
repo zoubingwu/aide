@@ -23,8 +23,11 @@ Aide is a TypeScript CLI package. Runtime code targets Node-compatible APIs and 
 - `src/lib/agent-tools.ts`: provider-neutral tool server references for agent executions.
 - `src/lib/agent-progress.ts`: compact agent event formatting for verbose Discord progress output.
 - `src/lib/agent.ts`: agent provider dispatch and shared prompt construction.
+- `src/lib/discord-commands.ts`: Discord slash command registration, interaction controls, and active-run tracking.
 - `src/lib/discord-context.ts`: scoped Discord request context, history fetching, and message normalization.
 - `src/lib/discord-context-mcp.ts`: request-scoped MCP server exposing Discord context tools.
+- `src/lib/discord-message-chunks.ts`: Discord message splitting and Markdown fence preservation.
+- `src/lib/discord-messages.ts`: Discord message trigger handling, typing, progress output, context tool startup, and response delivery.
 - `src/lib/codex-args.ts`: shared Codex default resume and fresh execution args.
 - `src/lib/codex.ts`: Codex provider args, execution, JSONL response extraction.
 - `src/lib/assistant.ts`: shared assistant request flow.
