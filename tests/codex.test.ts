@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { execa } from "execa";
 import {
@@ -424,6 +425,47 @@ describe("codex", () => {
     expect(seen).toEqual(["thread.started", "item.started", "item.completed"]);
   });
 
+  it("decodes streamed Codex JSONL across UTF-8 chunk boundaries", async () => {
+    const home = tempHome();
+    const workspace = tempHome();
+    const stdout = `${JSON.stringify({
+      type: "item.completed",
+      item: { id: "item_0", type: "agent_message", text: "工具完成" }
+    })}\n`;
+    const bytes = Buffer.from(stdout);
+    const splitAt = bytes.indexOf(Buffer.from("具")) + 1;
+    const stream = new EventEmitter();
+    const onEvent = vi.fn();
+    const subprocess = Object.assign(Promise.resolve({
+      stdout,
+      stderr: "",
+      exitCode: 0
+    }), { stdout: stream });
+
+    expect(splitAt).toBeGreaterThan(0);
+    mockExeca().mockReturnValueOnce(subprocess as never);
+
+    const result = runCodex(home, workspace, endpoint, "hello", { onEvent });
+    stream.emit("data", bytes.subarray(0, splitAt));
+    stream.emit("data", bytes.subarray(splitAt));
+    stream.emit("end");
+
+    await expect(result).resolves.toMatchObject({
+      response: "工具完成",
+      hasTextResponse: true,
+      exitCode: 0
+    });
+
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      payload: expect.objectContaining({
+        item: expect.objectContaining({ text: "工具完成" })
+      })
+    }));
+    expect(readActivityEvents(home)[1]?.metadata?.payload).toMatchObject({
+      item: { text: "工具完成" }
+    });
+  });
+
   it("logs resume and fresh Codex CLI attempts", async () => {
     const home = tempHome();
     const workspace = tempHome();
@@ -502,6 +544,7 @@ function tempHome(): string {
 function mockExeca(): {
   mockResolvedValueOnce(value: unknown): ReturnType<typeof mockExeca>;
   mockRejectedValueOnce(value: unknown): ReturnType<typeof mockExeca>;
+  mockReturnValueOnce(value: unknown): ReturnType<typeof mockExeca>;
 } {
   return execa as unknown as ReturnType<typeof mockExeca>;
 }

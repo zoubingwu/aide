@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { StringDecoder } from "node:string_decoder";
 import { execa } from "execa";
 import { defaultCodexFreshArgs, defaultCodexResumeArgs } from "./codex-args.js";
 import { appendActivityLog, endpointActivity } from "./logging.js";
@@ -218,7 +219,23 @@ async function runCodexOnce(execution: CodexExecution): Promise<CodexProcessResu
   let runResult: CodexProcessResult;
   const eventQueue: CodexEventQueue = { current: Promise.resolve() };
   const stream = createCodexEventStream(execution, eventQueue);
+  const decoder = new StringDecoder("utf8");
   let streamedStdout = false;
+  let decoderEnded = false;
+  const endStream = () => {
+    if (decoderEnded) {
+      return;
+    }
+
+    decoderEnded = true;
+    const remaining = decoder.end();
+
+    if (remaining) {
+      stream.write(remaining);
+    }
+
+    stream.end();
+  };
 
   try {
     const subprocess = execa(execution.command, execution.args, {
@@ -232,11 +249,9 @@ async function runCodexOnce(execution: CodexExecution): Promise<CodexProcessResu
     if (stdout) {
       stdout.on("data", (chunk) => {
         streamedStdout = true;
-        stream.write(String(chunk));
+        stream.write(decodeStdoutChunk(decoder, chunk));
       });
-      stdout.on("end", () => {
-        stream.end();
-      });
+      stdout.on("end", endStream);
     }
 
     const result = await subprocess;
@@ -257,7 +272,7 @@ async function runCodexOnce(execution: CodexExecution): Promise<CodexProcessResu
   }
 
   if (streamedStdout) {
-    stream.end();
+    endStream();
   } else {
     appendCodexJsonEvents(execution, runResult.stdout, eventQueue);
   }
@@ -376,6 +391,18 @@ function readableStdout(value: unknown): NodeJS.ReadableStream | undefined {
   }
 
   return stdout as NodeJS.ReadableStream;
+}
+
+function decodeStdoutChunk(decoder: StringDecoder, chunk: unknown): string {
+  if (typeof chunk === "string") {
+    return chunk;
+  }
+
+  if (Buffer.isBuffer(chunk) || chunk instanceof Uint8Array) {
+    return decoder.write(chunk);
+  }
+
+  return String(chunk);
 }
 
 function sanitizeArgs(args: string[], prompt: string): string[] {
