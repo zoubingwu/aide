@@ -112,6 +112,7 @@ describe("CLI help", () => {
     const guide = discordPreparationGuide();
 
     expect(guide).toContain("Enable Message Content Intent");
+    expect(guide).toContain("bot and applications.commands scopes");
     expect(guide).toContain("Grant View Channel, Send Messages, and Read Message History");
   });
 

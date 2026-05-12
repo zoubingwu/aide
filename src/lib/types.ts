@@ -74,6 +74,7 @@ export interface AgentRunResult {
   stderr: string;
   exitCode: number;
   resumed: boolean;
+  cancelled?: boolean | undefined;
   usage?: AgentUsage | undefined;
   usageTokens?: number | undefined;
 }

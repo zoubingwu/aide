@@ -11,6 +11,7 @@ export interface AssistantRequestContext {
   metadata?: AssistantPromptMetadata[] | undefined;
   toolServers?: AgentToolServer[] | undefined;
   onEvent?: ((event: AgentRunEvent) => void | Promise<void>) | undefined;
+  abortSignal?: AbortSignal | undefined;
 }
 
 export async function handleAssistantRequest(
@@ -29,17 +30,20 @@ export async function handleAssistantRequest(
 
   const result = await runAgent(home, workspace, endpoint, prompt, {
     toolServers: context.toolServers,
-    onEvent: context.onEvent
+    onEvent: context.onEvent,
+    abortSignal: context.abortSignal
   });
   const estimatedInputTokens = estimateTokens(prompt);
   const estimatedOutputTokens = estimateTokens(result.response);
   const estimatedTokens = estimatedInputTokens + estimatedOutputTokens;
-  const tokens = result.usage?.totalTokens ?? estimatedTokens;
+  const tokens = result.cancelled ? 0 : (result.usage?.totalTokens ?? estimatedTokens);
 
-  if (result.usage === undefined) {
-    addEstimatedUsage(home, endpoint, estimatedInputTokens, estimatedOutputTokens);
-  } else {
-    addCodexUsage(home, endpoint, result.usage);
+  if (!result.cancelled) {
+    if (result.usage === undefined) {
+      addEstimatedUsage(home, endpoint, estimatedInputTokens, estimatedOutputTokens);
+    } else {
+      addCodexUsage(home, endpoint, result.usage);
+    }
   }
 
   appendActivityLog(home, {
@@ -47,9 +51,10 @@ export async function handleAssistantRequest(
       provider: endpoint.agent.provider,
       exitCode: result.exitCode,
       resumed: result.resumed,
+      cancelled: result.cancelled,
       hasTextResponse: result.hasTextResponse,
-      inputTokens: result.usage?.inputTokens ?? estimatedInputTokens,
-      outputTokens: result.usage?.outputTokens ?? estimatedOutputTokens
+      inputTokens: result.cancelled ? 0 : (result.usage?.inputTokens ?? estimatedInputTokens),
+      outputTokens: result.cancelled ? 0 : (result.usage?.outputTokens ?? estimatedOutputTokens)
     }),
     tokens
   });
