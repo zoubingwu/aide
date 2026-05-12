@@ -63,6 +63,7 @@ describe("CLI help", () => {
     expect(stdout).toMatch(/endpoints\.discord-main\.trigger\.requireMention\s+true/);
     expect(stdout).toMatch(/endpoints\.discord-main\.agent\.provider\s+codex/);
     expect(stdout).toMatch(/endpoints\.discord-main\.agent\.model\s+gpt-5\.5/);
+    expect(stdout).toMatch(/endpoints\.discord-main\.agent\.outputMode\s+concise/);
     expect(stdout).not.toContain("test-token");
   });
 
@@ -222,7 +223,7 @@ describe("CLI help", () => {
     expect(stdout).toContain("Config: <home>/config.toml");
     expect(stdout).toContain("Schedules: <home>/schedules.json");
     expect(stdout).toContain('trigger = { requireMention = true, freeResponseSources = ["channel:123"] }');
-    expect(stdout).toContain('agent = { provider = "codex", command = "codex", model = "gpt-5.5", reasoningEffort = "medium" }');
+    expect(stdout).toContain('agent = { provider = "codex", command = "codex", model = "gpt-5.5", reasoningEffort = "medium", outputMode = "concise" }');
     expect(stdout).toContain("Trigger settings are per endpoint.");
     expect(stdout).toContain("Mention-free server-channel triggers require Message Content Intent");
     expect(stdout).toContain("When a user asks to make the current Discord channel mention-free");
@@ -262,6 +263,7 @@ describe("CLI help", () => {
     expect(configToml).toContain('command = "codex"');
     expect(configToml).toContain('model = "gpt-5.5"');
     expect(configToml).toContain('reasoningEffort = "medium"');
+    expect(configToml).toContain('outputMode = "concise"');
     expect(configToml).toContain("requireMention = true");
     expect(configToml).toContain("freeResponseSources = []");
     expect(fs.existsSync(path.join(home, ".env.local"))).toBe(false);
@@ -345,7 +347,8 @@ function seedEndpointConfig(home: string): void {
           provider: "codex",
           command: "codex",
           model: "gpt-5.5",
-          reasoningEffort: "medium"
+          reasoningEffort: "medium",
+          outputMode: "concise"
         }
       }
     ]

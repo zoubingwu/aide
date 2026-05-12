@@ -38,7 +38,7 @@ Config file
 - Supported endpoint provider: discord.
 - Supported agent provider: codex.
 - Trigger source values use channel:<id>.
-- Agent command, model, and reasoning effort apply on the next agent request.
+- Agent command, model, reasoning effort, and output mode apply on the next agent request.
 - Endpoint token and trigger changes apply on the next start or restart.
 
 Config example
@@ -48,7 +48,7 @@ Config example
   enabled = true
   token = "<discord-bot-token>"
   trigger = { requireMention = true, freeResponseSources = ["channel:123"] }
-  agent = { provider = "codex", command = "codex", model = "gpt-5.5", reasoningEffort = "medium" }
+  agent = { provider = "codex", command = "codex", model = "gpt-5.5", reasoningEffort = "medium", outputMode = "concise" }
 
 Trigger guide
 - Trigger settings are per endpoint.

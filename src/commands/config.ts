@@ -18,7 +18,8 @@ function configRows(config: AideConfig): string[][] {
     [`endpoints.${endpoint.id}.agent.provider`, endpoint.agent.provider],
     [`endpoints.${endpoint.id}.agent.command`, endpoint.agent.command],
     [`endpoints.${endpoint.id}.agent.model`, endpoint.agent.model],
-    [`endpoints.${endpoint.id}.agent.reasoningEffort`, endpoint.agent.reasoningEffort]
+    [`endpoints.${endpoint.id}.agent.reasoningEffort`, endpoint.agent.reasoningEffort],
+    [`endpoints.${endpoint.id}.agent.outputMode`, endpoint.agent.outputMode]
   ]);
 }
 

@@ -15,6 +15,7 @@ import { defaultCodexAgentConfig, defaultEndpointTriggerConfig } from "../src/li
 import { defaultCodexFreshArgs, defaultCodexResumeArgs } from "../src/lib/codex-args.js";
 import { ACTIVITY_LOG_FILE } from "../src/lib/logging.js";
 import { logsDir } from "../src/lib/paths.js";
+import type { AgentRunEvent } from "../src/lib/agent-tools.js";
 import type { CodexAgentConfig, Endpoint } from "../src/lib/types.js";
 
 vi.mock("execa", () => ({
@@ -293,6 +294,7 @@ describe("codex", () => {
   it("logs Codex CLI JSONL output", async () => {
     const home = tempHome();
     const workspace = tempHome();
+    const onEvent = vi.fn();
     const stdout = [
       JSON.stringify({ type: "thread.started", thread_id: "thread_1" }),
       JSON.stringify({ type: "turn.started" }),
@@ -306,7 +308,7 @@ describe("codex", () => {
       exitCode: 0
     } as never);
 
-    const result = await runCodex(home, workspace, endpoint, "hello");
+    const result = await runCodex(home, workspace, endpoint, "hello", { onEvent });
     const events = readActivityEvents(home);
 
     expect(result.response).toBe("done");
@@ -349,6 +351,12 @@ describe("codex", () => {
       ["codex_cli_event", "item.completed"],
       ["codex_cli_event", "turn.completed"]
     ]);
+    expect(onEvent.mock.calls.map(([event]) => event.type)).toEqual([
+      "thread.started",
+      "turn.started",
+      "item.completed",
+      "turn.completed"
+    ]);
     expect(events[3]?.metadata?.payload).toMatchObject({
       type: "item.completed",
       item: {
@@ -366,6 +374,54 @@ describe("codex", () => {
         stderr: ""
       }
     });
+  });
+
+  it("delivers Codex JSONL events in output order", async () => {
+    const home = tempHome();
+    const workspace = tempHome();
+    const stdout = [
+      JSON.stringify({ type: "thread.started", thread_id: "thread_1" }),
+      JSON.stringify({ type: "item.started", item: { id: "item_0", type: "tool_call" } }),
+      JSON.stringify({ type: "item.completed", item: { id: "item_0", type: "agent_message", text: "done" } })
+    ].join("\n");
+    const seen: Array<string | undefined> = [];
+    let releaseFirstEvent: () => void = () => {};
+    let markFirstEventStarted: () => void = () => {};
+    const firstEventStarted = new Promise<void>((resolve) => {
+      markFirstEventStarted = resolve;
+    });
+    const firstEventBlocked = new Promise<void>((resolve) => {
+      releaseFirstEvent = resolve;
+    });
+    const onEvent = vi.fn(async (event: AgentRunEvent) => {
+      seen.push(event.type);
+
+      if (seen.length === 1) {
+        markFirstEventStarted();
+        await firstEventBlocked;
+      }
+    });
+
+    mockExeca().mockResolvedValueOnce({
+      stdout,
+      stderr: "",
+      exitCode: 0
+    } as never);
+
+    const result = runCodex(home, workspace, endpoint, "hello", { onEvent });
+
+    await firstEventStarted;
+    await Promise.resolve();
+
+    expect(seen).toEqual(["thread.started"]);
+
+    releaseFirstEvent();
+    await expect(result).resolves.toMatchObject({
+      response: "done",
+      hasTextResponse: true,
+      exitCode: 0
+    });
+    expect(seen).toEqual(["thread.started", "item.started", "item.completed"]);
   });
 
   it("logs resume and fresh Codex CLI attempts", async () => {

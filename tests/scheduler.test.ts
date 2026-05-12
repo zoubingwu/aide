@@ -9,6 +9,7 @@ import { logsDir, schedulesPath } from "../src/lib/paths.js";
 import { executeScheduleOnce, RuntimeScheduler } from "../src/lib/scheduler.js";
 import { loadSchedules, writeSchedules } from "../src/lib/schedules.js";
 import type { AgentRunResult, Endpoint, Schedule } from "../src/lib/types.js";
+import type { AssistantRequestContext } from "../src/lib/assistant.js";
 
 const cleanupPaths: string[] = [];
 
@@ -39,6 +40,60 @@ describe("scheduler execution", () => {
     });
 
     expect(loadSchedules(home)).toEqual([]);
+  });
+
+  it("delivers one-line progress messages for scheduled verbose endpoints", async () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = {
+      ...discordEndpoint(),
+      agent: {
+        ...defaultCodexAgentConfig(),
+        outputMode: "verbose" as const
+      }
+    };
+    const schedule = onceSchedule();
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    const handleRequest = vi.fn(
+      async (
+        _home: string,
+        _endpoint: Endpoint,
+        _message: string,
+        _author: string,
+        context?: AssistantRequestContext
+      ) => {
+        await context?.onEvent?.({
+          attempt: "resume",
+          type: "item.started",
+          payload: {
+            type: "item.started",
+            item: {
+              id: "item_1",
+              type: "command_execution",
+              command: "bun run test",
+              status: "in_progress"
+            }
+          }
+        });
+
+        return agentResult({ response: "done" });
+      }
+    );
+
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+
+    await executeScheduleOnce({
+      home,
+      schedule,
+      endpoints: [endpoint],
+      clients: new Map([["discord-main", {}]]),
+      handleRequest,
+      deliver
+    });
+
+    expect(deliver).toHaveBeenNthCalledWith(1, endpoint, {}, schedule.target, "Running terminal command: bun run test");
+    expect(deliver).toHaveBeenNthCalledWith(2, endpoint, {}, schedule.target, "done");
   });
 
   it("removes a delivered once schedule when another entry is invalid", async () => {

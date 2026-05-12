@@ -68,7 +68,8 @@ export async function runCodex(
     args: buildCodexArgs(agent, workspace, prompt, options.toolServers),
     workspace,
     prompt,
-    attempt: "resume"
+    attempt: "resume",
+    onEvent: options.onEvent
   });
 
   if (resumed.exitCode === 0) {
@@ -91,7 +92,8 @@ export async function runCodex(
     args: buildFreshCodexArgs(agent, workspace, prompt, options.toolServers),
     workspace,
     prompt,
-    attempt: "fresh"
+    attempt: "fresh",
+    onEvent: options.onEvent
   });
   const response = extractFinalResponse(fresh.stdout, fresh.stderr);
   const usage = extractCodexUsage(fresh.stdout, prompt);
@@ -193,9 +195,14 @@ interface CodexExecution {
   workspace: string;
   prompt: string;
   attempt: "resume" | "fresh";
+  onEvent?: AgentRunOptions["onEvent"] | undefined;
 }
 
 type CodexProcessResult = Omit<AgentRunResult, "response" | "hasTextResponse" | "resumed">;
+
+interface CodexEventQueue {
+  current: Promise<void>;
+}
 
 async function runCodexOnce(execution: CodexExecution): Promise<CodexProcessResult> {
   appendActivityLog(
@@ -209,13 +216,30 @@ async function runCodexOnce(execution: CodexExecution): Promise<CodexProcessResu
   );
 
   let runResult: CodexProcessResult;
+  const eventQueue: CodexEventQueue = { current: Promise.resolve() };
+  const stream = createCodexEventStream(execution, eventQueue);
+  let streamedStdout = false;
 
   try {
-    const result = await execa(execution.command, execution.args, {
+    const subprocess = execa(execution.command, execution.args, {
       cwd: execution.workspace,
       reject: false,
       all: false
     });
+
+    const stdout = readableStdout(subprocess);
+
+    if (stdout) {
+      stdout.on("data", (chunk) => {
+        streamedStdout = true;
+        stream.write(String(chunk));
+      });
+      stdout.on("end", () => {
+        stream.end();
+      });
+    }
+
+    const result = await subprocess;
     runResult = {
       stdout: result.stdout,
       stderr: result.stderr,
@@ -232,7 +256,14 @@ async function runCodexOnce(execution: CodexExecution): Promise<CodexProcessResu
     throw error;
   }
 
-  appendCodexJsonEvents(execution, runResult.stdout);
+  if (streamedStdout) {
+    stream.end();
+  } else {
+    appendCodexJsonEvents(execution, runResult.stdout, eventQueue);
+  }
+
+  await eventQueue.current;
+
   appendActivityLog(
     execution.home,
     endpointActivity(execution.home, execution.endpoint, "codex_cli_finished", {
@@ -246,7 +277,7 @@ async function runCodexOnce(execution: CodexExecution): Promise<CodexProcessResu
   return runResult;
 }
 
-function appendCodexJsonEvents(execution: CodexExecution, stdout: string): void {
+function appendCodexJsonEvents(execution: CodexExecution, stdout: string, eventQueue: CodexEventQueue): void {
   for (const line of stdout.split(/\r?\n/)) {
     const payload = parseJsonObjectLine(line);
 
@@ -254,15 +285,97 @@ function appendCodexJsonEvents(execution: CodexExecution, stdout: string): void 
       continue;
     }
 
-    appendActivityLog(
-      execution.home,
-      endpointActivity(execution.home, execution.endpoint, "codex_cli_event", {
-        attempt: execution.attempt,
-        type: typeof payload.type === "string" ? payload.type : undefined,
-        payload
-      })
-    );
+    appendCodexJsonEvent(execution, payload, eventQueue);
   }
+}
+
+function createCodexEventStream(
+  execution: CodexExecution,
+  eventQueue: CodexEventQueue
+): { write(chunk: string): void; end(): void } {
+  let buffered = "";
+  let ended = false;
+
+  return {
+    write(chunk) {
+      buffered += chunk;
+      const lines = buffered.split(/\r?\n/);
+      buffered = lines.pop() ?? "";
+
+      for (const line of lines) {
+        const payload = parseJsonObjectLine(line);
+
+        if (payload) {
+          appendCodexJsonEvent(execution, payload, eventQueue);
+        }
+      }
+    },
+    end() {
+      if (ended) {
+        return;
+      }
+
+      ended = true;
+      const payload = parseJsonObjectLine(buffered);
+      buffered = "";
+
+      if (payload) {
+        appendCodexJsonEvent(execution, payload, eventQueue);
+      }
+    }
+  };
+}
+
+function appendCodexJsonEvent(
+  execution: CodexExecution,
+  payload: Record<string, unknown>,
+  eventQueue: CodexEventQueue
+): void {
+  const type = typeof payload.type === "string" ? payload.type : undefined;
+
+  appendActivityLog(
+    execution.home,
+    endpointActivity(execution.home, execution.endpoint, "codex_cli_event", {
+      attempt: execution.attempt,
+      type,
+      payload
+    })
+  );
+
+  const onEvent = execution.onEvent;
+
+  if (!onEvent) {
+    return;
+  }
+
+  eventQueue.current = eventQueue.current
+    .catch(() => undefined)
+    .then(() => onEvent({ attempt: execution.attempt, type, payload }))
+    .catch((error) => {
+      appendActivityLog(
+        execution.home,
+        endpointActivity(execution.home, execution.endpoint, "codex_progress_delivery_failed", {
+          attempt: execution.attempt,
+          type,
+          error: errorMessage(error)
+        })
+      );
+    })
+    .catch(() => undefined);
+}
+
+function readableStdout(value: unknown): NodeJS.ReadableStream | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const stdout = value.stdout;
+
+  if (!stdout || typeof stdout !== "object" || !("on" in stdout) || typeof stdout.on !== "function") {
+    return undefined;
+  }
+
+  return stdout as NodeJS.ReadableStream;
 }
 
 function sanitizeArgs(args: string[], prompt: string): string[] {

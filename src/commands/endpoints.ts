@@ -73,6 +73,7 @@ export async function showEndpointCommand(id: string, options: CommandOptions): 
   console.log(`Command     ${endpoint.agent.command}`);
   console.log(`Model       ${endpoint.agent.model}`);
   console.log(`Reasoning   ${endpoint.agent.reasoningEffort}`);
+  console.log(`Output      ${endpoint.agent.outputMode}`);
   console.log(`Mention     ${endpoint.trigger.requireMention ? "required" : "free"}`);
   console.log(`Free chats  ${endpoint.trigger.freeResponseSources.join(",") || "none"}`);
   console.log(`Workspace   ${displayPath(workspace.path)}`);
@@ -283,7 +284,8 @@ function codexAgentFromOptions(options: CommandOptions): CodexAgentConfig {
     provider: "codex",
     command: stringOption(options, "agentCommand") ?? defaults.command,
     model: stringOption(options, "model") ?? defaults.model,
-    reasoningEffort: parseReasoningEffort(stringOption(options, "reasoningEffort") ?? defaults.reasoningEffort)
+    reasoningEffort: parseReasoningEffort(stringOption(options, "reasoningEffort") ?? defaults.reasoningEffort),
+    outputMode: defaults.outputMode
   };
 }
 

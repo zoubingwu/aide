@@ -487,6 +487,44 @@ describe("discord delivery", () => {
     expect(message.reply).toHaveBeenCalledWith({ content: "done" });
   });
 
+  it("sends one-line progress messages without replying in verbose output mode", async () => {
+    const home = tempHome();
+    const message = fakeMessage();
+    const progressEndpoint: Endpoint = {
+      ...endpoint,
+      agent: {
+        ...endpoint.agent,
+        outputMode: "verbose"
+      }
+    };
+
+    vi.mocked(handleAssistantRequest).mockImplementationOnce(async (_home, _endpoint, _message, _author, context) => {
+      await context?.onEvent?.({
+        attempt: "resume",
+        type: "item.started",
+        payload: {
+          type: "item.started",
+          item: {
+            id: "item_1",
+            type: "command_execution",
+            command: "bun run test",
+            status: "in_progress"
+          }
+        }
+      });
+
+      return agentResult({ response: "done" });
+    });
+
+    await handleDiscordMessage(home, progressEndpoint, message);
+
+    expect(message.channel.send as ReturnType<typeof vi.fn>).toHaveBeenCalledWith({
+      content: "Running terminal command: bun run test"
+    });
+    expect(message.reply).toHaveBeenCalledTimes(1);
+    expect(message.reply).toHaveBeenCalledWith({ content: "done" });
+  });
+
   it("passes Discord metadata and context tools to the assistant", async () => {
     const home = tempHome();
     const stop = vi.fn().mockResolvedValue(undefined);
@@ -604,7 +642,7 @@ function hasBalancedBacktickFences(content: string): boolean {
 }
 
 type FakeMessage = Message & {
-  channel: Message["channel"] & { sendTyping: ReturnType<typeof vi.fn> };
+  channel: Message["channel"] & { send?: ReturnType<typeof vi.fn>; sendTyping: ReturnType<typeof vi.fn> };
   reply: ReturnType<typeof vi.fn>;
   react: ReturnType<typeof vi.fn>;
 };
@@ -631,6 +669,7 @@ function fakeMessage(options: {
     },
     channel: options.channel ?? {
       id: "channel-1",
+      send: vi.fn().mockResolvedValue(undefined),
       sendTyping: vi.fn()
     },
     channelId: options.channelId ?? "channel-1",
