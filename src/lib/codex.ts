@@ -70,8 +70,18 @@ export async function runCodex(
     workspace,
     prompt,
     attempt: "resume",
-    onEvent: options.onEvent
+    onEvent: options.onEvent,
+    abortSignal: options.abortSignal
   });
+
+  if (resumed.cancelled) {
+    return {
+      ...resumed,
+      response: "",
+      hasTextResponse: false,
+      resumed: true
+    };
+  }
 
   if (resumed.exitCode === 0) {
     const response = extractFinalResponse(resumed.stdout, resumed.stderr);
@@ -86,6 +96,17 @@ export async function runCodex(
     };
   }
 
+  if (options.abortSignal?.aborted) {
+    return {
+      ...resumed,
+      exitCode: 130,
+      cancelled: true,
+      response: "",
+      hasTextResponse: false,
+      resumed: true
+    };
+  }
+
   const fresh = await runCodexOnce({
     home,
     endpoint,
@@ -94,8 +115,19 @@ export async function runCodex(
     workspace,
     prompt,
     attempt: "fresh",
-    onEvent: options.onEvent
+    onEvent: options.onEvent,
+    abortSignal: options.abortSignal
   });
+
+  if (fresh.cancelled) {
+    return {
+      ...fresh,
+      response: "",
+      hasTextResponse: false,
+      resumed: false
+    };
+  }
+
   const response = extractFinalResponse(fresh.stdout, fresh.stderr);
   const usage = extractCodexUsage(fresh.stdout, prompt);
 
@@ -197,6 +229,7 @@ interface CodexExecution {
   prompt: string;
   attempt: "resume" | "fresh";
   onEvent?: AgentRunOptions["onEvent"] | undefined;
+  abortSignal?: AbortSignal | undefined;
 }
 
 type CodexProcessResult = Omit<AgentRunResult, "response" | "hasTextResponse" | "resumed">;
@@ -238,11 +271,18 @@ async function runCodexOnce(execution: CodexExecution): Promise<CodexProcessResu
   };
 
   try {
-    const subprocess = execa(execution.command, execution.args, {
-      cwd: execution.workspace,
-      reject: false,
-      all: false
-    });
+    const subprocess = execution.abortSignal
+      ? execa(execution.command, execution.args, {
+          cwd: execution.workspace,
+          reject: false,
+          all: false,
+          cancelSignal: execution.abortSignal
+        })
+      : execa(execution.command, execution.args, {
+          cwd: execution.workspace,
+          reject: false,
+          all: false
+        });
 
     const stdout = readableStdout(subprocess);
 
@@ -255,20 +295,31 @@ async function runCodexOnce(execution: CodexExecution): Promise<CodexProcessResu
     }
 
     const result = await subprocess;
+    const cancelled = Boolean(result.isCanceled || execution.abortSignal?.aborted);
     runResult = {
       stdout: result.stdout,
       stderr: result.stderr,
-      exitCode: result.exitCode ?? 1
+      exitCode: result.exitCode ?? (cancelled ? 130 : 1),
+      cancelled
     };
   } catch (error) {
-    appendActivityLog(
-      execution.home,
-      endpointActivity(execution.home, execution.endpoint, "codex_cli_failed", {
-        attempt: execution.attempt,
-        error: errorMessage(error)
-      })
-    );
-    throw error;
+    if (isCancelledExecution(error) || execution.abortSignal?.aborted) {
+      runResult = {
+        stdout: stringField(error, "stdout"),
+        stderr: stringField(error, "stderr"),
+        exitCode: 130,
+        cancelled: true
+      };
+    } else {
+      appendActivityLog(
+        execution.home,
+        endpointActivity(execution.home, execution.endpoint, "codex_cli_failed", {
+          attempt: execution.attempt,
+          error: errorMessage(error)
+        })
+      );
+      throw error;
+    }
   }
 
   if (streamedStdout) {
@@ -411,6 +462,19 @@ function sanitizeArgs(args: string[], prompt: string): string[] {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isCancelledExecution(error: unknown): boolean {
+  return isRecord(error) && error.isCanceled === true;
+}
+
+function stringField(value: unknown, key: string): string {
+  if (!isRecord(value)) {
+    return "";
+  }
+
+  const field = value[key];
+  return typeof field === "string" ? field : "";
 }
 
 function parseJsonLine(line: string): unknown | undefined {

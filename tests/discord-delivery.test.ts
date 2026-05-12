@@ -1,11 +1,27 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { GatewayIntentBits, type Client, type Message } from "discord.js";
+import { GatewayIntentBits, type Client, type Interaction, type Message } from "discord.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { defaultCodexAgentConfig, defaultEndpointTriggerConfig } from "../src/lib/config.js";
+import {
+  defaultCodexAgentConfig,
+  defaultEndpointTriggerConfig,
+  ensureAideHome,
+  loadEndpoints,
+  writeEndpoints
+} from "../src/lib/config.js";
 import { handleAssistantRequest } from "../src/lib/assistant.js";
-import { chunkDiscordMessage, discordGatewayIntents, discordMessageSource, handleDiscordMessage } from "../src/lib/discord.js";
+import {
+  discordApplicationCommands,
+  handleDiscordInteraction,
+  registerDiscordCommands
+} from "../src/lib/discord-commands.js";
+import { chunkDiscordMessage } from "../src/lib/discord-message-chunks.js";
+import {
+  discordGatewayIntents,
+  discordMessageSource,
+  handleDiscordMessage
+} from "../src/lib/discord-messages.js";
 import { startDiscordContextToolServer } from "../src/lib/discord-context-mcp.js";
 import { deliverDiscordMessage, parseDiscordTarget } from "../src/lib/discord-delivery.js";
 import { ACTIVITY_LOG_FILE } from "../src/lib/logging.js";
@@ -26,6 +42,7 @@ describe("discord delivery", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.clearAllMocks();
+    endpoint.agent.outputMode = "concise";
 
     for (const target of cleanupPaths.splice(0)) {
       fs.rmSync(target, { recursive: true, force: true });
@@ -262,6 +279,97 @@ describe("discord delivery", () => {
     expect(discordGatewayIntents(freeEndpoint)).toContain(GatewayIntentBits.MessageContent);
   });
 
+  it("defines the first Discord slash command set", () => {
+    const commands = discordApplicationCommands() as Array<{ name: string }>;
+
+    expect(commands.map((command) => command.name)).toEqual(["stop", "verbose", "status", "help"]);
+  });
+
+  it("registers Discord slash commands globally by default", async () => {
+    const home = tempHome();
+    const set = vi.fn().mockResolvedValue(new Map());
+    const client = { application: { commands: { set } } } as unknown as Client;
+
+    await registerDiscordCommands(home, endpoint, client);
+
+    expect(set).toHaveBeenCalledWith(discordApplicationCommands());
+  });
+
+  it("registers Discord slash commands to the configured guild", async () => {
+    const home = tempHome();
+    const set = vi.fn().mockResolvedValue(new Map());
+    const client = { application: { commands: { set } } } as unknown as Client;
+    const previous = process.env.AIDE_DISCORD_COMMAND_GUILD_ID;
+    process.env.AIDE_DISCORD_COMMAND_GUILD_ID = "guild-1";
+
+    try {
+      await registerDiscordCommands(home, endpoint, client);
+    } finally {
+      if (previous === undefined) {
+        Reflect.deleteProperty(process.env, "AIDE_DISCORD_COMMAND_GUILD_ID");
+      } else {
+        process.env.AIDE_DISCORD_COMMAND_GUILD_ID = previous;
+      }
+    }
+
+    expect(set).toHaveBeenCalledWith(discordApplicationCommands(), "guild-1");
+  });
+
+  it("handles Discord help slash commands", async () => {
+    const home = tempHome();
+    const interaction = fakeInteraction({ commandName: "help" });
+
+    await handleDiscordInteraction(home, endpoint, interaction);
+
+    expect(interaction.reply).toHaveBeenCalledWith({
+      content: [
+        "Aide Discord commands:",
+        "/stop - cancel the active run in this conversation",
+        "/verbose - toggle concise or verbose output",
+        "/status - show endpoint status and active run state",
+        "/help - show this command list"
+      ].join("\n")
+    });
+  });
+
+  it("toggles Discord verbose output mode and persists it", async () => {
+    const home = configuredHome(endpoint);
+    const interaction = fakeInteraction({ commandName: "verbose" });
+
+    await handleDiscordInteraction(home, endpoint, interaction);
+
+    expect(interaction.reply).toHaveBeenCalledWith({ content: "Output mode is now verbose." });
+    expect(endpoint.agent.outputMode).toBe("verbose");
+    expect(loadEndpoints(home)[0]?.agent.outputMode).toBe("verbose");
+
+    endpoint.agent.outputMode = "concise";
+  });
+
+  it("shows Discord slash command status", async () => {
+    const home = configuredHome(endpoint);
+    const interaction = fakeInteraction({ commandName: "status" });
+
+    await handleDiscordInteraction(home, endpoint, interaction);
+
+    expect(interaction.reply).toHaveBeenCalledWith({
+      content: [
+        "Endpoint: discord-agent-ops (enabled)",
+        "Runtime: stopped",
+        "Output: concise",
+        "Active run: idle"
+      ].join("\n")
+    });
+  });
+
+  it("reports when a Discord slash stop has no active run", async () => {
+    const home = tempHome();
+    const interaction = fakeInteraction({ commandName: "stop" });
+
+    await handleDiscordInteraction(home, endpoint, interaction);
+
+    expect(interaction.reply).toHaveBeenCalledWith({ content: "This conversation is idle." });
+  });
+
   it("ignores guild messages without mentions by default", async () => {
     const home = tempHome();
     const message = fakeMessage({
@@ -487,6 +595,41 @@ describe("discord delivery", () => {
     expect(message.reply).toHaveBeenCalledWith({ content: "done" });
   });
 
+  it("cancels the active run from a Discord slash stop command", async () => {
+    const home = tempHome();
+    const message = fakeMessage();
+    const interaction = fakeInteraction({ commandName: "stop" });
+    let abortSignal: AbortSignal | undefined;
+    let resolveAgent: (result: AgentRunResult) => void;
+    let resolveStarted: () => void;
+    const started = new Promise<void>((resolve) => {
+      resolveStarted = resolve;
+    });
+
+    vi.mocked(handleAssistantRequest).mockImplementationOnce((_home, _endpoint, _message, _author, context) => {
+      abortSignal = context?.abortSignal;
+      resolveStarted();
+      return new Promise((resolve) => {
+        resolveAgent = resolve;
+      });
+    });
+
+    const handled = handleDiscordMessage(home, endpoint, message);
+    await started;
+
+    expect(abortSignal?.aborted).toBe(false);
+
+    await handleDiscordInteraction(home, endpoint, interaction);
+
+    expect(abortSignal?.aborted).toBe(true);
+    expect(interaction.reply).toHaveBeenCalledWith({ content: "Stopped active Aide run." });
+
+    resolveAgent!(agentResult({ response: "", hasTextResponse: false, exitCode: 130, cancelled: true }));
+    await handled;
+
+    expect(message.reply).not.toHaveBeenCalled();
+  });
+
   it("sends one-line progress messages without replying in verbose output mode", async () => {
     const home = tempHome();
     const message = fakeMessage();
@@ -558,7 +701,8 @@ describe("discord delivery", () => {
         { label: "Discord Thread ID", value: "thread-1" },
         { label: "Discord Reply To", value: "message-0" }
       ],
-      toolServers: [{ name: "aide-discord-context", url: "http://127.0.0.1:43210/mcp" }]
+      toolServers: [{ name: "aide-discord-context", url: "http://127.0.0.1:43210/mcp" }],
+      abortSignal: expect.any(AbortSignal)
     });
     expect(stop).toHaveBeenCalledTimes(1);
   });
@@ -608,6 +752,19 @@ function tempHome(): string {
   return target;
 }
 
+function configuredHome(configuredEndpoint: Endpoint): string {
+  const home = tempHome();
+  ensureAideHome(home);
+  writeEndpoints(home, [
+    {
+      ...configuredEndpoint,
+      trigger: { ...configuredEndpoint.trigger },
+      agent: { ...configuredEndpoint.agent }
+    }
+  ]);
+  return home;
+}
+
 function mockHandleAssistantRequest(): {
   mockResolvedValueOnce(value: unknown): ReturnType<typeof mockHandleAssistantRequest>;
 } {
@@ -645,6 +802,18 @@ type FakeMessage = Message & {
   channel: Message["channel"] & { send?: ReturnType<typeof vi.fn>; sendTyping: ReturnType<typeof vi.fn> };
   reply: ReturnType<typeof vi.fn>;
   react: ReturnType<typeof vi.fn>;
+};
+
+type FakeInteraction = Interaction & {
+  commandName: string;
+  channelId: string;
+  guildId: string | null;
+  user: { id: string; bot: boolean };
+  deferred: boolean;
+  replied: boolean;
+  reply: ReturnType<typeof vi.fn>;
+  followUp: ReturnType<typeof vi.fn>;
+  isChatInputCommand: () => boolean;
 };
 
 function fakeMessage(options: {
@@ -689,6 +858,34 @@ function fakeMessage(options: {
     reply: options.reply ?? vi.fn().mockResolvedValue(undefined),
     react: options.react ?? vi.fn().mockResolvedValue(undefined)
   } as unknown as FakeMessage;
+}
+
+function fakeInteraction(options: {
+  commandName?: string;
+  channelId?: string;
+  guildId?: string | null;
+  userId?: string;
+  bot?: boolean;
+  deferred?: boolean;
+  replied?: boolean;
+  reply?: ReturnType<typeof vi.fn>;
+  followUp?: ReturnType<typeof vi.fn>;
+  isChatInputCommand?: boolean;
+} = {}): FakeInteraction {
+  return {
+    commandName: options.commandName ?? "status",
+    channelId: options.channelId ?? "channel-1",
+    guildId: options.guildId === undefined ? "guild-1" : options.guildId,
+    user: {
+      id: options.userId ?? "user-1",
+      bot: options.bot ?? false
+    },
+    deferred: options.deferred ?? false,
+    replied: options.replied ?? false,
+    reply: options.reply ?? vi.fn().mockResolvedValue(undefined),
+    followUp: options.followUp ?? vi.fn().mockResolvedValue(undefined),
+    isChatInputCommand: vi.fn(() => options.isChatInputCommand ?? true)
+  } as unknown as FakeInteraction;
 }
 
 function readActivityEvents(home: string): Array<{ event: string; metadata?: Record<string, unknown> }> {

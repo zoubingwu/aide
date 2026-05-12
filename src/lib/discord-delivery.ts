@@ -1,5 +1,5 @@
 import type { Client } from "discord.js";
-import { chunkDiscordMessage } from "./discord.js";
+import { chunkDiscordMessage } from "./discord-message-chunks.js";
 
 export type DiscordTarget =
   | { kind: "channel"; id: string }
