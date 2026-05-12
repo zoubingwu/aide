@@ -376,7 +376,7 @@ export function discordPreparationGuide(): string {
 1. Open Discord Developer Portal: https://discord.com/developers/applications
 2. Create or open an app, then copy the bot token from the Bot page.
 3. Enable Message Content Intent on the Bot page.
-4. Install the app to a server with the bot scope: https://docs.discord.com/developers/quick-start/getting-started#adding-scopes-and-bot-permissions
+4. Install the app to a server with the bot and applications.commands scopes: https://docs.discord.com/developers/quick-start/getting-started#adding-scopes-and-bot-permissions
 5. Grant View Channel, Send Messages, and Read Message History in target channels: https://docs.discord.com/developers/topics/permissions
 
 Aide will ask for:
