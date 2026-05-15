@@ -26,6 +26,7 @@ describe("config", () => {
     expect(fs.existsSync(schedulesPath(home))).toBe(true);
     expect(path.basename(schedulesPath(home))).toBe("schedules.json");
     expect(fs.existsSync(pendingDeliveriesPath(home))).toBe(true);
+    expect(pendingDeliveriesPath(home)).toBe(path.join(home, "state", "pending-deliveries.json"));
     if (process.platform !== "win32") {
       expect(fs.statSync(pendingDeliveriesPath(home)).mode & 0o777).toBe(0o600);
     }
