@@ -26,6 +26,7 @@ import { startDiscordContextToolServer } from "../src/lib/discord-context-mcp.js
 import { deliverDiscordMessage, parseDiscordTarget } from "../src/lib/discord-delivery.js";
 import { ACTIVITY_LOG_FILE } from "../src/lib/logging.js";
 import { logsDir } from "../src/lib/paths.js";
+import { writeSchedules } from "../src/lib/schedules.js";
 import type { AgentRunResult, Endpoint } from "../src/lib/types.js";
 
 vi.mock("../src/lib/assistant.js", () => ({
@@ -280,9 +281,10 @@ describe("discord delivery", () => {
   });
 
   it("defines the first Discord slash command set", () => {
-    const commands = discordApplicationCommands() as Array<{ name: string }>;
+    const commands = discordApplicationCommands() as Array<{ name: string; options?: unknown[] }>;
 
-    expect(commands.map((command) => command.name)).toEqual(["stop", "verbose", "status", "help"]);
+    expect(commands.map((command) => command.name)).toEqual(["stop", "verbose", "status", "schedule", "help"]);
+    expect(commands.find((command) => command.name === "schedule")?.options).toBeUndefined();
   });
 
   it("registers Discord slash commands globally by default", async () => {
@@ -327,6 +329,7 @@ describe("discord delivery", () => {
         "/stop - cancel the active run in this conversation",
         "/verbose - toggle concise or verbose output",
         "/status - show endpoint status and active run state",
+        "/schedule - list schedules for this conversation",
         "/help - show this command list"
       ].join("\n")
     });
@@ -359,6 +362,93 @@ describe("discord delivery", () => {
         "Active run: idle"
       ].join("\n")
     });
+  });
+
+  it("lists Discord schedules for the current conversation", async () => {
+    const home = configuredHome(endpoint);
+    const interaction = fakeInteraction({ commandName: "schedule" });
+    writeSchedules(home, [
+      {
+        id: "daily-brief",
+        endpoint: endpoint.id,
+        enabled: true,
+        kind: "daily",
+        target: "channel:channel-1",
+        message: "Generate my daily brief.",
+        time: "09:00",
+        timezone: "Asia/Shanghai"
+      },
+      {
+        id: "weekly-review",
+        endpoint: endpoint.id,
+        enabled: false,
+        kind: "weekly",
+        target: "channel:channel-1",
+        message: "Summarize open issues.",
+        weekday: "friday",
+        time: "17:30",
+        timezone: "Asia/Shanghai"
+      },
+      {
+        id: "other-channel",
+        endpoint: endpoint.id,
+        enabled: true,
+        kind: "daily",
+        target: "channel:elsewhere",
+        message: "Hidden channel prompt.",
+        time: "10:00",
+        timezone: "Asia/Shanghai"
+      },
+      {
+        id: "other-endpoint",
+        endpoint: "discord-other",
+        enabled: true,
+        kind: "daily",
+        target: "channel:channel-1",
+        message: "Hidden endpoint prompt.",
+        time: "11:00",
+        timezone: "Asia/Shanghai"
+      }
+    ]);
+
+    await handleDiscordInteraction(home, endpoint, interaction);
+
+    expect(interaction.reply).toHaveBeenCalledWith({
+      content: [
+        "Schedules for channel:channel-1:",
+        "",
+        "daily-brief (enabled)",
+        "Time: daily at 09:00 (Asia/Shanghai)",
+        "Prompt: Generate my daily brief.",
+        "",
+        "weekly-review (paused)",
+        "Time: weekly on friday at 17:30 (Asia/Shanghai)",
+        "Prompt: Summarize open issues."
+      ].join("\n")
+    });
+  });
+
+  it("splits long Discord schedule lists across interaction follow-ups", async () => {
+    const home = configuredHome(endpoint);
+    const interaction = fakeInteraction({ commandName: "schedule" });
+    writeSchedules(home, [
+      {
+        id: "long-prompt",
+        endpoint: endpoint.id,
+        enabled: true,
+        kind: "once",
+        target: "channel:channel-1",
+        message: "x".repeat(2_100),
+        runAt: "2026-05-15T09:00:00+08:00"
+      }
+    ]);
+
+    await handleDiscordInteraction(home, endpoint, interaction);
+
+    expect(interaction.reply).toHaveBeenCalledTimes(1);
+    expect(interaction.followUp).toHaveBeenCalled();
+    expect(interaction.reply.mock.calls[0]?.[0].content.length).toBeLessThanOrEqual(2_000);
+    expect(interaction.followUp.mock.calls.every(([payload]) => payload.content.length <= 2_000)).toBe(true);
   });
 
   it("reports when a Discord slash stop has no active run", async () => {

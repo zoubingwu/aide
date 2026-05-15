@@ -6,9 +6,12 @@ import {
   type Interaction
 } from "discord.js";
 import { loadEndpoints, requireEndpointIndex, writeEndpoints } from "./config.js";
+import { chunkDiscordMessage } from "./discord-message-chunks.js";
+import { statusLabel } from "./format.js";
 import { appendActivityLog, endpointActivity } from "./logging.js";
 import { runtimeDisplayStatus } from "./runtime-state.js";
-import type { AgentOutputMode, Endpoint } from "./types.js";
+import { loadSchedules } from "./schedules.js";
+import type { AgentOutputMode, Endpoint, Schedule } from "./types.js";
 
 const DISCORD_COMMAND_GUILD_ID_ENV = "AIDE_DISCORD_COMMAND_GUILD_ID";
 
@@ -29,13 +32,18 @@ const AIDE_DISCORD_COMMANDS: ApplicationCommandDataResolvable[] = [
     type: ApplicationCommandType.ChatInput
   },
   {
+    name: "schedule",
+    description: "Inspect Aide schedules.",
+    type: ApplicationCommandType.ChatInput
+  },
+  {
     name: "help",
     description: "List supported Aide Discord commands.",
     type: ApplicationCommandType.ChatInput
   }
 ];
 
-const AIDE_DISCORD_COMMAND_NAMES = new Set(["stop", "verbose", "status", "help"]);
+const AIDE_DISCORD_COMMAND_NAMES = new Set(["stop", "verbose", "status", "schedule", "help"]);
 const activeDiscordRuns = new Map<string, Set<AbortController>>();
 
 export function discordApplicationCommands(): ApplicationCommandDataResolvable[] {
@@ -135,6 +143,9 @@ async function runDiscordCommand(
     case "status":
       await replyInteraction(interaction, discordStatusText(home, endpoint, source));
       return;
+    case "schedule":
+      await replyInteraction(interaction, discordScheduleListText(home, endpoint, source));
+      return;
     case "help":
       await replyInteraction(interaction, discordHelpText());
       return;
@@ -209,23 +220,74 @@ function discordStatusText(home: string, endpoint: Endpoint, source: string): st
   ].join("\n");
 }
 
+function discordScheduleListText(home: string, endpoint: Endpoint, source: string): string {
+  const schedules = loadSchedules(home).filter((schedule) => schedule.endpoint === endpoint.id && schedule.target === source);
+
+  if (schedules.length === 0) {
+    return `No schedules configured for ${source}.`;
+  }
+
+  return [`Schedules for ${source}:`, "", schedules.map(discordScheduleText).join("\n\n")].join("\n");
+}
+
+function discordScheduleText(schedule: Schedule): string {
+  return [
+    `${schedule.id} (${statusLabel(schedule.enabled)})`,
+    `Time: ${scheduleTimeText(schedule)}`,
+    `Prompt: ${schedule.message}`
+  ].join("\n");
+}
+
+function scheduleTimeText(schedule: Schedule): string {
+  switch (schedule.kind) {
+    case "cron":
+      return `cron ${schedule.cron}${timezoneText(schedule)}`;
+    case "hourly":
+      return `hourly at minute ${schedule.minute}${timezoneText(schedule)}`;
+    case "daily":
+      return `daily at ${schedule.time}${timezoneText(schedule)}`;
+    case "weekly":
+      return `weekly on ${schedule.weekday} at ${schedule.time}${timezoneText(schedule)}`;
+    case "biweekly":
+      return `biweekly on ${schedule.weekday} at ${schedule.time}, starting ${schedule.startDate}${timezoneText(schedule)}`;
+    case "monthly":
+      return `monthly on day ${schedule.day} at ${schedule.time}${timezoneText(schedule)}`;
+    case "once":
+      return `once at ${schedule.runAt}`;
+  }
+}
+
+function timezoneText(schedule: Schedule): string {
+  return schedule.timezone ? ` (${schedule.timezone})` : "";
+}
+
 function discordHelpText(): string {
   return [
     "Aide Discord commands:",
     "/stop - cancel the active run in this conversation",
     "/verbose - toggle concise or verbose output",
     "/status - show endpoint status and active run state",
+    "/schedule - list schedules for this conversation",
     "/help - show this command list"
   ].join("\n");
 }
 
 async function replyInteraction(interaction: ChatInputCommandInteraction, content: string): Promise<void> {
+  const chunks = chunkDiscordMessage(content);
+
   if (interaction.deferred || interaction.replied) {
-    await interaction.followUp({ content });
+    for (const chunk of chunks) {
+      await interaction.followUp({ content: chunk });
+    }
     return;
   }
 
-  await interaction.reply({ content });
+  const [firstChunk, ...remainingChunks] = chunks;
+  await interaction.reply({ content: firstChunk ?? "" });
+
+  for (const chunk of remainingChunks) {
+    await interaction.followUp({ content: chunk });
+  }
 }
 
 function errorMessage(error: unknown): string {
