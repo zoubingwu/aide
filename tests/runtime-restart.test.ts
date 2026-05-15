@@ -7,6 +7,7 @@ import { ensureAideHome } from "../src/lib/config.js";
 import { deferredRestartPath } from "../src/lib/paths.js";
 import {
   DEFER_RUNTIME_RESTART_ENV,
+  DEFER_RUNTIME_RESTART_ID_ENV,
   DEFER_RUNTIME_RESTART_HOME_ENV
 } from "../src/lib/runtime-restart.js";
 
@@ -29,12 +30,16 @@ describe("runtime restart", () => {
     await withEnv(
       {
         [DEFER_RUNTIME_RESTART_ENV]: "1",
-        [DEFER_RUNTIME_RESTART_HOME_ENV]: home
+        [DEFER_RUNTIME_RESTART_HOME_ENV]: home,
+        [DEFER_RUNTIME_RESTART_ID_ENV]: "discord:main:message-1"
       },
       () => restartCommand({ home })
     );
 
     expect(fs.existsSync(deferredRestartPath(home))).toBe(true);
+    expect(JSON.parse(fs.readFileSync(deferredRestartPath(home), "utf8"))).toMatchObject({
+      requests: [{ id: "discord:main:message-1" }]
+    });
     expect(deferredRestartPath(home)).toBe(path.join(home, "state", "deferred-restart.json"));
     expect(log).toHaveBeenCalledWith("Aide runtime restart queued after the active agent response is delivered.");
   });

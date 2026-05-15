@@ -72,7 +72,8 @@ export async function runCodex(
     prompt,
     attempt: "resume",
     onEvent: options.onEvent,
-    abortSignal: options.abortSignal
+    abortSignal: options.abortSignal,
+    deferredRestartId: options.deferredRestartId
   });
 
   if (resumed.cancelled) {
@@ -117,7 +118,8 @@ export async function runCodex(
     prompt,
     attempt: "fresh",
     onEvent: options.onEvent,
-    abortSignal: options.abortSignal
+    abortSignal: options.abortSignal,
+    deferredRestartId: options.deferredRestartId
   });
 
   if (fresh.cancelled) {
@@ -231,6 +233,7 @@ interface CodexExecution {
   attempt: "resume" | "fresh";
   onEvent?: AgentRunOptions["onEvent"] | undefined;
   abortSignal?: AbortSignal | undefined;
+  deferredRestartId?: string | undefined;
 }
 
 type CodexProcessResult = Omit<AgentRunResult, "response" | "hasTextResponse" | "resumed">;
@@ -276,7 +279,7 @@ async function runCodexOnce(execution: CodexExecution): Promise<CodexProcessResu
       cwd: execution.workspace,
       reject: false,
       all: false,
-      env: deferredRestartEnv(execution.home)
+      ...(execution.deferredRestartId ? { env: deferredRestartEnv(execution.home, execution.deferredRestartId) } : {})
     };
     const subprocess = execution.abortSignal
       ? execa(execution.command, execution.args, {

@@ -12,6 +12,7 @@ export interface AssistantRequestContext {
   toolServers?: AgentToolServer[] | undefined;
   onEvent?: ((event: AgentRunEvent) => void | Promise<void>) | undefined;
   abortSignal?: AbortSignal | undefined;
+  deferredRestartId?: string | undefined;
 }
 
 export async function handleAssistantRequest(
@@ -31,7 +32,8 @@ export async function handleAssistantRequest(
   const result = await runAgent(home, workspace, endpoint, prompt, {
     toolServers: context.toolServers,
     onEvent: context.onEvent,
-    abortSignal: context.abortSignal
+    abortSignal: context.abortSignal,
+    deferredRestartId: context.deferredRestartId
   });
   const estimatedInputTokens = estimateTokens(prompt);
   const estimatedOutputTokens = estimateTokens(result.response);

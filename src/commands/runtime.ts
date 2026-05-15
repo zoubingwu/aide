@@ -1,5 +1,5 @@
 import { startRuntime, startRuntimeInBackground, stopRuntime } from "../lib/runtime.js";
-import { requestDeferredRuntimeRestart, shouldDeferRuntimeRestart } from "../lib/runtime-restart.js";
+import { deferredRuntimeRestartId, requestDeferredRuntimeRestart } from "../lib/runtime-restart.js";
 import type { CommandOptions } from "./options.js";
 import { homeFromOptions } from "./options.js";
 
@@ -17,9 +17,10 @@ export async function stopCommand(options: CommandOptions): Promise<void> {
 
 export async function restartCommand(options: CommandOptions): Promise<void> {
   const home = homeFromOptions(options);
+  const deferredRestartId = deferredRuntimeRestartId(home);
 
-  if (shouldDeferRuntimeRestart(home)) {
-    requestDeferredRuntimeRestart(home);
+  if (deferredRestartId) {
+    requestDeferredRuntimeRestart(home, deferredRestartId);
     console.log("Aide runtime restart queued after the active agent response is delivered.");
     return;
   }
