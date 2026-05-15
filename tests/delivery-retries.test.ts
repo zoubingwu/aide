@@ -10,6 +10,7 @@ import {
   markPendingDeliveryFailed,
   removePendingDelivery
 } from "../src/lib/delivery-retries.js";
+import { pendingDeliveriesPath } from "../src/lib/paths.js";
 
 const cleanupPaths: string[] = [];
 
@@ -33,8 +34,9 @@ describe("delivery retries", () => {
     }, "network down", now);
 
     if (process.platform !== "win32") {
-      expect(fs.statSync(path.join(home, "pending-deliveries.json")).mode & 0o777).toBe(0o600);
+      expect(fs.statSync(pendingDeliveriesPath(home)).mode & 0o777).toBe(0o600);
     }
+    expect(pendingDeliveriesPath(home)).toBe(path.join(home, "state", "pending-deliveries.json"));
     expect(loadPendingDeliveries(home)).toMatchObject([
       {
         id: delivery.id,
@@ -61,7 +63,7 @@ describe("delivery retries", () => {
       response: "done"
     }, "network down", new Date("2026-05-10T10:00:00.000Z"));
     if (process.platform !== "win32") {
-      fs.chmodSync(path.join(home, "pending-deliveries.json"), 0o644);
+      fs.chmodSync(pendingDeliveriesPath(home), 0o644);
     }
 
     const updated = markPendingDeliveryFailed(home, delivery.id, "still down", new Date("2026-05-10T10:01:00.000Z"));
@@ -73,7 +75,7 @@ describe("delivery retries", () => {
       lastError: "still down"
     });
     if (process.platform !== "win32") {
-      expect(fs.statSync(path.join(home, "pending-deliveries.json")).mode & 0o777).toBe(0o600);
+      expect(fs.statSync(pendingDeliveriesPath(home)).mode & 0o777).toBe(0o600);
     }
 
     removePendingDelivery(home, delivery.id);

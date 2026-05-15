@@ -25,7 +25,8 @@ import {
 import { startDiscordContextToolServer } from "../src/lib/discord-context-mcp.js";
 import { deliverDiscordMessage, parseDiscordTarget } from "../src/lib/discord-delivery.js";
 import { ACTIVITY_LOG_FILE } from "../src/lib/logging.js";
-import { logsDir } from "../src/lib/paths.js";
+import { deferredRestartPath, logsDir } from "../src/lib/paths.js";
+import { requestDeferredRuntimeRestart, startDeferredRuntimeRestart } from "../src/lib/runtime-restart.js";
 import { writeSchedules } from "../src/lib/schedules.js";
 import type { AgentRunResult, Endpoint } from "../src/lib/types.js";
 
@@ -36,6 +37,14 @@ vi.mock("../src/lib/assistant.js", () => ({
 vi.mock("../src/lib/discord-context-mcp.js", () => ({
   startDiscordContextToolServer: vi.fn()
 }));
+
+vi.mock("../src/lib/runtime-restart.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/lib/runtime-restart.js")>();
+  return {
+    ...actual,
+    startDeferredRuntimeRestart: vi.fn()
+  };
+});
 
 const cleanupPaths: string[] = [];
 
@@ -488,6 +497,34 @@ describe("discord delivery", () => {
     expect(message.reply).toHaveBeenCalledWith({ content: "done" });
   });
 
+  it("starts deferred runtime restarts after delivering Discord responses", async () => {
+    const home = tempHome();
+    const message = fakeMessage();
+    requestDeferredRuntimeRestart(home, "discord:discord-agent-ops:message-1");
+    mockHandleAssistantRequest().mockResolvedValueOnce(agentResult({ response: "done" }));
+
+    await handleDiscordMessage(home, endpoint, message);
+
+    const restart = vi.mocked(startDeferredRuntimeRestart);
+    expect(message.reply).toHaveBeenCalledWith({ content: "done" });
+    expect(fs.existsSync(deferredRestartPath(home))).toBe(false);
+    expect(restart).toHaveBeenCalledWith(home);
+    expect(message.reply.mock.invocationCallOrder[0]).toBeLessThan(restart.mock.invocationCallOrder[0] ?? 0);
+  });
+
+  it("keeps deferred restarts scoped to the Discord run that requested them", async () => {
+    const home = tempHome();
+    const message = fakeMessage({ id: "message-1" });
+    requestDeferredRuntimeRestart(home, "discord:discord-agent-ops:message-2");
+    mockHandleAssistantRequest().mockResolvedValueOnce(agentResult({ response: "done" }));
+
+    await handleDiscordMessage(home, endpoint, message);
+
+    expect(message.reply).toHaveBeenCalledWith({ content: "done" });
+    expect(fs.existsSync(deferredRestartPath(home))).toBe(true);
+    expect(vi.mocked(startDeferredRuntimeRestart)).not.toHaveBeenCalled();
+  });
+
   it("responds to free-response channel messages without mentions", async () => {
     const home = tempHome();
     const freeEndpoint: Endpoint = {
@@ -792,7 +829,8 @@ describe("discord delivery", () => {
         { label: "Discord Reply To", value: "message-0" }
       ],
       toolServers: [{ name: "aide-discord-context", url: "http://127.0.0.1:43210/mcp" }],
-      abortSignal: expect.any(AbortSignal)
+      abortSignal: expect.any(AbortSignal),
+      deferredRestartId: "discord:discord-agent-ops:message-1"
     });
     expect(stop).toHaveBeenCalledTimes(1);
   });

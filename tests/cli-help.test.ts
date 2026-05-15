@@ -131,6 +131,7 @@ describe("CLI help", () => {
     expect(stdout).toContain("show    Show schedule details");
     expect(stdout).toContain("config  Manage schedule config");
     expect(stdout).not.toContain("add <prompt>");
+    expect(stdout).not.toContain("reload");
     expect(stdout).not.toContain("pause");
     expect(stdout).not.toContain("resume");
     expect(stdout).not.toContain("remove");
@@ -223,6 +224,7 @@ describe("CLI help", () => {
     expect(stdout).toContain("Source: channel:<id>");
     expect(stdout).toContain("Config: <home>/config.toml");
     expect(stdout).toContain("Schedules: <home>/schedules.json");
+    expect(stdout).toContain("Runtime coordination state: <home>/state/");
     expect(stdout).toContain('trigger = { requireMention = true, freeResponseSources = ["channel:123"] }');
     expect(stdout).toContain('agent = { provider = "codex", command = "codex", model = "gpt-5.5", reasoningEffort = "medium", outputMode = "concise" }');
     expect(stdout).toContain("Trigger settings are per endpoint.");
@@ -234,8 +236,9 @@ describe("CLI help", () => {
     expect(stdout).toContain("Use kind \"cron\" with cron for exact schedules.");
     expect(stdout).toContain("Use kind \"once\" with runAt for delayed reminders");
     expect(stdout).toContain("Shell sleeps and long-running waits are unsuitable for reminder requests.");
-    expect(stdout).toContain("Manual schedule file changes apply after aide restart.");
+    expect(stdout).toContain("Schedule file changes auto-reload within 30 seconds.");
     expect(stdout).toContain("Run aide doctor after file edits.");
+    expect(stdout).toContain("Run aide restart after endpoint token or trigger edits");
     expect(stdout).not.toContain("aide config set");
     expect(stdout).not.toContain("aide schedule add");
   });

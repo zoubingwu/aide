@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { randomUUID } from "node:crypto";
+import path from "node:path";
 import { z } from "zod";
 import { assertInitialized, readJson } from "./config.js";
 import { pendingDeliveriesPath } from "./paths.js";
@@ -100,6 +101,7 @@ export function removePendingDelivery(home: string, id: string): void {
 function writePendingDeliveries(home: string, deliveries: PendingDelivery[]): void {
   const body = pendingDeliveriesFileSchema.parse({ deliveries });
   const filePath = pendingDeliveriesPath(home);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600 });
   fs.chmodSync(filePath, 0o600);
 }

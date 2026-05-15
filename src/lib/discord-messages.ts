@@ -6,6 +6,11 @@ import { buildDiscordPromptMetadata, buildDiscordRequestContext } from "./discor
 import { startDiscordContextToolServer } from "./discord-context-mcp.js";
 import { chunkDiscordMessage } from "./discord-message-chunks.js";
 import { appendActivityLog, endpointActivity } from "./logging.js";
+import {
+  clearDeferredRuntimeRestart,
+  consumeDeferredRuntimeRestart,
+  startDeferredRuntimeRestart
+} from "./runtime-restart.js";
 import type { AgentRunEvent, ManagedAgentToolServer } from "./agent-tools.js";
 import type { AgentRunResult, Endpoint } from "./types.js";
 
@@ -49,6 +54,7 @@ export async function handleDiscordMessage(home: string, endpoint: Endpoint, mes
   const toolServer = await startDiscordContextTools(home, endpoint, message, discordContext);
   const progressReporter = discordProgressReporter(endpoint, message);
   const activeRun = trackActiveDiscordRun(endpoint, discordContext.source);
+  const deferredRestartId = discordDeferredRestartId(endpoint, message);
 
   const result = await (async () => {
     try {
@@ -58,6 +64,7 @@ export async function handleDiscordMessage(home: string, endpoint: Endpoint, mes
           metadata: buildDiscordPromptMetadata(discordContext),
           toolServers: toolServer ? [{ name: toolServer.name, url: toolServer.url }] : undefined,
           abortSignal: activeRun.signal,
+          deferredRestartId,
           ...(progressReporter ? { onEvent: progressReporter } : {})
         })
       );
@@ -68,6 +75,7 @@ export async function handleDiscordMessage(home: string, endpoint: Endpoint, mes
   })();
 
   if (result.cancelled) {
+    clearDeferredRuntimeRestart(home, deferredRestartId);
     appendActivityLog(home, endpointActivity(home, endpoint, "discord_agent_cancelled", { source: discordContext.source }));
     return;
   }
@@ -79,6 +87,7 @@ export async function handleDiscordMessage(home: string, endpoint: Endpoint, mes
   try {
     await deliverDiscordResponse(home, endpoint, message, result);
   } catch (error) {
+    clearDeferredRuntimeRestart(home, deferredRestartId);
     appendActivityLog(
       home,
       endpointActivity(home, endpoint, "discord_delivery_failed", {
@@ -88,6 +97,8 @@ export async function handleDiscordMessage(home: string, endpoint: Endpoint, mes
     );
     throw error;
   }
+
+  restartRuntimeAfterDeliveredResponse(home, deferredRestartId);
 }
 
 export function discordMessageSource(message: { author: { id: string }; channelId: string; guildId: string | null }): string {
@@ -204,6 +215,16 @@ async function deliverDiscordResponse(home: string, endpoint: Endpoint, message:
 
   await sendResponse(message, discordResponseText(result));
   appendActivityLog(home, endpointActivity(home, endpoint, "discord_response_delivered", { exitCode: result.exitCode }));
+}
+
+function restartRuntimeAfterDeliveredResponse(home: string, deferredRestartId: string): void {
+  if (consumeDeferredRuntimeRestart(home, deferredRestartId)) {
+    startDeferredRuntimeRestart(home);
+  }
+}
+
+function discordDeferredRestartId(endpoint: Endpoint, message: Message): string {
+  return `discord:${endpoint.id}:${message.id}`;
 }
 
 async function reactToEmptySuccess(home: string, endpoint: Endpoint, message: Message, result: AgentRunResult): Promise<void> {

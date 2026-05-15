@@ -9,6 +9,7 @@ import {
   pendingDeliveriesPath,
   runtimePath,
   schedulesPath,
+  stateDir,
   usagePath,
   workspaceDir
 } from "./paths.js";
@@ -31,6 +32,7 @@ export function missingBasePathLabels(home: string): string[] {
     { label: "runtime.json", path: runtimePath(home) },
     { label: "usage.jsonl", path: usagePath(home) },
     { label: "logs directory", path: logsDir(home) },
+    { label: "state directory", path: stateDir(home) },
     { label: "workspace directory", path: workspaceDir(home) }
   ]
     .filter((entry) => !fs.existsSync(entry.path))
@@ -52,6 +54,7 @@ export async function runDoctorChecks(home: string): Promise<DoctorCheck[]> {
   checks.push({ status: fs.existsSync(pendingDeliveriesPath(home)) ? "ok" : "fail", label: "pending-deliveries.json" });
   checks.push({ status: fs.existsSync(runtimePath(home)) ? "ok" : "fail", label: "runtime.json" });
   checks.push({ status: fs.existsSync(usagePath(home)) ? "ok" : "fail", label: "usage.jsonl" });
+  checks.push({ status: fs.existsSync(stateDir(home)) ? "ok" : "fail", label: "state directory" });
   checks.push({ status: fs.existsSync(workspaceDir(home)) ? "ok" : "fail", label: "workspace directory" });
   const serviceSupported = process.platform === "darwin" || process.platform === "linux";
   checks.push({

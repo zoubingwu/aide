@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ensureAideHome, loadConfig, loadEndpoints, writeConfig } from "../src/lib/config.js";
-import { configPath, logsDir, pendingDeliveriesPath, schedulesPath, usagePath, workspaceDir } from "../src/lib/paths.js";
+import { configPath, logsDir, pendingDeliveriesPath, schedulesPath, stateDir, usagePath, workspaceDir } from "../src/lib/paths.js";
 
 const cleanupPaths: string[] = [];
 
@@ -26,12 +26,14 @@ describe("config", () => {
     expect(fs.existsSync(schedulesPath(home))).toBe(true);
     expect(path.basename(schedulesPath(home))).toBe("schedules.json");
     expect(fs.existsSync(pendingDeliveriesPath(home))).toBe(true);
+    expect(pendingDeliveriesPath(home)).toBe(path.join(home, "state", "pending-deliveries.json"));
     if (process.platform !== "win32") {
       expect(fs.statSync(pendingDeliveriesPath(home)).mode & 0o777).toBe(0o600);
     }
     expect(fs.existsSync(usagePath(home))).toBe(true);
     expect(fs.readFileSync(usagePath(home), "utf8")).toBe("");
     expect(fs.existsSync(logsDir(home))).toBe(true);
+    expect(fs.existsSync(stateDir(home))).toBe(true);
     expect(fs.existsSync(workspaceDir(home))).toBe(true);
     expect(fs.readFileSync(configPath(home), "utf8")).not.toContain("home =");
     expect(loadConfig(home).endpoints).toEqual([]);

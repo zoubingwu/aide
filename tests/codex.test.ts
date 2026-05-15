@@ -377,6 +377,31 @@ describe("codex", () => {
     });
   });
 
+  it("scopes deferred restart env to requested runs", async () => {
+    const home = tempHome();
+    const workspace = tempHome();
+    const stdout = JSON.stringify({ type: "final", final_response: "done" });
+
+    mockExeca().mockResolvedValueOnce({
+      stdout,
+      stderr: "",
+      exitCode: 0
+    });
+
+    await runCodex(home, workspace, endpoint, "hello", { deferredRestartId: "discord:yaya:message-1" });
+
+    expect(execa).toHaveBeenCalledWith("codex", expect.arrayContaining(["--cd", workspace]), {
+      cwd: workspace,
+      reject: false,
+      all: false,
+      env: {
+        AIDE_DEFER_RUNTIME_RESTART: "1",
+        AIDE_DEFER_RUNTIME_RESTART_HOME: home,
+        AIDE_DEFER_RUNTIME_RESTART_ID: "discord:yaya:message-1"
+      }
+    });
+  });
+
   it("delivers Codex JSONL events in output order", async () => {
     const home = tempHome();
     const workspace = tempHome();
