@@ -177,10 +177,27 @@ function discordParentChannelId(message: Message): string | undefined {
 
 async function sendResponse(message: Message, response: string): Promise<void> {
   const chunks = chunkDiscordMessage(response);
+  const [firstChunk, ...remainingChunks] = chunks;
 
-  for (const chunk of chunks) {
-    await message.reply({ content: chunk });
+  if (firstChunk === undefined) {
+    return;
   }
+
+  await message.reply({ content: firstChunk });
+
+  for (const chunk of remainingChunks) {
+    await sendChannelMessage(message, chunk);
+  }
+}
+
+async function sendChannelMessage(message: Message, content: string): Promise<void> {
+  const channel = message.channel as Message["channel"] & { send?: (payload: { content: string }) => Promise<unknown> };
+
+  if (typeof channel.send !== "function") {
+    throw new Error("Discord channel cannot receive response messages.");
+  }
+
+  await channel.send({ content });
 }
 
 function discordProgressReporter(endpoint: Endpoint, message: Message): ((event: AgentRunEvent) => Promise<void>) | undefined {
