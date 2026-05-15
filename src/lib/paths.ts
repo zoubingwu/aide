@@ -49,6 +49,10 @@ export function pendingDeliveriesPath(home: string): string {
   return path.join(home, "pending-deliveries.json");
 }
 
+export function deferredRestartPath(home: string): string {
+  return path.join(stateDir(home), "deferred-restart.json");
+}
+
 export function runtimePath(home: string): string {
   return path.join(home, "runtime.json");
 }
@@ -59,6 +63,10 @@ export function usagePath(home: string): string {
 
 export function logsDir(home: string): string {
   return path.join(home, "logs");
+}
+
+export function stateDir(home: string): string {
+  return path.join(home, "state");
 }
 
 export function workspaceDir(home: string): string {

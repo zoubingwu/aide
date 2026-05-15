@@ -25,7 +25,8 @@ import {
 import { startDiscordContextToolServer } from "../src/lib/discord-context-mcp.js";
 import { deliverDiscordMessage, parseDiscordTarget } from "../src/lib/discord-delivery.js";
 import { ACTIVITY_LOG_FILE } from "../src/lib/logging.js";
-import { logsDir } from "../src/lib/paths.js";
+import { deferredRestartPath, logsDir } from "../src/lib/paths.js";
+import { requestDeferredRuntimeRestart, startDeferredRuntimeRestart } from "../src/lib/runtime-restart.js";
 import { writeSchedules } from "../src/lib/schedules.js";
 import type { AgentRunResult, Endpoint } from "../src/lib/types.js";
 
@@ -36,6 +37,14 @@ vi.mock("../src/lib/assistant.js", () => ({
 vi.mock("../src/lib/discord-context-mcp.js", () => ({
   startDiscordContextToolServer: vi.fn()
 }));
+
+vi.mock("../src/lib/runtime-restart.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/lib/runtime-restart.js")>();
+  return {
+    ...actual,
+    startDeferredRuntimeRestart: vi.fn()
+  };
+});
 
 const cleanupPaths: string[] = [];
 
@@ -486,6 +495,21 @@ describe("discord delivery", () => {
 
     expect(handleAssistantRequest).toHaveBeenCalledWith(home, endpoint, "hello from dm", "alice", expect.any(Object));
     expect(message.reply).toHaveBeenCalledWith({ content: "done" });
+  });
+
+  it("starts deferred runtime restarts after delivering Discord responses", async () => {
+    const home = tempHome();
+    const message = fakeMessage();
+    requestDeferredRuntimeRestart(home);
+    mockHandleAssistantRequest().mockResolvedValueOnce(agentResult({ response: "done" }));
+
+    await handleDiscordMessage(home, endpoint, message);
+
+    const restart = vi.mocked(startDeferredRuntimeRestart);
+    expect(message.reply).toHaveBeenCalledWith({ content: "done" });
+    expect(fs.existsSync(deferredRestartPath(home))).toBe(false);
+    expect(restart).toHaveBeenCalledWith(home);
+    expect(message.reply.mock.invocationCallOrder[0]).toBeLessThan(restart.mock.invocationCallOrder[0] ?? 0);
   });
 
   it("responds to free-response channel messages without mentions", async () => {

@@ -25,6 +25,7 @@ Files
 - Config: <home>/config.toml
 - Schedules: <home>/schedules.json
 - Runtime state: <home>/runtime.json
+- Runtime coordination state: <home>/state/
 - Usage events: <home>/usage.jsonl
 - Logs: <home>/logs/
 - Endpoint workspace: <home>/workspace/<endpoint-id>/
@@ -58,7 +59,7 @@ Trigger guide
 - Set trigger.freeResponseSources to a channel list for mention-free channels, such as ["channel:123", "channel:456"].
 - A thread whose parent channel is listed in freeResponseSources also triggers without a mention.
 - Mention-free server-channel triggers require Message Content Intent in the Discord Developer Portal.
-- When a user asks to make the current Discord channel mention-free, add Source: channel:<id> to trigger.freeResponseSources, then run aide restart.
+- When a user asks to make the current Discord channel mention-free, add Source: channel:<id> to trigger.freeResponseSources, then run aide restart from a separate shell/session after the current Discord response is delivered.
 
 Schedule file
 - File: <home>/schedules.json
@@ -73,7 +74,7 @@ Schedule file
 - Weekdays: ${WEEKDAY_LIST}
 - Targets: channel:<id> or user:<id>
 - Shell sleeps and long-running waits are unsuitable for reminder requests.
-- Manual schedule file changes apply after aide restart.
+- Schedule file changes auto-reload within 30 seconds.
 
 Schedule field shapes
 - cron: kind, cron, timezone
@@ -111,7 +112,7 @@ Schedule example
 
 Runtime
 - Run aide doctor after file edits.
-- Run aide restart after endpoint token, trigger, or schedule file edits.
+- Run aide restart after endpoint token or trigger edits from a separate shell/session after the current Discord response is delivered.
 - Use aide status, aide logs, aide doctor, and aide usage to inspect the runtime.
 `;
 }

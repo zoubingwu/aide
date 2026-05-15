@@ -5,6 +5,7 @@ import { StringDecoder } from "node:string_decoder";
 import { execa } from "execa";
 import { defaultCodexFreshArgs, defaultCodexResumeArgs } from "./codex-args.js";
 import { appendActivityLog, endpointActivity } from "./logging.js";
+import { deferredRestartEnv } from "./runtime-restart.js";
 import type { AgentRunOptions, AgentToolServer } from "./agent-tools.js";
 import type { AgentRunResult, AgentUsage, CodexAgentConfig, Endpoint } from "./types.js";
 
@@ -271,18 +272,18 @@ async function runCodexOnce(execution: CodexExecution): Promise<CodexProcessResu
   };
 
   try {
+    const subprocessOptions = {
+      cwd: execution.workspace,
+      reject: false,
+      all: false,
+      env: deferredRestartEnv(execution.home)
+    };
     const subprocess = execution.abortSignal
       ? execa(execution.command, execution.args, {
-          cwd: execution.workspace,
-          reject: false,
-          all: false,
+          ...subprocessOptions,
           cancelSignal: execution.abortSignal
         })
-      : execa(execution.command, execution.args, {
-          cwd: execution.workspace,
-          reject: false,
-          all: false
-        });
+      : execa(execution.command, execution.args, subprocessOptions);
 
     const stdout = readableStdout(subprocess);
 

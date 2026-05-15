@@ -17,7 +17,7 @@ Aide is a TypeScript CLI package. Runtime code targets Node-compatible APIs and 
 - `src/commands/schedules.ts`: schedule CRUD and schedule config commands.
 - `src/commands/service.ts`: OS service install, uninstall, and status commands.
 - `src/lib/config.ts`: TOML config, JSON runtime state, JSON schedules data, and schema validation.
-- `src/lib/paths.ts`: Aide home, display paths, endpoint id helpers.
+- `src/lib/paths.ts`: Aide home, display paths, state directory paths, endpoint id helpers.
 - `src/lib/workspace.ts`: endpoint workspace creation and validation.
 - `src/lib/agents.ts`: supported CLI agent catalog, default agent config dispatch, and local install detection.
 - `src/lib/agent-tools.ts`: provider-neutral tool server references for agent executions.
@@ -41,6 +41,7 @@ Aide is a TypeScript CLI package. Runtime code targets Node-compatible APIs and 
 - `src/lib/scheduler.ts`: runtime schedule jobs, overlap handling, and one-shot cleanup.
 - `src/lib/service.ts`: launchd and systemd user service file generation and lifecycle.
 - `src/lib/runtime.ts`: background process launch and runtime lifecycle.
+- `src/lib/runtime-restart.ts`: deferred runtime restart requests from active agent runs.
 - `src/lib/runtime-state.ts`: PID state helpers.
 - `src/lib/usage.ts`: JSONL usage events and estimated token accounting.
 - `src/lib/logging.ts`: runtime log and activity JSONL events.
@@ -52,7 +53,7 @@ Aide is a TypeScript CLI package. Runtime code targets Node-compatible APIs and 
 
 ## Development Rules
 
-Keep endpoint as the public concept and workspace as implementation detail. Prefer small command handlers and focused helpers over broad service classes. Use TOML helpers for config changes. Endpoint tokens live in `config.toml`; keep token values out of terminal output and commits.
+Keep endpoint as the public concept and workspace as implementation detail. Prefer small command handlers and focused helpers over broad service classes. Use TOML helpers for config changes. Endpoint tokens live in `config.toml`; keep token values out of terminal output and commits. Short-lived runtime coordination files belong under `<home>/state/`.
 
 Run these checks before handoff:
 

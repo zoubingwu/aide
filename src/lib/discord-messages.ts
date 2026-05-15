@@ -6,6 +6,11 @@ import { buildDiscordPromptMetadata, buildDiscordRequestContext } from "./discor
 import { startDiscordContextToolServer } from "./discord-context-mcp.js";
 import { chunkDiscordMessage } from "./discord-message-chunks.js";
 import { appendActivityLog, endpointActivity } from "./logging.js";
+import {
+  clearDeferredRuntimeRestart,
+  consumeDeferredRuntimeRestart,
+  startDeferredRuntimeRestart
+} from "./runtime-restart.js";
 import type { AgentRunEvent, ManagedAgentToolServer } from "./agent-tools.js";
 import type { AgentRunResult, Endpoint } from "./types.js";
 
@@ -68,6 +73,7 @@ export async function handleDiscordMessage(home: string, endpoint: Endpoint, mes
   })();
 
   if (result.cancelled) {
+    clearDeferredRuntimeRestart(home);
     appendActivityLog(home, endpointActivity(home, endpoint, "discord_agent_cancelled", { source: discordContext.source }));
     return;
   }
@@ -79,6 +85,7 @@ export async function handleDiscordMessage(home: string, endpoint: Endpoint, mes
   try {
     await deliverDiscordResponse(home, endpoint, message, result);
   } catch (error) {
+    clearDeferredRuntimeRestart(home);
     appendActivityLog(
       home,
       endpointActivity(home, endpoint, "discord_delivery_failed", {
@@ -88,6 +95,8 @@ export async function handleDiscordMessage(home: string, endpoint: Endpoint, mes
     );
     throw error;
   }
+
+  restartRuntimeAfterDeliveredResponse(home);
 }
 
 export function discordMessageSource(message: { author: { id: string }; channelId: string; guildId: string | null }): string {
@@ -204,6 +213,12 @@ async function deliverDiscordResponse(home: string, endpoint: Endpoint, message:
 
   await sendResponse(message, discordResponseText(result));
   appendActivityLog(home, endpointActivity(home, endpoint, "discord_response_delivered", { exitCode: result.exitCode }));
+}
+
+function restartRuntimeAfterDeliveredResponse(home: string): void {
+  if (consumeDeferredRuntimeRestart(home)) {
+    startDeferredRuntimeRestart(home);
+  }
 }
 
 async function reactToEmptySuccess(home: string, endpoint: Endpoint, message: Message, result: AgentRunResult): Promise<void> {

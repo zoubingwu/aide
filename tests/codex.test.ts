@@ -344,7 +344,11 @@ describe("codex", () => {
     expect(execa).toHaveBeenCalledWith("codex", expect.arrayContaining(["--cd", workspace]), {
       cwd: workspace,
       reject: false,
-      all: false
+      all: false,
+      env: {
+        AIDE_DEFER_RUNTIME_RESTART: "1",
+        AIDE_DEFER_RUNTIME_RESTART_HOME: home
+      }
     });
     expect(events.slice(1, 5).map((event) => [event.event, event.metadata?.type])).toEqual([
       ["codex_cli_event", "thread.started"],

@@ -9,6 +9,7 @@ import {
   pendingDeliveriesPath,
   runtimePath,
   schedulesPath,
+  stateDir,
   usagePath,
   workspaceDir
 } from "./paths.js";
@@ -93,6 +94,7 @@ export function defaultRuntimeState(home: string): RuntimeState {
 export function ensureAideHome(home: string): void {
   fs.mkdirSync(home, { recursive: true });
   fs.mkdirSync(logsDir(home), { recursive: true });
+  fs.mkdirSync(stateDir(home), { recursive: true });
   fs.mkdirSync(workspaceDir(home), { recursive: true });
 
   writeFileIfMissing(configPath(home), `${stringifyConfig(defaultConfig())}\n`, 0o600);
