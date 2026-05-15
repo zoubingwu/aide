@@ -586,15 +586,18 @@ describe("discord delivery", () => {
     expect(message.reply).toHaveBeenCalledWith({ content: "done" });
   });
 
-  it("replies once per long response chunk", async () => {
+  it("replies to the first long response chunk and sends the rest plainly", async () => {
     const home = tempHome();
     const message = fakeMessage();
     mockHandleAssistantRequest().mockResolvedValueOnce(agentResult({ response: "x".repeat(4_001) }));
 
     await handleDiscordMessage(home, endpoint, message);
 
-    expect(message.reply).toHaveBeenCalledTimes(3);
-    expect(message.reply.mock.calls.every(([payload]) => payload.content.length <= 2_000)).toBe(true);
+    const send = message.channel.send!;
+    expect(message.reply).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(2);
+    const payloads = [...message.reply.mock.calls, ...send.mock.calls].map(([payload]) => payload);
+    expect(payloads.every((payload) => payload.content.length <= 2_000)).toBe(true);
   });
 
   it("sends scheduled channel deliveries once per long response chunk", async () => {
