@@ -323,16 +323,16 @@ describe("discord delivery", () => {
 
     await handleDiscordInteraction(home, endpoint, interaction);
 
-    expect(interaction.reply).toHaveBeenCalledWith({
-      content: [
+    expect(interaction.reply).toHaveBeenCalledWith(
+      interactionResponse([
         "Aide Discord commands:",
         "/stop - cancel the active run in this conversation",
         "/verbose - toggle concise or verbose output",
         "/status - show endpoint status and active run state",
         "/schedule - list schedules for this conversation",
         "/help - show this command list"
-      ].join("\n")
-    });
+      ].join("\n"))
+    );
   });
 
   it("toggles Discord verbose output mode and persists it", async () => {
@@ -341,7 +341,7 @@ describe("discord delivery", () => {
 
     await handleDiscordInteraction(home, endpoint, interaction);
 
-    expect(interaction.reply).toHaveBeenCalledWith({ content: "Output mode is now verbose." });
+    expect(interaction.reply).toHaveBeenCalledWith(interactionResponse("Output mode is now verbose."));
     expect(endpoint.agent.outputMode).toBe("verbose");
     expect(loadEndpoints(home)[0]?.agent.outputMode).toBe("verbose");
 
@@ -354,14 +354,14 @@ describe("discord delivery", () => {
 
     await handleDiscordInteraction(home, endpoint, interaction);
 
-    expect(interaction.reply).toHaveBeenCalledWith({
-      content: [
+    expect(interaction.reply).toHaveBeenCalledWith(
+      interactionResponse([
         "Endpoint: discord-agent-ops (enabled)",
         "Runtime: stopped",
         "Output: concise",
         "Active run: idle"
-      ].join("\n")
-    });
+      ].join("\n"))
+    );
   });
 
   it("lists Discord schedules for the current conversation", async () => {
@@ -374,7 +374,7 @@ describe("discord delivery", () => {
         enabled: true,
         kind: "daily",
         target: "channel:channel-1",
-        message: "Generate my daily brief.",
+        message: "Generate my daily brief for @everyone.",
         time: "09:00",
         timezone: "Asia/Shanghai"
       },
@@ -413,19 +413,19 @@ describe("discord delivery", () => {
 
     await handleDiscordInteraction(home, endpoint, interaction);
 
-    expect(interaction.reply).toHaveBeenCalledWith({
-      content: [
+    expect(interaction.reply).toHaveBeenCalledWith(
+      interactionResponse([
         "Schedules for channel:channel-1:",
         "",
         "daily-brief (enabled)",
         "Time: daily at 09:00 (Asia/Shanghai)",
-        "Prompt: Generate my daily brief.",
+        "Prompt: Generate my daily brief for @everyone.",
         "",
         "weekly-review (paused)",
         "Time: weekly on friday at 17:30 (Asia/Shanghai)",
         "Prompt: Summarize open issues."
-      ].join("\n")
-    });
+      ].join("\n"))
+    );
   });
 
   it("splits long Discord schedule lists across interaction follow-ups", async () => {
@@ -457,7 +457,7 @@ describe("discord delivery", () => {
 
     await handleDiscordInteraction(home, endpoint, interaction);
 
-    expect(interaction.reply).toHaveBeenCalledWith({ content: "This conversation is idle." });
+    expect(interaction.reply).toHaveBeenCalledWith(interactionResponse("This conversation is idle."));
   });
 
   it("ignores guild messages without mentions by default", async () => {
@@ -712,7 +712,7 @@ describe("discord delivery", () => {
     await handleDiscordInteraction(home, endpoint, interaction);
 
     expect(abortSignal?.aborted).toBe(true);
-    expect(interaction.reply).toHaveBeenCalledWith({ content: "Stopped active Aide run." });
+    expect(interaction.reply).toHaveBeenCalledWith(interactionResponse("Stopped active Aide run."));
 
     resolveAgent!(agentResult({ response: "", hasTextResponse: false, exitCode: 130, cancelled: true }));
     await handled;
@@ -976,6 +976,13 @@ function fakeInteraction(options: {
     followUp: options.followUp ?? vi.fn().mockResolvedValue(undefined),
     isChatInputCommand: vi.fn(() => options.isChatInputCommand ?? true)
   } as unknown as FakeInteraction;
+}
+
+function interactionResponse(content: string) {
+  return {
+    content,
+    allowedMentions: { parse: [] }
+  };
 }
 
 function readActivityEvents(home: string): Array<{ event: string; metadata?: Record<string, unknown> }> {

@@ -3,6 +3,7 @@ import {
   type ApplicationCommandDataResolvable,
   type ChatInputCommandInteraction,
   type Client,
+  type InteractionReplyOptions,
   type Interaction
 } from "discord.js";
 import { loadEndpoints, requireEndpointIndex, writeEndpoints } from "./config.js";
@@ -14,6 +15,7 @@ import { loadSchedules } from "./schedules.js";
 import type { AgentOutputMode, Endpoint, Schedule } from "./types.js";
 
 const DISCORD_COMMAND_GUILD_ID_ENV = "AIDE_DISCORD_COMMAND_GUILD_ID";
+const SUPPRESSED_ALLOWED_MENTIONS = { parse: [] } satisfies NonNullable<InteractionReplyOptions["allowedMentions"]>;
 
 const AIDE_DISCORD_COMMANDS: ApplicationCommandDataResolvable[] = [
   {
@@ -277,16 +279,16 @@ async function replyInteraction(interaction: ChatInputCommandInteraction, conten
 
   if (interaction.deferred || interaction.replied) {
     for (const chunk of chunks) {
-      await interaction.followUp({ content: chunk });
+      await interaction.followUp({ content: chunk, allowedMentions: SUPPRESSED_ALLOWED_MENTIONS });
     }
     return;
   }
 
   const [firstChunk, ...remainingChunks] = chunks;
-  await interaction.reply({ content: firstChunk ?? "" });
+  await interaction.reply({ content: firstChunk ?? "", allowedMentions: SUPPRESSED_ALLOWED_MENTIONS });
 
   for (const chunk of remainingChunks) {
-    await interaction.followUp({ content: chunk });
+    await interaction.followUp({ content: chunk, allowedMentions: SUPPRESSED_ALLOWED_MENTIONS });
   }
 }
 
