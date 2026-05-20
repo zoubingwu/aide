@@ -36,6 +36,7 @@ Aide is a TypeScript CLI package. Runtime code targets Node-compatible APIs and 
 - `src/lib/delivery-retries.ts`: persistent scheduled delivery retry queue and backoff state.
 - `src/lib/doctor.ts`: shared doctor checks and base path repair.
 - `src/lib/schedules.ts`: JSON schedule data validation and mutations.
+- `src/lib/schedule-checkpoints.ts`: persistent scheduler checkpoint state for missed-run recovery.
 - `src/lib/schedule-plan.ts`: user schedule kind normalization into cron or one-shot plans.
 - `src/lib/schedule-reload.ts`: signal running runtime to reload schedule jobs after schedule config mutations.
 - `src/lib/scheduler.ts`: runtime schedule jobs, overlap handling, and one-shot cleanup.

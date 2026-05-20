@@ -6,6 +6,7 @@ import { defaultCodexAgentConfig, defaultEndpointTriggerConfig, ensureAideHome, 
 import { addPendingDelivery, loadPendingDeliveries } from "../src/lib/delivery-retries.js";
 import { RUNTIME_LOG_FILE } from "../src/lib/logging.js";
 import { logsDir, schedulesPath } from "../src/lib/paths.js";
+import { loadScheduleCheckpoints, recordScheduleCheck } from "../src/lib/schedule-checkpoints.js";
 import { executeScheduleOnce, RuntimeScheduler } from "../src/lib/scheduler.js";
 import { loadSchedules, writeSchedules } from "../src/lib/schedules.js";
 import type { AgentRunResult, Endpoint, Schedule } from "../src/lib/types.js";
@@ -557,6 +558,70 @@ describe("scheduler execution", () => {
     scheduler.stop();
   });
 
+  it("recovers only the latest missed recurring occurrence", async () => {
+    vi.useFakeTimers({ now: new Date("2026-05-10T00:59:30.000Z") });
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = dailySchedule();
+    const handleRequest = vi.fn().mockResolvedValue(agentResult({ response: "latest brief" }));
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+    recordScheduleCheck(home, schedule.id, new Date());
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest,
+      deliver
+    });
+    const recoverMissedRuns = bindRecoverMissedRuns(scheduler);
+
+    vi.setSystemTime(new Date("2026-05-12T02:00:00.000Z"));
+    await recoverMissedRuns([schedule], new Date());
+    await recoverMissedRuns([schedule], new Date());
+
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "latest brief");
+    expect(loadScheduleCheckpoints(home)[schedule.id]?.lastProcessedOccurrenceAt).toBe("2026-05-12T01:00:00.000Z");
+
+    const log = fs.readFileSync(path.join(logsDir(home), RUNTIME_LOG_FILE), "utf8");
+    expect(log).toContain("schedule_missed_due");
+    expect(log).toContain("2026-05-12T01:00:00.000Z");
+    scheduler.stop();
+  });
+
+  it("recovers missed biweekly occurrences using the scheduled occurrence date", async () => {
+    vi.useFakeTimers({ now: new Date("2026-05-04T15:57:30.000Z") });
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = biweeklySchedule();
+    const handleRequest = vi.fn().mockResolvedValue(agentResult({ response: "biweekly brief" }));
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+    recordScheduleCheck(home, schedule.id, new Date());
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest,
+      deliver
+    });
+
+    vi.setSystemTime(new Date("2026-05-04T16:02:00.000Z"));
+    await bindRecoverMissedRuns(scheduler)([schedule], new Date());
+
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "biweekly brief");
+    expect(loadScheduleCheckpoints(home)[schedule.id]?.lastProcessedOccurrenceAt).toBe("2026-05-04T15:58:00.000Z");
+    scheduler.stop();
+  });
+
   it("skips schedules that reference disabled endpoints", async () => {
     const home = tempHome();
     ensureAideHome(home);
@@ -678,6 +743,10 @@ function biweeklySchedule(): Schedule {
 
 function bindRun(scheduler: RuntimeScheduler): (schedule: Schedule) => Promise<"ran" | "skipped"> {
   return (scheduler as unknown as { run(schedule: Schedule): Promise<"ran" | "skipped"> }).run.bind(scheduler);
+}
+
+function bindRecoverMissedRuns(scheduler: RuntimeScheduler): (schedules: Schedule[], now?: Date) => Promise<void> {
+  return (scheduler as unknown as { recoverMissedRuns(schedules: Schedule[], now?: Date): Promise<void> }).recoverMissedRuns.bind(scheduler);
 }
 
 function deliveryResponses(deliver: ReturnType<typeof vi.fn>): unknown[] {

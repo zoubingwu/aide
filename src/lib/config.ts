@@ -8,6 +8,7 @@ import {
   logsDir,
   pendingDeliveriesPath,
   runtimePath,
+  scheduleCheckpointsPath,
   schedulesPath,
   stateDir,
   usagePath,
@@ -102,6 +103,8 @@ export function ensureAideHome(home: string): void {
   writeFileIfMissing(schedulesPath(home), `${JSON.stringify({ schedules: [] }, null, 2)}\n`);
   writeFileIfMissing(pendingDeliveriesPath(home), `${JSON.stringify({ deliveries: [] }, null, 2)}\n`, 0o600);
   securePendingDeliveriesFile(home);
+  writeFileIfMissing(scheduleCheckpointsPath(home), `${JSON.stringify({ schedules: {} }, null, 2)}\n`, 0o600);
+  secureScheduleCheckpointsFile(home);
   writeFileIfMissing(runtimePath(home), `${JSON.stringify(defaultRuntimeState(home), null, 2)}\n`);
   writeFileIfMissing(usagePath(home), "");
 }
@@ -205,6 +208,10 @@ function secureConfigFile(home: string): void {
 
 function securePendingDeliveriesFile(home: string): void {
   fs.chmodSync(pendingDeliveriesPath(home), 0o600);
+}
+
+function secureScheduleCheckpointsFile(home: string): void {
+  fs.chmodSync(scheduleCheckpointsPath(home), 0o600);
 }
 
 function stringifyConfig(config: AideConfig): string {

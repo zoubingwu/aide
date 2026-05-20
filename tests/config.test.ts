@@ -3,7 +3,16 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ensureAideHome, loadConfig, loadEndpoints, writeConfig } from "../src/lib/config.js";
-import { configPath, logsDir, pendingDeliveriesPath, schedulesPath, stateDir, usagePath, workspaceDir } from "../src/lib/paths.js";
+import {
+  configPath,
+  logsDir,
+  pendingDeliveriesPath,
+  scheduleCheckpointsPath,
+  schedulesPath,
+  stateDir,
+  usagePath,
+  workspaceDir
+} from "../src/lib/paths.js";
 
 const cleanupPaths: string[] = [];
 
@@ -29,6 +38,11 @@ describe("config", () => {
     expect(pendingDeliveriesPath(home)).toBe(path.join(home, "state", "pending-deliveries.json"));
     if (process.platform !== "win32") {
       expect(fs.statSync(pendingDeliveriesPath(home)).mode & 0o777).toBe(0o600);
+    }
+    expect(fs.existsSync(scheduleCheckpointsPath(home))).toBe(true);
+    expect(scheduleCheckpointsPath(home)).toBe(path.join(home, "state", "schedule-checkpoints.json"));
+    if (process.platform !== "win32") {
+      expect(fs.statSync(scheduleCheckpointsPath(home)).mode & 0o777).toBe(0o600);
     }
     expect(fs.existsSync(usagePath(home))).toBe(true);
     expect(fs.readFileSync(usagePath(home), "utf8")).toBe("");
