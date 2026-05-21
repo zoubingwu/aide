@@ -290,7 +290,7 @@ export class RuntimeScheduler {
         timezone: plan.timezone
       },
       () => {
-        void this.run(schedule, "scheduled", latestScheduleOccurrence(schedule, new Date()));
+        void this.run(schedule, "scheduled", currentScheduleOccurrence(schedule, new Date()));
       }
     );
 
@@ -348,14 +348,18 @@ export class RuntimeScheduler {
   }
 
   private async run(schedule: Schedule, source: RunSource = "scheduled", occurrenceAt?: Date): Promise<ScheduleRunStatus> {
-    if (this.running.has(schedule.id)) {
-      appendRuntimeLog(this.options.home, "schedule_skipped_running", { schedule: schedule.id });
-      return "skipped";
-    }
-
     const checkedAt = new Date();
     const isPlannedRun = source !== "retry";
-    const scheduleOccurrence = isPlannedRun ? occurrenceAt ?? latestScheduleOccurrence(schedule, checkedAt) : undefined;
+    const scheduleOccurrence = isPlannedRun ? occurrenceAt ?? currentScheduleOccurrence(schedule, checkedAt) : undefined;
+
+    if (
+      isPlannedRun &&
+      schedule.kind === "biweekly" &&
+      schedule.startDate &&
+      !isBiweeklyOccurrence(schedule.startDate, scheduleOccurrence ?? checkedAt, schedule.timezone)
+    ) {
+      return "skipped";
+    }
 
     if (
       isPlannedRun &&
@@ -366,17 +370,13 @@ export class RuntimeScheduler {
       return "skipped";
     }
 
-    if (isPlannedRun && schedule.kind !== "once") {
-      this.clearRecurringRetry(schedule.id);
+    if (this.running.has(schedule.id)) {
+      appendRuntimeLog(this.options.home, "schedule_skipped_running", { schedule: schedule.id });
+      return "skipped";
     }
 
-    if (
-      isPlannedRun &&
-      schedule.kind === "biweekly" &&
-      schedule.startDate &&
-      !isBiweeklyOccurrence(schedule.startDate, scheduleOccurrence ?? checkedAt, schedule.timezone)
-    ) {
-      return "skipped";
+    if (isPlannedRun && schedule.kind !== "once") {
+      this.clearRecurringRetry(schedule.id);
     }
 
     this.running.add(schedule.id);
@@ -659,6 +659,25 @@ function latestMissedOccurrence(schedule: Schedule, checkedAfter: Date, now: Dat
   }
 
   return occurrence;
+}
+
+function currentScheduleOccurrence(schedule: Schedule, reference: Date): Date | undefined {
+  const plan = buildSchedulePlan(schedule);
+
+  if (plan.kind === "once") {
+    return new Date(plan.runAt);
+  }
+
+  const cron = new Cron(plan.expression, {
+    mode: "5-part",
+    timezone: plan.timezone
+  });
+
+  if (cron.match(reference)) {
+    return cronMatchTime(reference);
+  }
+
+  return latestScheduleOccurrence(schedule, reference);
 }
 
 function latestScheduleOccurrence(schedule: Schedule, reference: Date): Date | undefined {

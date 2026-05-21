@@ -622,6 +622,51 @@ describe("scheduler execution", () => {
     scheduler.stop();
   });
 
+  it("does not recover overlapping recurring ticks skipped by the running guard", async () => {
+    vi.useFakeTimers({ now: new Date("2026-05-10T01:00:00.000Z") });
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = minutelySchedule();
+    let resolveRequest: ((value: AgentRunResult) => void) | undefined;
+    const handleRequest = vi.fn(
+      () =>
+        new Promise<AgentRunResult>((resolve) => {
+          resolveRequest = resolve;
+        })
+    );
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+    recordScheduleCheck(home, schedule.id, new Date("2026-05-10T00:59:30.000Z"));
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest,
+      deliver
+    });
+    const run = bindRun(scheduler);
+    const firstRun = run(schedule, "scheduled", new Date("2026-05-10T01:00:00.000Z"));
+    await Promise.resolve();
+
+    vi.setSystemTime(new Date("2026-05-10T01:01:00.000Z"));
+    await expect(run(schedule, "scheduled", new Date("2026-05-10T01:01:00.000Z"))).resolves.toBe("skipped");
+
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+    expect(loadScheduleCheckpoints(home)[schedule.id]?.lastProcessedOccurrenceAt).toBe("2026-05-10T01:01:00.000Z");
+
+    resolveRequest?.(agentResult({ response: "done" }));
+    await firstRun;
+    vi.setSystemTime(new Date("2026-05-10T01:01:30.000Z"));
+    await bindRecoverMissedRuns(scheduler)([schedule], new Date());
+
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "done");
+    scheduler.stop();
+  });
+
   it("skips schedules that reference disabled endpoints", async () => {
     const home = tempHome();
     ensureAideHome(home);
@@ -769,6 +814,19 @@ function dailySchedule(): Schedule {
     time: "09:00",
     target: "channel:123",
     message: "Generate my daily brief."
+  };
+}
+
+function minutelySchedule(): Schedule {
+  return {
+    id: "minutely-brief",
+    endpoint: "discord-main",
+    enabled: true,
+    kind: "cron",
+    timezone: "UTC",
+    cron: "* * * * *",
+    target: "channel:123",
+    message: "Generate my minutely brief."
   };
 }
 
