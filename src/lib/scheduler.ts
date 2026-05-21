@@ -203,10 +203,12 @@ export class RuntimeScheduler {
   private reloadTimer: NodeJS.Timeout | undefined;
   private deliveryRetryTimer: NodeJS.Timeout | undefined;
   private deliveryDrain: Promise<void> = Promise.resolve();
+  private stopped = false;
 
   constructor(private readonly options: RuntimeSchedulerOptions) {}
 
   start(): void {
+    this.stopped = false;
     this.reload();
     this.reloadTimer = setInterval(() => this.reload(), RELOAD_MS);
     this.deliveryRetryTimer = setInterval(() => {
@@ -217,6 +219,8 @@ export class RuntimeScheduler {
   }
 
   stop(): void {
+    this.stopped = true;
+
     for (const job of this.jobs.values()) {
       job.stop();
     }
@@ -348,6 +352,11 @@ export class RuntimeScheduler {
   }
 
   private async run(schedule: Schedule, source: RunSource = "scheduled", occurrenceAt?: Date): Promise<ScheduleRunStatus> {
+    if (source === "recovery" && this.stopped) {
+      appendRuntimeLog(this.options.home, "schedule_recovery_skipped_stopped", { schedule: schedule.id });
+      return "skipped";
+    }
+
     const checkedAt = new Date();
     const isPlannedRun = source !== "retry";
     const scheduleOccurrence = isPlannedRun ? occurrenceAt ?? currentScheduleOccurrence(schedule, checkedAt) : undefined;
@@ -421,6 +430,10 @@ export class RuntimeScheduler {
     }
 
     for (const schedule of schedules) {
+      if (this.stopped) {
+        return;
+      }
+
       const checkpoint = checkpoints[schedule.id];
 
       if (schedule.kind === "once") {
@@ -677,7 +690,7 @@ function currentScheduleOccurrence(schedule: Schedule, reference: Date): Date | 
     return cronMatchTime(reference);
   }
 
-  return latestScheduleOccurrence(schedule, reference);
+  return cronOccurrencesAtOrBefore(cron, reference, 1)[0];
 }
 
 function latestScheduleOccurrence(schedule: Schedule, reference: Date): Date | undefined {

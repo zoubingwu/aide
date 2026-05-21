@@ -622,6 +622,30 @@ describe("scheduler execution", () => {
     scheduler.stop();
   });
 
+  it("skips late off-week biweekly callbacks", async () => {
+    vi.useFakeTimers({ now: new Date("2026-05-11T15:58:01.000Z") });
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = biweeklySchedule();
+    const handleRequest = vi.fn().mockResolvedValue(agentResult({ response: "biweekly brief" }));
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest,
+      deliver: vi.fn()
+    });
+
+    await expect(bindRun(scheduler)(schedule)).resolves.toBe("skipped");
+
+    expect(handleRequest).toHaveBeenCalledTimes(0);
+    scheduler.stop();
+  });
+
   it("does not recover overlapping recurring ticks skipped by the running guard", async () => {
     vi.useFakeTimers({ now: new Date("2026-05-10T01:00:00.000Z") });
     const home = tempHome();
@@ -665,6 +689,49 @@ describe("scheduler execution", () => {
     expect(handleRequest).toHaveBeenCalledTimes(1);
     expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "done");
     scheduler.stop();
+  });
+
+  it("stops recovery before launching another missed run", async () => {
+    vi.useFakeTimers({ now: new Date("2026-05-10T02:00:00.000Z") });
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const first = dailySchedule();
+    const second: Schedule = { ...dailySchedule(), id: "second-daily-brief" };
+    let resolveRequest: ((value: AgentRunResult) => void) | undefined;
+    let firstStarted: (() => void) | undefined;
+    const firstStartedPromise = new Promise<void>((resolve) => {
+      firstStarted = resolve;
+    });
+    const handleRequest = vi.fn(
+      () =>
+        new Promise<AgentRunResult>((resolve) => {
+          firstStarted?.();
+          resolveRequest = resolve;
+        })
+    );
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [first, second]);
+    recordScheduleCheck(home, first.id, new Date("2026-05-10T00:59:30.000Z"));
+    recordScheduleCheck(home, second.id, new Date("2026-05-10T00:59:30.000Z"));
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest,
+      deliver
+    });
+
+    const recovery = bindRecoverMissedRuns(scheduler)([first, second], new Date());
+    await firstStartedPromise;
+    scheduler.stop();
+    resolveRequest?.(agentResult({ response: "done" }));
+    await recovery;
+
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+    expect(deliver).toHaveBeenCalledTimes(1);
   });
 
   it("skips schedules that reference disabled endpoints", async () => {
