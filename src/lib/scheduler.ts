@@ -12,6 +12,12 @@ import {
 } from "./delivery-retries.js";
 import { deliverDiscordMessage } from "./discord-delivery.js";
 import { appendRuntimeLog } from "./logging.js";
+import {
+  claimScheduleOccurrence,
+  loadScheduleCheckpoints,
+  pruneScheduleCheckpoints,
+  recordScheduleCheck
+} from "./schedule-checkpoints.js";
 import { buildSchedulePlan, isBiweeklyOccurrence } from "./schedule-plan.js";
 import { loadRuntimeSchedules, removeRuntimeSchedule } from "./schedules.js";
 import type { AgentRunEvent } from "./agent-tools.js";
@@ -60,7 +66,7 @@ interface RunningJob {
 
 type ScheduleRunStatus = "ran" | "skipped";
 type ScheduleExecutionStatus = "completed" | "agent_failed" | "delivery_invalid" | "delivery_pending" | "skipped";
-type RunSource = "scheduled" | "retry";
+type RunSource = "scheduled" | "recovery" | "retry";
 
 export async function executeScheduleOnce(execution: ScheduleExecution): Promise<ScheduleExecutionStatus> {
   const endpoint = execution.endpoints.find((candidate) => candidate.id === execution.schedule.endpoint);
@@ -197,10 +203,12 @@ export class RuntimeScheduler {
   private reloadTimer: NodeJS.Timeout | undefined;
   private deliveryRetryTimer: NodeJS.Timeout | undefined;
   private deliveryDrain: Promise<void> = Promise.resolve();
+  private stopped = false;
 
   constructor(private readonly options: RuntimeSchedulerOptions) {}
 
   start(): void {
+    this.stopped = false;
     this.reload();
     this.reloadTimer = setInterval(() => this.reload(), RELOAD_MS);
     this.deliveryRetryTimer = setInterval(() => {
@@ -211,6 +219,8 @@ export class RuntimeScheduler {
   }
 
   stop(): void {
+    this.stopped = true;
+
     for (const job of this.jobs.values()) {
       job.stop();
     }
@@ -251,7 +261,9 @@ export class RuntimeScheduler {
       });
     }
 
-    for (const schedule of loaded.schedules.filter((candidate) => candidate.enabled)) {
+    const enabledSchedules = loaded.schedules.filter((candidate) => candidate.enabled);
+
+    for (const schedule of enabledSchedules) {
       try {
         this.jobs.set(schedule.id, this.createJob(schedule));
       } catch (error) {
@@ -262,7 +274,10 @@ export class RuntimeScheduler {
       }
     }
 
-    this.pruneRecurringRetries(new Set(loaded.schedules.filter((candidate) => candidate.enabled).map((schedule) => schedule.id)));
+    const enabledIds = new Set(enabledSchedules.map((schedule) => schedule.id));
+    this.pruneRecurringRetries(enabledIds);
+    this.pruneScheduleCheckpoints(enabledIds);
+    void this.recoverMissedRuns(enabledSchedules);
   }
 
   private createJob(schedule: Schedule): RunningJob {
@@ -279,7 +294,7 @@ export class RuntimeScheduler {
         timezone: plan.timezone
       },
       () => {
-        void this.run(schedule, "scheduled");
+        void this.run(schedule, "scheduled", currentScheduleOccurrence(schedule, new Date()));
       }
     );
 
@@ -308,7 +323,7 @@ export class RuntimeScheduler {
           return;
         }
 
-        const status = await this.run(schedule);
+        const status = await this.run(schedule, "scheduled", new Date(runAt));
 
         if (stopped || status === "skipped") {
           return;
@@ -336,23 +351,41 @@ export class RuntimeScheduler {
     };
   }
 
-  private async run(schedule: Schedule, source: RunSource = "scheduled"): Promise<ScheduleRunStatus> {
+  private async run(schedule: Schedule, source: RunSource = "scheduled", occurrenceAt?: Date): Promise<ScheduleRunStatus> {
+    if (source === "recovery" && this.stopped) {
+      appendRuntimeLog(this.options.home, "schedule_recovery_skipped_stopped", { schedule: schedule.id });
+      return "skipped";
+    }
+
+    const checkedAt = new Date();
+    const isPlannedRun = source !== "retry";
+    const scheduleOccurrence = isPlannedRun ? occurrenceAt ?? currentScheduleOccurrence(schedule, checkedAt) : undefined;
+
+    if (
+      isPlannedRun &&
+      schedule.kind === "biweekly" &&
+      schedule.startDate &&
+      !isBiweeklyOccurrence(schedule.startDate, scheduleOccurrence ?? checkedAt, schedule.timezone)
+    ) {
+      return "skipped";
+    }
+
+    if (
+      isPlannedRun &&
+      schedule.kind !== "once" &&
+      scheduleOccurrence &&
+      !this.claimScheduleOccurrence(schedule, scheduleOccurrence, checkedAt, source)
+    ) {
+      return "skipped";
+    }
+
     if (this.running.has(schedule.id)) {
       appendRuntimeLog(this.options.home, "schedule_skipped_running", { schedule: schedule.id });
       return "skipped";
     }
 
-    if (source === "scheduled" && schedule.kind !== "once") {
+    if (isPlannedRun && schedule.kind !== "once") {
       this.clearRecurringRetry(schedule.id);
-    }
-
-    if (
-      source === "scheduled" &&
-      schedule.kind === "biweekly" &&
-      schedule.startDate &&
-      !isBiweeklyOccurrence(schedule.startDate, new Date(), schedule.timezone)
-    ) {
-      return "skipped";
     }
 
     this.running.add(schedule.id);
@@ -384,6 +417,89 @@ export class RuntimeScheduler {
     }
 
     return "ran";
+  }
+
+  private async recoverMissedRuns(schedules: Schedule[], now = new Date()): Promise<void> {
+    let checkpoints: ReturnType<typeof loadScheduleCheckpoints>;
+
+    try {
+      checkpoints = loadScheduleCheckpoints(this.options.home);
+    } catch (error) {
+      appendRuntimeLog(this.options.home, "schedule_checkpoint_load_failed", { error: errorMessage(error) });
+      return;
+    }
+
+    for (const schedule of schedules) {
+      if (this.stopped) {
+        return;
+      }
+
+      const checkpoint = checkpoints[schedule.id];
+
+      if (schedule.kind === "once") {
+        this.recordScheduleCheck(schedule.id, now);
+        continue;
+      }
+
+      if (!checkpoint) {
+        this.recordScheduleCheck(schedule.id, now);
+        continue;
+      }
+
+      const occurrenceAt = latestMissedOccurrence(schedule, new Date(checkpoint.lastCheckedAt), now);
+
+      if (occurrenceAt) {
+        appendRuntimeLog(this.options.home, "schedule_missed_due", {
+          schedule: schedule.id,
+          occurrenceAt: occurrenceAt.toISOString(),
+          checkedAfter: checkpoint.lastCheckedAt
+        });
+        await this.run(schedule, "recovery", occurrenceAt);
+      }
+
+      this.recordScheduleCheck(schedule.id, now);
+    }
+  }
+
+  private pruneScheduleCheckpoints(enabledIds: Set<string>): void {
+    try {
+      pruneScheduleCheckpoints(this.options.home, enabledIds);
+    } catch (error) {
+      appendRuntimeLog(this.options.home, "schedule_checkpoint_prune_failed", { error: errorMessage(error) });
+    }
+  }
+
+  private claimScheduleOccurrence(schedule: Schedule, occurrenceAt: Date, checkedAt: Date, source: RunSource): boolean {
+    try {
+      if (claimScheduleOccurrence(this.options.home, schedule.id, occurrenceAt, checkedAt)) {
+        return true;
+      }
+
+      appendRuntimeLog(this.options.home, "schedule_skipped_processed", {
+        schedule: schedule.id,
+        occurrenceAt: occurrenceAt.toISOString()
+      });
+      return false;
+    } catch (error) {
+      appendRuntimeLog(this.options.home, "schedule_checkpoint_claim_failed", {
+        schedule: schedule.id,
+        occurrenceAt: occurrenceAt.toISOString(),
+        error: errorMessage(error)
+      });
+      return source === "scheduled";
+    }
+  }
+
+  private recordScheduleCheck(id: string, checkedAt: Date): void {
+    try {
+      recordScheduleCheck(this.options.home, id, checkedAt);
+    } catch (error) {
+      appendRuntimeLog(this.options.home, "schedule_checkpoint_record_failed", {
+        schedule: id,
+        checkedAt: checkedAt.toISOString(),
+        error: errorMessage(error)
+      });
+    }
   }
 
   private updateRecurringRetry(schedule: Schedule, status: ScheduleExecutionStatus): void {
@@ -546,6 +662,78 @@ export class RuntimeScheduler {
       error
     });
   }
+}
+
+function latestMissedOccurrence(schedule: Schedule, checkedAfter: Date, now: Date): Date | undefined {
+  const occurrence = latestScheduleOccurrence(schedule, now);
+
+  if (!occurrence || occurrence.getTime() <= checkedAfter.getTime() || occurrence.getTime() > now.getTime()) {
+    return undefined;
+  }
+
+  return occurrence;
+}
+
+function currentScheduleOccurrence(schedule: Schedule, reference: Date): Date | undefined {
+  const plan = buildSchedulePlan(schedule);
+
+  if (plan.kind === "once") {
+    return new Date(plan.runAt);
+  }
+
+  const cron = new Cron(plan.expression, {
+    mode: "5-part",
+    timezone: plan.timezone
+  });
+
+  if (cron.match(reference)) {
+    return cronMatchTime(reference);
+  }
+
+  return cronOccurrencesAtOrBefore(cron, reference, 1)[0];
+}
+
+function latestScheduleOccurrence(schedule: Schedule, reference: Date): Date | undefined {
+  const plan = buildSchedulePlan(schedule);
+
+  if (plan.kind === "once") {
+    return new Date(plan.runAt);
+  }
+
+  const cron = new Cron(plan.expression, {
+    mode: "5-part",
+    timezone: plan.timezone
+  });
+  const candidates = cronOccurrencesAtOrBefore(cron, reference, schedule.kind === "biweekly" ? 8 : 1);
+
+  if (schedule.kind === "biweekly" && schedule.startDate) {
+    const { startDate } = schedule;
+    return candidates.find((candidate) => isBiweeklyOccurrence(startDate, candidate, plan.timezone));
+  }
+
+  return candidates[0];
+}
+
+function cronOccurrencesAtOrBefore(cron: Cron, reference: Date, count: number): Date[] {
+  const occurrences: Date[] = [];
+
+  if (cron.match(reference)) {
+    occurrences.push(cronMatchTime(reference));
+  }
+
+  for (const occurrence of cron.previousRuns(count, reference)) {
+    if (!occurrences.some((candidate) => candidate.getTime() === occurrence.getTime())) {
+      occurrences.push(occurrence);
+    }
+  }
+
+  return occurrences.sort((left, right) => right.getTime() - left.getTime());
+}
+
+function cronMatchTime(date: Date): Date {
+  const matched = new Date(date);
+  matched.setSeconds(0, 0);
+  return matched;
 }
 
 async function deliverScheduleResponse(endpoint: Endpoint, client: unknown, target: string, response: string): Promise<void> {

@@ -49,6 +49,10 @@ export function pendingDeliveriesPath(home: string): string {
   return path.join(stateDir(home), "pending-deliveries.json");
 }
 
+export function scheduleCheckpointsPath(home: string): string {
+  return path.join(stateDir(home), "schedule-checkpoints.json");
+}
+
 export function deferredRestartPath(home: string): string {
   return path.join(stateDir(home), "deferred-restart.json");
 }
