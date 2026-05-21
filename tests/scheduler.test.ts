@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { defaultCodexAgentConfig, defaultEndpointTriggerConfig, ensureAideHome, writeEndpoints } from "../src/lib/config.js";
 import { addPendingDelivery, loadPendingDeliveries } from "../src/lib/delivery-retries.js";
 import { RUNTIME_LOG_FILE } from "../src/lib/logging.js";
-import { logsDir, schedulesPath } from "../src/lib/paths.js";
+import { logsDir, scheduleCheckpointsPath, schedulesPath } from "../src/lib/paths.js";
 import { loadScheduleCheckpoints, recordScheduleCheck } from "../src/lib/schedule-checkpoints.js";
 import { executeScheduleOnce, RuntimeScheduler } from "../src/lib/scheduler.js";
 import { loadSchedules, writeSchedules } from "../src/lib/schedules.js";
@@ -676,6 +676,52 @@ describe("scheduler execution", () => {
     expect(log).toContain("schedule_invalid");
     expect(log).toContain("Invalid IANA timezone");
   });
+
+  it("keeps reload active when checkpoint pruning fails", () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    writeSchedules(home, [dailySchedule()]);
+    fs.writeFileSync(scheduleCheckpointsPath(home), "{");
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [discordEndpoint()],
+      clients: new Map([["discord-main", {} as never]]),
+      handleRequest: vi.fn(),
+      deliver: vi.fn()
+    });
+
+    expect(() => scheduler.reload()).not.toThrow();
+    expect(fs.readFileSync(path.join(logsDir(home), RUNTIME_LOG_FILE), "utf8")).toContain("schedule_checkpoint_prune_failed");
+    scheduler.stop();
+  });
+
+  it("runs scheduled occurrences when checkpoint claiming fails", async () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = dailySchedule();
+    const handleRequest = vi.fn().mockResolvedValue(agentResult({ response: "done" }));
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+    fs.writeFileSync(scheduleCheckpointsPath(home), "{");
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest,
+      deliver
+    });
+
+    await expect(bindRun(scheduler)(schedule, "scheduled", new Date("2026-05-10T01:00:00.000Z"))).resolves.toBe("ran");
+
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "done");
+    expect(fs.readFileSync(path.join(logsDir(home), RUNTIME_LOG_FILE), "utf8")).toContain("schedule_checkpoint_claim_failed");
+    scheduler.stop();
+  });
 });
 
 function agentResult(overrides: Partial<AgentRunResult>): AgentRunResult {
@@ -741,8 +787,12 @@ function biweeklySchedule(): Schedule {
   };
 }
 
-function bindRun(scheduler: RuntimeScheduler): (schedule: Schedule) => Promise<"ran" | "skipped"> {
-  return (scheduler as unknown as { run(schedule: Schedule): Promise<"ran" | "skipped"> }).run.bind(scheduler);
+function bindRun(
+  scheduler: RuntimeScheduler
+): (schedule: Schedule, source?: "scheduled" | "recovery" | "retry", occurrenceAt?: Date) => Promise<"ran" | "skipped"> {
+  return (scheduler as unknown as {
+    run(schedule: Schedule, source?: "scheduled" | "recovery" | "retry", occurrenceAt?: Date): Promise<"ran" | "skipped">;
+  }).run.bind(scheduler);
 }
 
 function bindRecoverMissedRuns(scheduler: RuntimeScheduler): (schedules: Schedule[], now?: Date) => Promise<void> {

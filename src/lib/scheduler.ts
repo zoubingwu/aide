@@ -66,7 +66,7 @@ interface RunningJob {
 
 type ScheduleRunStatus = "ran" | "skipped";
 type ScheduleExecutionStatus = "completed" | "agent_failed" | "delivery_invalid" | "delivery_pending" | "skipped";
-type RunSource = "scheduled" | "retry";
+type RunSource = "scheduled" | "recovery" | "retry";
 
 export async function executeScheduleOnce(execution: ScheduleExecution): Promise<ScheduleExecutionStatus> {
   const endpoint = execution.endpoints.find((candidate) => candidate.id === execution.schedule.endpoint);
@@ -272,7 +272,7 @@ export class RuntimeScheduler {
 
     const enabledIds = new Set(enabledSchedules.map((schedule) => schedule.id));
     this.pruneRecurringRetries(enabledIds);
-    pruneScheduleCheckpoints(this.options.home, enabledIds);
+    this.pruneScheduleCheckpoints(enabledIds);
     void this.recoverMissedRuns(enabledSchedules);
   }
 
@@ -354,27 +354,24 @@ export class RuntimeScheduler {
     }
 
     const checkedAt = new Date();
-    const scheduleOccurrence = source === "scheduled" ? occurrenceAt ?? latestScheduleOccurrence(schedule, checkedAt) : undefined;
+    const isPlannedRun = source !== "retry";
+    const scheduleOccurrence = isPlannedRun ? occurrenceAt ?? latestScheduleOccurrence(schedule, checkedAt) : undefined;
 
     if (
-      source === "scheduled" &&
+      isPlannedRun &&
       schedule.kind !== "once" &&
       scheduleOccurrence &&
-      !claimScheduleOccurrence(this.options.home, schedule.id, scheduleOccurrence, checkedAt)
+      !this.claimScheduleOccurrence(schedule, scheduleOccurrence, checkedAt, source)
     ) {
-      appendRuntimeLog(this.options.home, "schedule_skipped_processed", {
-        schedule: schedule.id,
-        occurrenceAt: scheduleOccurrence.toISOString()
-      });
       return "skipped";
     }
 
-    if (source === "scheduled" && schedule.kind !== "once") {
+    if (isPlannedRun && schedule.kind !== "once") {
       this.clearRecurringRetry(schedule.id);
     }
 
     if (
-      source === "scheduled" &&
+      isPlannedRun &&
       schedule.kind === "biweekly" &&
       schedule.startDate &&
       !isBiweeklyOccurrence(schedule.startDate, scheduleOccurrence ?? checkedAt, schedule.timezone)
@@ -427,12 +424,12 @@ export class RuntimeScheduler {
       const checkpoint = checkpoints[schedule.id];
 
       if (schedule.kind === "once") {
-        recordScheduleCheck(this.options.home, schedule.id, now);
+        this.recordScheduleCheck(schedule.id, now);
         continue;
       }
 
       if (!checkpoint) {
-        recordScheduleCheck(this.options.home, schedule.id, now);
+        this.recordScheduleCheck(schedule.id, now);
         continue;
       }
 
@@ -444,10 +441,51 @@ export class RuntimeScheduler {
           occurrenceAt: occurrenceAt.toISOString(),
           checkedAfter: checkpoint.lastCheckedAt
         });
-        await this.run(schedule, "scheduled", occurrenceAt);
+        await this.run(schedule, "recovery", occurrenceAt);
       }
 
-      recordScheduleCheck(this.options.home, schedule.id, now);
+      this.recordScheduleCheck(schedule.id, now);
+    }
+  }
+
+  private pruneScheduleCheckpoints(enabledIds: Set<string>): void {
+    try {
+      pruneScheduleCheckpoints(this.options.home, enabledIds);
+    } catch (error) {
+      appendRuntimeLog(this.options.home, "schedule_checkpoint_prune_failed", { error: errorMessage(error) });
+    }
+  }
+
+  private claimScheduleOccurrence(schedule: Schedule, occurrenceAt: Date, checkedAt: Date, source: RunSource): boolean {
+    try {
+      if (claimScheduleOccurrence(this.options.home, schedule.id, occurrenceAt, checkedAt)) {
+        return true;
+      }
+
+      appendRuntimeLog(this.options.home, "schedule_skipped_processed", {
+        schedule: schedule.id,
+        occurrenceAt: occurrenceAt.toISOString()
+      });
+      return false;
+    } catch (error) {
+      appendRuntimeLog(this.options.home, "schedule_checkpoint_claim_failed", {
+        schedule: schedule.id,
+        occurrenceAt: occurrenceAt.toISOString(),
+        error: errorMessage(error)
+      });
+      return source === "scheduled";
+    }
+  }
+
+  private recordScheduleCheck(id: string, checkedAt: Date): void {
+    try {
+      recordScheduleCheck(this.options.home, id, checkedAt);
+    } catch (error) {
+      appendRuntimeLog(this.options.home, "schedule_checkpoint_record_failed", {
+        schedule: id,
+        checkedAt: checkedAt.toISOString(),
+        error: errorMessage(error)
+      });
     }
   }
 
