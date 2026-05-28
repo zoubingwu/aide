@@ -22,7 +22,11 @@ export function appendRuntimeLog(home: string, message: string, metadata: Record
     ...metadata
   });
 
-  appendLine(path.join(logsDir(home), RUNTIME_LOG_FILE), line);
+  appendLine(runtimeLogPath(home), line);
+}
+
+export function runtimeLogPath(home: string): string {
+  return path.join(logsDir(home), RUNTIME_LOG_FILE);
 }
 
 export function appendActivityLog(home: string, event: ActivityEvent): void {

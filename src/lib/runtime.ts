@@ -1,7 +1,9 @@
+import fs from "node:fs";
+import path from "node:path";
 import { spawn } from "node:child_process";
 import { Events, type Client } from "discord.js";
 import { loadEndpoints } from "./config.js";
-import { appendRuntimeLog } from "./logging.js";
+import { appendRuntimeLog, runtimeLogPath } from "./logging.js";
 import { markRuntimeRunning, markRuntimeStopped, runtimeDisplayStatus, isPidAlive } from "./runtime-state.js";
 import { startDiscordEndpoint } from "./discord.js";
 import { RuntimeScheduler } from "./scheduler.js";
@@ -9,6 +11,7 @@ import { SCHEDULE_RELOAD_SIGNAL } from "./schedule-reload.js";
 import { assertEndpointWorkspace } from "./workspace.js";
 
 const START_WAIT_MS = 3_000;
+let runtimeDiagnosticsRegistered = false;
 
 export async function startRuntimeInBackground(home: string): Promise<void> {
   const endpoints = loadEndpoints(home).filter((endpoint) => endpoint.enabled);
@@ -29,11 +32,19 @@ export async function startRuntimeInBackground(home: string): Promise<void> {
     throw new Error("Cannot resolve current CLI path for background runtime.");
   }
 
-  const child = spawn(process.execPath, [scriptPath, "__run", "--home", home], {
-    detached: true,
-    stdio: "ignore",
-    env: process.env
-  });
+  const runtimeLogFd = openRuntimeLogAppendFd(home);
+  let child: ReturnType<typeof spawn>;
+
+  try {
+    child = spawn(process.execPath, [scriptPath, "__run", "--home", home], {
+      detached: true,
+      stdio: ["ignore", "ignore", runtimeLogFd],
+      env: process.env
+    });
+  } finally {
+    fs.closeSync(runtimeLogFd);
+  }
+
   const childExit: {
     exited: boolean;
     code?: number | null;
@@ -85,6 +96,8 @@ export async function startRuntimeInBackground(home: string): Promise<void> {
 }
 
 export async function startRuntime(home: string): Promise<void> {
+  registerRuntimeDiagnostics(home);
+
   const endpoints = loadEndpoints(home).filter((endpoint) => endpoint.enabled);
   const current = runtimeDisplayStatus(home);
 
@@ -222,6 +235,48 @@ function registerDeliveryRecoveryListeners(home: string, clients: Map<string, Cl
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function errorStack(error: unknown): string | undefined {
+  return error instanceof Error ? error.stack : undefined;
+}
+
+function registerRuntimeDiagnostics(home: string): void {
+  if (runtimeDiagnosticsRegistered) {
+    return;
+  }
+
+  runtimeDiagnosticsRegistered = true;
+
+  process.on("uncaughtException", (error) => {
+    markRuntimeStopped(home);
+    appendRuntimeLog(home, "runtime_uncaught_exception", {
+      pid: process.pid,
+      error: errorMessage(error),
+      stack: errorStack(error)
+    });
+    process.exit(1);
+  });
+
+  process.on("unhandledRejection", (reason) => {
+    markRuntimeStopped(home);
+    appendRuntimeLog(home, "runtime_unhandled_rejection", {
+      pid: process.pid,
+      error: errorMessage(reason),
+      stack: errorStack(reason)
+    });
+    process.exit(1);
+  });
+
+  process.on("exit", (code) => {
+    appendRuntimeLog(home, "runtime_process_exit", { pid: process.pid, code });
+  });
+}
+
+function openRuntimeLogAppendFd(home: string): number {
+  const filePath = runtimeLogPath(home);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  return fs.openSync(filePath, "a");
 }
 
 function exitDetail(code: number | null | undefined, signal: NodeJS.Signals | null | undefined): string | undefined {
