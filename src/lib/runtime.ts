@@ -96,8 +96,6 @@ export async function startRuntimeInBackground(home: string): Promise<void> {
 }
 
 export async function startRuntime(home: string): Promise<void> {
-  registerRuntimeDiagnostics(home);
-
   const endpoints = loadEndpoints(home).filter((endpoint) => endpoint.enabled);
   const current = runtimeDisplayStatus(home);
 
@@ -109,6 +107,8 @@ export async function startRuntime(home: string): Promise<void> {
     console.log("No enabled endpoints. Add one with `aide endpoint add --id <id> --token <token>`.");
     return;
   }
+
+  registerRuntimeDiagnostics(home);
 
   for (const endpoint of endpoints) {
     assertEndpointWorkspace(home, endpoint);
@@ -249,7 +249,7 @@ function registerRuntimeDiagnostics(home: string): void {
   runtimeDiagnosticsRegistered = true;
 
   process.on("uncaughtException", (error) => {
-    markRuntimeStopped(home);
+    markRuntimeStoppedIfCurrentProcess(home);
     appendRuntimeLog(home, "runtime_uncaught_exception", {
       pid: process.pid,
       error: errorMessage(error),
@@ -259,7 +259,7 @@ function registerRuntimeDiagnostics(home: string): void {
   });
 
   process.on("unhandledRejection", (reason) => {
-    markRuntimeStopped(home);
+    markRuntimeStoppedIfCurrentProcess(home);
     appendRuntimeLog(home, "runtime_unhandled_rejection", {
       pid: process.pid,
       error: errorMessage(reason),
@@ -271,6 +271,16 @@ function registerRuntimeDiagnostics(home: string): void {
   process.on("exit", (code) => {
     appendRuntimeLog(home, "runtime_process_exit", { pid: process.pid, code });
   });
+}
+
+function markRuntimeStoppedIfCurrentProcess(home: string): void {
+  const current = runtimeDisplayStatus(home);
+
+  if (current.status === "running" && current.pid !== process.pid) {
+    return;
+  }
+
+  markRuntimeStopped(home);
 }
 
 function openRuntimeLogAppendFd(home: string): number {
