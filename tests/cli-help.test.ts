@@ -39,6 +39,8 @@ describe("CLI help", () => {
     const home = tempHome();
     await runCli("--home", home, "init");
     fs.rmSync(path.join(home, "schedules.json"), { force: true });
+    fs.rmSync(path.join(home, "state", "pending-deliveries.json"), { force: true });
+    fs.rmSync(path.join(home, "state", "schedule-checkpoints.json"), { force: true });
     fs.rmSync(path.join(home, "runtime.json"), { force: true });
     fs.rmSync(path.join(home, "logs"), { recursive: true, force: true });
 
@@ -47,6 +49,8 @@ describe("CLI help", () => {
     expect(stdout).toContain("Fixed missing Aide base paths: schedules.json, runtime.json, logs directory.");
     expect(stdout).toContain("✓ schedules.json");
     expect(stdout).toContain("✓ runtime.json");
+    expect(stdout).not.toContain("pending-deliveries.json");
+    expect(stdout).not.toContain("schedule-checkpoints.json");
     expect(fs.existsSync(path.join(home, "schedules.json"))).toBe(true);
     expect(fs.existsSync(path.join(home, "runtime.json"))).toBe(true);
     expect(fs.existsSync(path.join(home, "logs"))).toBe(true);
