@@ -97,6 +97,33 @@ describe("scheduler execution", () => {
     expect(deliver).toHaveBeenNthCalledWith(2, endpoint, {}, schedule.target, "done");
   });
 
+  it("runs scheduled requests in fresh agent mode", async () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = onceSchedule();
+    const handleRequest = vi.fn().mockResolvedValue(agentResult({ response: "done", resumed: false }));
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+
+    await executeScheduleOnce({
+      home,
+      schedule,
+      endpoints: [endpoint],
+      clients: new Map([["discord-main", {}]]),
+      handleRequest,
+      deliver: vi.fn().mockResolvedValue(undefined)
+    });
+
+    expect(handleRequest).toHaveBeenCalledWith(
+      home,
+      endpoint,
+      schedule.message,
+      `schedule:${schedule.id}`,
+      expect.objectContaining({ runMode: "fresh" })
+    );
+  });
+
   it("removes a delivered once schedule when another entry is invalid", async () => {
     const home = tempHome();
     ensureAideHome(home);

@@ -2,7 +2,7 @@ import { makeAssistantPrompt, runAgent } from "./agent.js";
 import { appendActivityLog, endpointActivity } from "./logging.js";
 import { estimateTokens, addCodexUsage, addEstimatedUsage } from "./usage.js";
 import { assertEndpointWorkspace, endpointWorkspace } from "./workspace.js";
-import type { AgentRunEvent, AgentToolServer } from "./agent-tools.js";
+import type { AgentRunEvent, AgentRunMode, AgentToolServer } from "./agent-tools.js";
 import type { AssistantPromptMetadata } from "./agent.js";
 import type { AgentRunResult, Endpoint } from "./types.js";
 
@@ -13,6 +13,7 @@ export interface AssistantRequestContext {
   onEvent?: ((event: AgentRunEvent) => void | Promise<void>) | undefined;
   abortSignal?: AbortSignal | undefined;
   deferredRestartId?: string | undefined;
+  runMode?: AgentRunMode | undefined;
 }
 
 export async function handleAssistantRequest(
@@ -33,7 +34,8 @@ export async function handleAssistantRequest(
     toolServers: context.toolServers,
     onEvent: context.onEvent,
     abortSignal: context.abortSignal,
-    deferredRestartId: context.deferredRestartId
+    deferredRestartId: context.deferredRestartId,
+    runMode: context.runMode
   });
   const estimatedInputTokens = estimateTokens(prompt);
   const estimatedOutputTokens = estimateTokens(result.response);

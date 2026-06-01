@@ -62,6 +62,10 @@ export async function runCodex(
   prompt: string,
   options: AgentRunOptions = {}
 ): Promise<AgentRunResult> {
+  if (options.runMode === "fresh") {
+    return runFreshCodex(home, workspace, endpoint, prompt, options);
+  }
+
   const agent = endpoint.agent;
   const resumed = await runCodexOnce({
     home,
@@ -109,6 +113,27 @@ export async function runCodex(
     };
   }
 
+  if (isRetryableCodexStreamError(`${resumed.stdout}\n${resumed.stderr}`)) {
+    const response = extractFinalResponse(resumed.stdout, resumed.stderr);
+
+    return {
+      ...resumed,
+      ...response,
+      resumed: true
+    };
+  }
+
+  return runFreshCodex(home, workspace, endpoint, prompt, options);
+}
+
+async function runFreshCodex(
+  home: string,
+  workspace: string,
+  endpoint: Endpoint,
+  prompt: string,
+  options: AgentRunOptions = {}
+): Promise<AgentRunResult> {
+  const agent = endpoint.agent;
   const fresh = await runCodexOnce({
     home,
     endpoint,
@@ -141,6 +166,13 @@ export async function runCodex(
     usageTokens: usage?.totalTokens,
     resumed: false
   };
+}
+
+function isRetryableCodexStreamError(output: string): boolean {
+  return output.includes(
+    "stream disconnected before completion: error sending request for url (https://chatgpt.com/backend-api/codex/responses)"
+  ) ||
+    output.includes("stream disconnected before completion: tls handshake eof");
 }
 
 export interface ExtractedCodexResponse {
@@ -515,7 +547,13 @@ function extractCodexResponseCandidate(value: unknown): string | undefined {
     return extractAgentMessage(record.item);
   }
 
-  if (record.type === "final" || record.final_response !== undefined || record.finalResponse !== undefined) {
+  if (
+    record.type === "final" ||
+    record.type === "error" ||
+    record.type === "turn.failed" ||
+    record.final_response !== undefined ||
+    record.finalResponse !== undefined
+  ) {
     return extractStringCandidate(record);
   }
 

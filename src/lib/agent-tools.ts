@@ -13,9 +13,12 @@ export interface AgentRunEvent {
   payload: Record<string, unknown>;
 }
 
+export type AgentRunMode = "resume" | "fresh";
+
 export interface AgentRunOptions {
   toolServers?: AgentToolServer[] | undefined;
   onEvent?: ((event: AgentRunEvent) => void | Promise<void>) | undefined;
   abortSignal?: AbortSignal | undefined;
   deferredRestartId?: string | undefined;
+  runMode?: AgentRunMode | undefined;
 }
