@@ -311,6 +311,7 @@ async function runCodexOnce(execution: CodexExecution): Promise<CodexProcessResu
       cwd: execution.workspace,
       reject: false,
       all: false,
+      stdin: "ignore" as const,
       ...(execution.deferredRestartId ? { env: deferredRestartEnv(execution.home, execution.deferredRestartId) } : {})
     };
     const subprocess = execution.abortSignal
