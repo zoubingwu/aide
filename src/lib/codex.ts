@@ -169,10 +169,10 @@ async function runFreshCodex(
 }
 
 function isRetryableCodexStreamError(output: string): boolean {
-  return output.includes(
-    "stream disconnected before completion: error sending request for url (https://chatgpt.com/backend-api/codex/responses)"
-  ) ||
-    output.includes("stream disconnected before completion: tls handshake eof");
+  const normalized = output.toLowerCase();
+
+  return normalized.includes("stream disconnected before completion") &&
+    (normalized.includes("error sending request") || normalized.includes("tls handshake eof"));
 }
 
 export interface ExtractedCodexResponse {

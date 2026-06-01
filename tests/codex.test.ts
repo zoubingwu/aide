@@ -441,14 +441,15 @@ describe("codex", () => {
   it("does not fall back to fresh after retryable Codex stream failures", async () => {
     const home = tempHome();
     const workspace = tempHome();
+    const message = "stream disconnected before completion: error sending request for url (https://chatgpt.com/backend-api/codex/turns)";
     const stdout = [
       JSON.stringify({
         type: "error",
-        message: "stream disconnected before completion: error sending request for url (https://chatgpt.com/backend-api/codex/responses)"
+        message
       }),
       JSON.stringify({
         type: "turn.failed",
-        message: "stream disconnected before completion: error sending request for url (https://chatgpt.com/backend-api/codex/responses)"
+        message
       })
     ].join("\n");
 
@@ -461,7 +462,7 @@ describe("codex", () => {
     const result = await runCodex(home, workspace, endpoint, "hello");
 
     expect(result).toMatchObject({
-      response: "stream disconnected before completion: error sending request for url (https://chatgpt.com/backend-api/codex/responses)",
+      response: message,
       hasTextResponse: true,
       exitCode: 1,
       resumed: true
