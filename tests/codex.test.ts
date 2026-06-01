@@ -402,6 +402,74 @@ describe("codex", () => {
     });
   });
 
+  it("can run Codex fresh without trying resume first", async () => {
+    const home = tempHome();
+    const workspace = tempHome();
+    const stdout = JSON.stringify({ type: "final", final_response: "done" });
+
+    mockExeca().mockResolvedValueOnce({
+      stdout,
+      stderr: "",
+      exitCode: 0
+    });
+
+    const result = await runCodex(home, workspace, endpoint, "hello", { runMode: "fresh" });
+
+    expect(result).toMatchObject({
+      response: "done",
+      hasTextResponse: true,
+      resumed: false
+    });
+    expect(execa).toHaveBeenCalledTimes(1);
+    expect(execa).toHaveBeenCalledWith("codex", [
+      "exec",
+      "--model",
+      "gpt-5.5",
+      "-c",
+      "model_reasoning_effort=\"medium\"",
+      "--cd",
+      workspace,
+      ...defaultCodexFreshArgs().slice(1),
+      "hello"
+    ], {
+      cwd: workspace,
+      reject: false,
+      all: false
+    });
+  });
+
+  it("does not fall back to fresh after retryable Codex stream failures", async () => {
+    const home = tempHome();
+    const workspace = tempHome();
+    const message = "stream disconnected before completion: error sending request for url (https://chatgpt.com/backend-api/codex/turns)";
+    const stdout = [
+      JSON.stringify({
+        type: "error",
+        message
+      }),
+      JSON.stringify({
+        type: "turn.failed",
+        message
+      })
+    ].join("\n");
+
+    mockExeca().mockResolvedValueOnce({
+      stdout,
+      stderr: "",
+      exitCode: 1
+    });
+
+    const result = await runCodex(home, workspace, endpoint, "hello");
+
+    expect(result).toMatchObject({
+      response: message,
+      hasTextResponse: true,
+      exitCode: 1,
+      resumed: true
+    });
+    expect(execa).toHaveBeenCalledTimes(1);
+  });
+
   it("delivers Codex JSONL events in output order", async () => {
     const home = tempHome();
     const workspace = tempHome();

@@ -98,6 +98,7 @@ export async function executeScheduleOnce(execution: ScheduleExecution): Promise
   const request = execution.handleRequest ?? handleAssistantRequest;
   const deliver = execution.deliver ?? deliverScheduleResponse;
   const context: AssistantRequestContext = {
+    runMode: "fresh",
     onEvent: scheduleProgressReporter(endpoint, client, execution.schedule.target, deliver)
   };
   let result: AgentRunResult;
