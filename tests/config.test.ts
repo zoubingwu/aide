@@ -109,6 +109,39 @@ describe("config", () => {
     expect(loadEndpoints(home)[0]?.agent.outputMode).toBe("verbose");
   });
 
+  it("writes Pi agent config without overriding local Pi defaults", () => {
+    const home = tempHome();
+    ensureAideHome(home);
+
+    writeConfig(home, {
+      endpoints: [
+        {
+          id: "discord-main",
+          provider: "discord",
+          enabled: true,
+          token: "test-token",
+          trigger: {
+            requireMention: true,
+            freeResponseSources: []
+          },
+          agent: {
+            provider: "pi",
+            command: "pi",
+            outputMode: "concise"
+          }
+        }
+      ]
+    });
+
+    const content = fs.readFileSync(configPath(home), "utf8");
+    const endpoint = loadEndpoints(home)[0];
+
+    expect(content).toContain('agent = { provider = "pi", command = "pi", outputMode = "concise" }');
+    expect(content).not.toContain('model =');
+    expect(content).not.toContain('reasoningEffort =');
+    expect(endpoint?.agent.provider).toBe("pi");
+  });
+
   it("defaults missing endpoint trigger config", () => {
     const home = tempHome();
     ensureAideHome(home);

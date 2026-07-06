@@ -14,13 +14,14 @@ import {
   usagePath,
   workspaceDir
 } from "./paths.js";
-import type { CodexAgentConfig, Endpoint, EndpointTriggerConfig, RuntimeState } from "./types.js";
+import type { CodexAgentConfig, Endpoint, EndpointTriggerConfig, PiAgentConfig, RuntimeState } from "./types.js";
 
 const DEFAULT_RUNTIME_MODEL = "gpt-5.5";
 const DEFAULT_REASONING_EFFORT = "medium";
 const DEFAULT_OUTPUT_MODE = "concise";
 
 const codexReasoningEffortSchema = z.enum(["low", "medium", "high", "xhigh"]);
+const piThinkingLevelSchema = z.enum(["off", "minimal", "low", "medium", "high", "xhigh"]);
 const agentOutputModeSchema = z.enum(["concise", "verbose"]);
 
 const codexAgentConfigSchema = z.object({
@@ -30,6 +31,16 @@ const codexAgentConfigSchema = z.object({
   reasoningEffort: codexReasoningEffortSchema.default(DEFAULT_REASONING_EFFORT),
   outputMode: agentOutputModeSchema.default(DEFAULT_OUTPUT_MODE)
 });
+
+const piAgentConfigSchema = z.object({
+  provider: z.literal("pi"),
+  command: z.string().min(1).default("pi"),
+  model: z.string().min(1).optional(),
+  reasoningEffort: piThinkingLevelSchema.optional(),
+  outputMode: agentOutputModeSchema.default(DEFAULT_OUTPUT_MODE)
+});
+
+const agentConfigSchema = z.union([codexAgentConfigSchema, piAgentConfigSchema]);
 
 const discordTriggerSourceSchema = z.string().refine(isDiscordTriggerSource, {
   message: "Unsupported trigger source. Use channel:<id>."
@@ -46,7 +57,7 @@ const endpointSchema = z.object({
   enabled: z.boolean(),
   token: z.string().min(1),
   trigger: endpointTriggerConfigSchema,
-  agent: codexAgentConfigSchema.default(defaultCodexAgentConfig)
+  agent: agentConfigSchema.default(defaultCodexAgentConfig)
 });
 
 const runtimeStateSchema = z.object({
@@ -74,6 +85,14 @@ export function defaultCodexAgentConfig(): CodexAgentConfig {
     command: "codex",
     model: DEFAULT_RUNTIME_MODEL,
     reasoningEffort: DEFAULT_REASONING_EFFORT,
+    outputMode: DEFAULT_OUTPUT_MODE
+  };
+}
+
+export function defaultPiAgentConfig(): PiAgentConfig {
+  return {
+    provider: "pi",
+    command: "pi",
     outputMode: DEFAULT_OUTPUT_MODE
   };
 }
@@ -245,8 +264,8 @@ function stringifyEndpointConfig(endpoint: Endpoint): string {
   ].join("\n");
 }
 
-function tomlInlineTable(entries: Array<[string, string | boolean | string[]]>): string {
-  return `{ ${entries.map(([key, value]) => `${key} = ${tomlValue(value)}`).join(", ")} }`;
+function tomlInlineTable(entries: Array<[string, string | boolean | string[] | undefined]>): string {
+  return `{ ${entries.flatMap(([key, value]) => value === undefined ? [] : [`${key} = ${tomlValue(value)}`]).join(", ")} }`;
 }
 
 function tomlValue(value: string | boolean | string[]): string {

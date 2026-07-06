@@ -113,7 +113,7 @@ function runEndpointCli(argv: string[]): void {
     .option("--agent <provider>", "CLI agent provider")
     .option("--agent-command <command>", "CLI agent command")
     .option("--model <model>", "Agent model")
-    .option("--reasoning-effort <effort>", "Codex reasoning effort")
+    .option("--reasoning-effort <effort>", "Agent reasoning effort or Pi thinking level")
     .action(wrapLazy(async () => (await import("./commands/endpoints.js")).addEndpointCommand));
   cli
     .command("list", "List endpoints")

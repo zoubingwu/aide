@@ -1,6 +1,7 @@
 export type Provider = "discord";
-export type AgentProvider = "codex";
+export type AgentProvider = "codex" | "pi";
 export type CodexReasoningEffort = "low" | "medium" | "high" | "xhigh";
+export type PiThinkingLevel = "off" | "minimal" | CodexReasoningEffort;
 export type AgentOutputMode = "concise" | "verbose";
 export type RuntimeStatus = "running" | "stopped";
 
@@ -12,7 +13,15 @@ export interface CodexAgentConfig {
   outputMode: AgentOutputMode;
 }
 
-export type AgentConfig = CodexAgentConfig;
+export interface PiAgentConfig {
+  provider: "pi";
+  command: string;
+  model?: string | undefined;
+  reasoningEffort?: PiThinkingLevel | undefined;
+  outputMode: AgentOutputMode;
+}
+
+export type AgentConfig = CodexAgentConfig | PiAgentConfig;
 
 export interface EndpointTriggerConfig {
   requireMention: boolean;
@@ -90,7 +99,7 @@ export interface UsageEntry {
   outputTokens?: number | undefined;
   cachedInputTokens?: number | undefined;
   reasoningOutputTokens?: number | undefined;
-  source: "estimated" | "codex";
+  source: "estimated" | AgentProvider;
   raw?: Record<string, unknown> | undefined;
 }
 

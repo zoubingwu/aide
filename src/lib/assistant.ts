@@ -1,6 +1,6 @@
 import { makeAssistantPrompt, runAgent } from "./agent.js";
 import { appendActivityLog, endpointActivity } from "./logging.js";
-import { estimateTokens, addCodexUsage, addEstimatedUsage } from "./usage.js";
+import { estimateTokens, addAgentUsage, addEstimatedUsage } from "./usage.js";
 import { assertEndpointWorkspace, endpointWorkspace } from "./workspace.js";
 import type { AgentRunEvent, AgentRunMode, AgentToolServer } from "./agent-tools.js";
 import type { AssistantPromptMetadata } from "./agent.js";
@@ -46,7 +46,7 @@ export async function handleAssistantRequest(
     if (result.usage === undefined) {
       addEstimatedUsage(home, endpoint, estimatedInputTokens, estimatedOutputTokens);
     } else {
-      addCodexUsage(home, endpoint, result.usage);
+      addAgentUsage(home, endpoint, result.usage);
     }
   }
 

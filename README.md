@@ -2,7 +2,7 @@
 
 Turn the coding agent you already use into an always-available assistant.
 
-Aide gives long-lived coding agents a home outside the terminal. Point it at the Codex, Claude Code, opencode, or similar setup you have already tuned: skills, tools, auth, working directories, memory, and operating habits.
+Aide gives long-lived coding agents a home outside the terminal. Point it at the Codex, Pi, Claude Code, opencode, or similar setup you have already tuned: skills, tools, auth, working directories, memory, and operating habits.
 
 The core idea is simple: your coding agent is already a strong general-purpose agent. Aide lets you bring that agent into chat and scheduled work, so the same assistant can help with engineering tasks, research, operations, writing, planning, and daily briefs.
 
@@ -54,7 +54,7 @@ When Aide needs a new endpoint, setup asks for:
 - An endpoint provider. Discord is the currently runnable endpoint.
 - An endpoint id, used to name this assistant surface and its local settings.
 - A Discord bot token, stored in `~/.aide/config.toml`.
-- A locally installed CLI agent. Codex is the currently runnable agent.
+- A locally installed CLI agent. Codex and Pi are the currently runnable agents.
 
 After `aide start`, mention the bot in a Discord channel where it has access.
 
@@ -80,6 +80,12 @@ enabled = true
 token = "<discord-bot-token>"
 trigger = { requireMention = true, freeResponseSources = [] }
 agent = { provider = "codex", command = "codex", model = "gpt-5.5", reasoningEffort = "medium", outputMode = "concise" }
+```
+
+Pi can use its own default model and thinking level:
+
+```toml
+agent = { provider = "pi", command = "pi", outputMode = "concise" }
 ```
 
 Edit `~/.aide/config.toml` to change endpoint token, agent command, model, reasoning effort, or output mode.

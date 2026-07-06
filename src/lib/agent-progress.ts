@@ -14,6 +14,16 @@ export function formatAgentProgress(event: AgentRunEvent, options: { redactions?
     return line("Codex turn failed", nestedString(payload, ["error", "message"]), options.redactions);
   }
 
+  if (type === "tool_execution_start" || type === "tool_execution_end") {
+    const toolName = stringValue(payload.toolName);
+    const args = recordValue(payload.args);
+    const command = toolName === "bash" ? stringValue(args?.command) : undefined;
+
+    if (toolName) {
+      return line(type === "tool_execution_start" ? `Running ${toolName}` : `${toolName} finished`, command, options.redactions);
+    }
+  }
+
   const item = recordValue(payload.item);
 
   if (!item) {

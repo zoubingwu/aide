@@ -2,8 +2,20 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { defaultCodexAgentConfig, defaultEndpointTriggerConfig, ensureAideHome } from "../src/lib/config.js";
-import { addCodexUsage, addEstimatedUsage, estimateTokens, readUsageEntries, summarizeUsage } from "../src/lib/usage.js";
+import {
+  defaultCodexAgentConfig,
+  defaultEndpointTriggerConfig,
+  defaultPiAgentConfig,
+  ensureAideHome
+} from "../src/lib/config.js";
+import {
+  addAgentUsage,
+  addCodexUsage,
+  addEstimatedUsage,
+  estimateTokens,
+  readUsageEntries,
+  summarizeUsage
+} from "../src/lib/usage.js";
 import type { Endpoint } from "../src/lib/types.js";
 
 const cleanupPaths: string[] = [];
@@ -76,6 +88,26 @@ describe("usage", () => {
     addCodexUsage(home, endpoint, { inputTokens: 20, outputTokens: 7, totalTokens: 27 }, new Date("2026-05-06T01:00:00.000Z"));
 
     expect(summarizeUsage(home, new Date("2026-05-06T02:00:00.000Z")).source).toBe("mixed");
+  });
+
+  it("records measured usage with the endpoint agent provider", () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint: Endpoint = {
+      ...makeEndpoint(),
+      agent: defaultPiAgentConfig()
+    };
+
+    addAgentUsage(home, endpoint, { inputTokens: 20, outputTokens: 7, totalTokens: 27 }, new Date("2026-05-06T01:00:00.000Z"));
+
+    expect(readUsageEntries(home)).toMatchObject([
+      {
+        source: "pi",
+        agent: "pi",
+        tokens: 27
+      }
+    ]);
+    expect(summarizeUsage(home, new Date("2026-05-06T02:00:00.000Z")).source).toBe("pi");
   });
 });
 

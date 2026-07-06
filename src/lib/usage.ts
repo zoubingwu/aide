@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { assertInitialized } from "./config.js";
 import { usagePath } from "./paths.js";
-import type { AgentUsage, Endpoint, UsageEntry } from "./types.js";
+import type { AgentProvider, AgentUsage, Endpoint, UsageEntry } from "./types.js";
 
 export interface UsageSummary {
   today: number;
@@ -12,7 +12,7 @@ export interface UsageSummary {
   totalInputTokens: number;
   totalOutputTokens: number;
   byEndpoint: Array<{ endpoint: string; tokens: number; inputTokens: number; outputTokens: number }>;
-  source: "estimated" | "codex" | "mixed";
+  source: "estimated" | AgentProvider | "mixed";
 }
 
 export function estimateTokens(text: string): number {
@@ -35,6 +35,10 @@ export function addEstimatedUsage(
 
 export function addCodexUsage(home: string, endpoint: Endpoint, usage: AgentUsage, date = new Date()): void {
   addUsage(home, endpoint, usage, "codex", date);
+}
+
+export function addAgentUsage(home: string, endpoint: Endpoint, usage: AgentUsage, date = new Date()): void {
+  addUsage(home, endpoint, usage, endpoint.agent.provider, date);
 }
 
 function addUsage(home: string, endpoint: Endpoint, usage: AgentUsage, source: UsageEntry["source"], date: Date): void {
@@ -94,11 +98,19 @@ export function summarizeUsage(home: string, date = new Date()): UsageSummary {
     todayOutputTokens,
     totalInputTokens,
     totalOutputTokens,
-    source: sources.size > 1 ? "mixed" : sources.has("codex") ? "codex" : "estimated",
+    source: usageSource(sources),
     byEndpoint: [...byEndpointMap.entries()]
       .map(([endpoint, usage]) => ({ endpoint, ...usage }))
       .sort((left, right) => right.tokens - left.tokens)
   };
+}
+
+function usageSource(sources: Set<UsageEntry["source"]>): UsageSummary["source"] {
+  if (sources.size > 1) {
+    return "mixed";
+  }
+
+  return sources.values().next().value ?? "estimated";
 }
 
 export function formatTokenCount(value: number): string {
