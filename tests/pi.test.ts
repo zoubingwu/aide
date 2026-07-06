@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { execa } from "execa";
 import {
@@ -207,6 +208,62 @@ describe("pi", () => {
     ]);
   });
 
+  it("streams Pi JSONL events before the process exits", async () => {
+    const home = tempHome();
+    const workspace = tempHome();
+    const stream = new EventEmitter();
+    const stdout = [
+      JSON.stringify({ type: "agent_start" }),
+      JSON.stringify({
+        type: "message_end",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "done" }],
+          stopReason: "stop"
+        }
+      })
+    ].join("\n");
+    let resolveProcess: (value: unknown) => void = () => {};
+    let resolveFirstEvent: () => void = () => {};
+    const firstEvent = new Promise<void>((resolve) => {
+      resolveFirstEvent = resolve;
+    });
+    const subprocess = Object.assign(new Promise((resolve) => {
+      resolveProcess = resolve;
+    }), { stdout: stream });
+    const onEvent = vi.fn((event: { type?: string | undefined }) => {
+      if (event.type === "agent_start") {
+        resolveFirstEvent();
+      }
+    });
+
+    mockExeca().mockReturnValueOnce(subprocess as never);
+
+    const result = runPi(home, workspace, endpoint, "hello", { onEvent });
+    stream.emit("data", `${JSON.stringify({ type: "agent_start" })}\n`);
+
+    await firstEvent;
+
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ type: "agent_start" }));
+
+    stream.emit("data", `${JSON.stringify({
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "done" }],
+        stopReason: "stop"
+      }
+    })}\n`);
+    stream.emit("end");
+    resolveProcess({ stdout, stderr: "", exitCode: 0 });
+
+    await expect(result).resolves.toMatchObject({
+      response: "done",
+      hasTextResponse: true,
+      exitCode: 0
+    });
+  });
+
   it("falls back to fresh Pi runs after failed resume attempts", async () => {
     const home = tempHome();
     const workspace = tempHome();
@@ -261,6 +318,7 @@ function tempHome(): string {
 
 function mockExeca(): {
   mockResolvedValueOnce(value: unknown): ReturnType<typeof mockExeca>;
+  mockReturnValueOnce(value: unknown): ReturnType<typeof mockExeca>;
 } {
   return execa as unknown as ReturnType<typeof mockExeca>;
 }

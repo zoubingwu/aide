@@ -1,3 +1,4 @@
+import { StringDecoder } from "node:string_decoder";
 import { execa } from "execa";
 import { appendActivityLog, endpointActivity } from "./logging.js";
 import { deferredRestartEnv } from "./runtime-restart.js";
@@ -6,6 +7,10 @@ import type { AgentRunResult, AgentUsage, Endpoint, PiAgentConfig } from "./type
 
 type PiAttempt = "resume" | "fresh";
 type PiProcessResult = Omit<AgentRunResult, "response" | "hasTextResponse" | "resumed">;
+
+interface PiEventQueue {
+  current: Promise<void>;
+}
 
 export function buildPiArgs(agent: PiAgentConfig, prompt: string): string[] {
   return [...piConfigArgs(agent), "--continue", prompt];
@@ -121,9 +126,28 @@ async function runPiProcess(context: PiRunContext & { args: string[] }): Promise
   });
 
   let result: PiProcessResult;
+  const eventQueue: PiEventQueue = { current: Promise.resolve() };
+  const stream = createPiEventStream(context, eventQueue);
+  const decoder = new StringDecoder("utf8");
+  let streamedStdout = false;
+  let decoderEnded = false;
+  const endStream = () => {
+    if (decoderEnded) {
+      return;
+    }
+
+    decoderEnded = true;
+    const remaining = decoder.end();
+
+    if (remaining) {
+      stream.write(remaining);
+    }
+
+    stream.end();
+  };
 
   try {
-    const execution = await execa(context.agent.command, context.args, {
+    const subprocess = execa(context.agent.command, context.args, {
       cwd: context.workspace,
       reject: false,
       all: false,
@@ -133,6 +157,17 @@ async function runPiProcess(context: PiRunContext & { args: string[] }): Promise
         ? { env: deferredRestartEnv(context.home, context.options.deferredRestartId) }
         : {})
     });
+    const stdout = readableStdout(subprocess);
+
+    if (stdout) {
+      stdout.on("data", (chunk) => {
+        streamedStdout = true;
+        stream.write(decodeStdoutChunk(decoder, chunk));
+      });
+      stdout.on("end", endStream);
+    }
+
+    const execution = await subprocess;
     const cancelled = Boolean(execution.isCanceled || context.options.abortSignal?.aborted);
     result = {
       stdout: execution.stdout,
@@ -154,7 +189,14 @@ async function runPiProcess(context: PiRunContext & { args: string[] }): Promise
     }
   }
 
-  await appendPiEvents(context, result.stdout);
+  if (streamedStdout) {
+    endStream();
+  } else {
+    appendPiEvents(context, result.stdout, eventQueue);
+  }
+
+  await eventQueue.current;
+
   appendPiLog(context, "pi_cli_finished", {
     exitCode: result.exitCode,
     stdout: result.stdout,
@@ -164,17 +206,60 @@ async function runPiProcess(context: PiRunContext & { args: string[] }): Promise
   return result;
 }
 
-async function appendPiEvents(context: PiRunContext, stdout: string): Promise<void> {
+function appendPiEvents(context: PiRunContext, stdout: string, eventQueue: PiEventQueue): void {
   for (const payload of piJsonPayloads(stdout)) {
-    const type = typeof payload.type === "string" ? payload.type : undefined;
-    appendPiLog(context, "pi_cli_event", { type, payload });
-
-    try {
-      await context.options.onEvent?.({ attempt: context.attempt, type, payload });
-    } catch (error) {
-      appendPiLog(context, "pi_progress_delivery_failed", { type, error: errorMessage(error) });
-    }
+    appendPiEvent(context, payload, eventQueue);
   }
+}
+
+function createPiEventStream(context: PiRunContext, eventQueue: PiEventQueue): { write(chunk: string): void; end(): void } {
+  let buffered = "";
+  let ended = false;
+
+  return {
+    write(chunk) {
+      buffered += chunk;
+      const lines = buffered.split(/\r?\n/);
+      buffered = lines.pop() ?? "";
+
+      for (const line of lines) {
+        const payload = parseJsonObjectLine(line);
+
+        if (payload) {
+          appendPiEvent(context, payload, eventQueue);
+        }
+      }
+    },
+    end() {
+      if (ended) {
+        return;
+      }
+
+      ended = true;
+      const payload = parseJsonObjectLine(buffered);
+      buffered = "";
+
+      if (payload) {
+        appendPiEvent(context, payload, eventQueue);
+      }
+    }
+  };
+}
+
+function appendPiEvent(context: PiRunContext, payload: Record<string, unknown>, eventQueue: PiEventQueue): void {
+  const type = typeof payload.type === "string" ? payload.type : undefined;
+  appendPiLog(context, "pi_cli_event", { type, payload });
+
+  if (!context.options.onEvent) {
+    return;
+  }
+
+  eventQueue.current = eventQueue.current
+    .catch(() => undefined)
+    .then(() => context.options.onEvent?.({ attempt: context.attempt, type, payload }))
+    .catch((error) => {
+      appendPiLog(context, "pi_progress_delivery_failed", { type, error: errorMessage(error) });
+    });
 }
 
 function piConfigArgs(agent: PiAgentConfig): string[] {
@@ -305,6 +390,28 @@ function parseJsonObjectLine(line: string): Record<string, unknown> | undefined 
   } catch {
     return undefined;
   }
+}
+
+function readableStdout(value: unknown): NodeJS.ReadableStream | undefined {
+  const stdout = recordValue(value)?.stdout;
+
+  if (!stdout || typeof stdout !== "object" || !("on" in stdout) || typeof stdout.on !== "function") {
+    return undefined;
+  }
+
+  return stdout as NodeJS.ReadableStream;
+}
+
+function decodeStdoutChunk(decoder: StringDecoder, chunk: unknown): string {
+  if (typeof chunk === "string") {
+    return chunk;
+  }
+
+  if (Buffer.isBuffer(chunk) || chunk instanceof Uint8Array) {
+    return decoder.write(chunk);
+  }
+
+  return String(chunk);
 }
 
 function pushIfPresent<T>(items: T[], item: T | undefined): void {
