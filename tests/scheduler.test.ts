@@ -498,6 +498,115 @@ describe("scheduler execution", () => {
     scheduler.stop();
   });
 
+  it("waits for missed-run recovery before draining startup manual requests", async () => {
+    vi.useFakeTimers({ now: new Date("2026-05-10T02:00:00.000Z") });
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = dailySchedule();
+    let markRecoveryStarted: (() => void) | undefined;
+    const recoveryStarted = new Promise<void>((resolve) => {
+      markRecoveryStarted = resolve;
+    });
+    let finishRecovery: ((value: AgentRunResult) => void) | undefined;
+    const recoveryPending = new Promise<AgentRunResult>((resolve) => {
+      finishRecovery = resolve;
+    });
+    let runCount = 0;
+    const handleRequest = vi.fn(() => {
+      runCount += 1;
+
+      if (runCount === 1) {
+        markRecoveryStarted?.();
+        return recoveryPending;
+      }
+
+      return Promise.resolve(agentResult({ response: "manual brief" }));
+    });
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+    recordScheduleCheck(home, schedule.id, new Date("2026-05-10T00:30:00.000Z"));
+    addScheduleRunRequest(home, schedule.id, new Date("2026-05-10T01:30:00.000Z"));
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest,
+      deliver
+    });
+
+    scheduler.reload();
+    await recoveryStarted;
+    const manualDrain = scheduler.runRequestedSchedules();
+    let manualDrainDone = false;
+    void manualDrain.then(() => {
+      manualDrainDone = true;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(manualDrainDone).toBe(false);
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+
+    finishRecovery?.(agentResult({ response: "recovered brief" }));
+    await manualDrain;
+
+    expect(handleRequest).toHaveBeenCalledTimes(2);
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "recovered brief");
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "manual brief");
+    expect(loadScheduleRunRequests(home)).toEqual([]);
+    scheduler.stop();
+  });
+
+  it("leaves remaining manual requests queued after shutdown starts", async () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const first = dailySchedule();
+    const second = { ...dailySchedule(), id: "daily-market", message: "Generate market brief." };
+    addScheduleRunRequest(home, first.id, new Date("2026-05-10T01:00:00.000Z"));
+    const secondRequest = addScheduleRunRequest(home, second.id, new Date("2026-05-10T02:00:00.000Z"));
+    let markFirstStarted: (() => void) | undefined;
+    const firstStarted = new Promise<void>((resolve) => {
+      markFirstStarted = resolve;
+    });
+    let finishFirst: ((value: AgentRunResult) => void) | undefined;
+    const firstPending = new Promise<AgentRunResult>((resolve) => {
+      finishFirst = resolve;
+    });
+    const handleRequest = vi.fn((_: string, __: Endpoint, message: string) => {
+      if (message === first.message) {
+        markFirstStarted?.();
+        return firstPending;
+      }
+
+      return Promise.resolve(agentResult({ response: "second brief" }));
+    });
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [first, second]);
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest,
+      deliver
+    });
+
+    const drain = scheduler.runRequestedSchedules();
+    await firstStarted;
+    scheduler.stop();
+    finishFirst?.(agentResult({ response: "first brief" }));
+    await drain;
+
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, first.target, "first brief");
+    expect(loadScheduleRunRequests(home)).toEqual([secondRequest]);
+  });
+
   it("retries pending delivery without rerunning the agent", async () => {
     vi.useFakeTimers({ now: new Date("2026-05-10T10:00:00.000Z") });
     const home = tempHome();

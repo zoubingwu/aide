@@ -205,6 +205,7 @@ export class RuntimeScheduler {
   private readonly runningDeliveries = new Set<string>();
   private reloadTimer: NodeJS.Timeout | undefined;
   private deliveryRetryTimer: NodeJS.Timeout | undefined;
+  private recoveryDrain: Promise<void> = Promise.resolve();
   private deliveryDrain: Promise<void> = Promise.resolve();
   private scheduleRunDrain: Promise<void> = Promise.resolve();
   private stopped = false;
@@ -281,7 +282,11 @@ export class RuntimeScheduler {
     const enabledIds = new Set(enabledSchedules.map((schedule) => schedule.id));
     this.pruneRecurringRetries(enabledIds);
     this.pruneScheduleCheckpoints(enabledIds);
-    void this.recoverMissedRuns(enabledSchedules);
+    const recovery = this.recoveryDrain.then(
+      () => this.recoverMissedRuns(enabledSchedules),
+      () => this.recoverMissedRuns(enabledSchedules)
+    );
+    this.recoveryDrain = recovery.catch(() => undefined);
   }
 
   private createJob(schedule: Schedule): RunningJob {
@@ -429,6 +434,11 @@ export class RuntimeScheduler {
   }
 
   async runManualSchedule(id: string): Promise<ScheduleRunStatus> {
+    if (this.stopped) {
+      appendRuntimeLog(this.options.home, "schedule_run_request_deferred_stopped", { schedule: id });
+      return "deferred";
+    }
+
     const schedule = this.findEnabledSchedule(id);
 
     if (!schedule) {
@@ -443,9 +453,14 @@ export class RuntimeScheduler {
   }
 
   async runRequestedSchedules(): Promise<void> {
+    const recoverThenDrain = () =>
+      this.recoveryDrain.then(
+        () => this.drainRequestedSchedules(),
+        () => this.drainRequestedSchedules()
+      );
     const drain = this.scheduleRunDrain.then(
-      () => this.drainRequestedSchedules(),
-      () => this.drainRequestedSchedules()
+      () => recoverThenDrain(),
+      () => recoverThenDrain()
     );
     this.scheduleRunDrain = drain.catch(() => undefined);
     await drain;
@@ -462,6 +477,10 @@ export class RuntimeScheduler {
     }
 
     for (const request of requests) {
+      if (this.stopped) {
+        return;
+      }
+
       appendRuntimeLog(this.options.home, "schedule_run_request_received", {
         schedule: request.scheduleId,
         request: request.id,
@@ -471,6 +490,8 @@ export class RuntimeScheduler {
 
       if (status !== "deferred") {
         this.removeRunRequest(request);
+      } else {
+        return;
       }
     }
   }
