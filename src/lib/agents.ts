@@ -1,5 +1,5 @@
 import { execa } from "execa";
-import { defaultCodexAgentConfig } from "./config.js";
+import { defaultCodexAgentConfig, defaultPiAgentConfig } from "./config.js";
 import type { AgentConfig, AgentProvider } from "./types.js";
 
 export interface AgentDefinition {
@@ -24,6 +24,12 @@ export const AGENT_CATALOG = [
     label: "Codex",
     command: "codex",
     versionArgs: ["--version"]
+  },
+  {
+    provider: "pi",
+    label: "Pi",
+    command: "pi",
+    versionArgs: ["--version"]
   }
 ] as const satisfies readonly AgentDefinition[];
 
@@ -31,6 +37,8 @@ export function defaultAgentConfig(provider: AgentProvider): AgentConfig {
   switch (provider) {
     case "codex":
       return defaultCodexAgentConfig();
+    case "pi":
+      return defaultPiAgentConfig();
   }
 }
 

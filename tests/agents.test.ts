@@ -16,12 +16,18 @@ describe("agents", () => {
     vi.clearAllMocks();
   });
 
-  it("detects installed Codex CLI from the agent catalog", async () => {
-    mockExeca().mockResolvedValueOnce({
-      stdout: "codex 1.0.0",
-      stderr: "",
-      exitCode: 0
-    } as never);
+  it("detects installed CLI agents from the agent catalog", async () => {
+    mockExeca()
+      .mockResolvedValueOnce({
+        stdout: "codex 1.0.0",
+        stderr: "",
+        exitCode: 0
+      } as never)
+      .mockResolvedValueOnce({
+        stdout: "0.80.3",
+        stderr: "",
+        exitCode: 0
+      } as never);
 
     await expect(detectInstalledAgents()).resolves.toEqual([
       {
@@ -29,17 +35,25 @@ describe("agents", () => {
         label: "Codex",
         command: "codex",
         version: "codex 1.0.0"
+      },
+      {
+        provider: "pi",
+        label: "Pi",
+        command: "pi",
+        version: "0.80.3"
       }
     ]);
   });
 
   it("skips missing CLI agent commands", async () => {
-    mockExeca().mockRejectedValueOnce(new Error("spawn codex ENOENT"));
+    mockExeca()
+      .mockRejectedValueOnce(new Error("spawn codex ENOENT"))
+      .mockRejectedValueOnce(new Error("spawn pi ENOENT"));
 
     await expect(detectInstalledAgents()).resolves.toEqual([]);
   });
 
-  it("returns full Codex defaults for endpoint config", () => {
+  it("returns agent defaults for endpoint config", () => {
     expect(defaultAgentConfig("codex")).toEqual({
       provider: "codex",
       command: "codex",
@@ -49,6 +63,13 @@ describe("agents", () => {
     });
     expect(agentProviderLabel("codex")).toBe("Codex");
     expect(parseAgentProvider("codex")).toBe("codex");
+    expect(defaultAgentConfig("pi")).toEqual({
+      provider: "pi",
+      command: "pi",
+      outputMode: "concise"
+    });
+    expect(agentProviderLabel("pi")).toBe("Pi");
+    expect(parseAgentProvider("pi")).toBe("pi");
   });
 });
 

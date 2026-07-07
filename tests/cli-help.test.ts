@@ -229,8 +229,10 @@ describe("CLI help", () => {
     expect(stdout).toContain("Config: <home>/config.toml");
     expect(stdout).toContain("Schedules: <home>/schedules.json");
     expect(stdout).toContain("Runtime coordination state: <home>/state/");
+    expect(stdout).toContain("Supported agent providers: codex, pi.");
     expect(stdout).toContain('trigger = { requireMention = true, freeResponseSources = ["channel:123"] }');
     expect(stdout).toContain('agent = { provider = "codex", command = "codex", model = "gpt-5.5", reasoningEffort = "medium", outputMode = "concise" }');
+    expect(stdout).toContain('agent = { provider = "pi", command = "pi", outputMode = "concise" }');
     expect(stdout).toContain("Trigger settings are per endpoint.");
     expect(stdout).toContain("Mention-free server-channel triggers require Message Content Intent");
     expect(stdout).toContain("When a user asks to make the current Discord channel mention-free");
@@ -278,6 +280,33 @@ describe("CLI help", () => {
     expect(configToml).not.toContain("workspacePath");
     expect(configToml).not.toContain("routing");
     expect(configToml).not.toContain("permissions");
+  });
+
+  it("supports Pi as an endpoint CLI agent", async () => {
+    const home = tempHome();
+    await runCli("--home", home, "init");
+    await runCli(
+      "--home",
+      home,
+      "endpoint",
+      "add",
+      "--id",
+      "discord-pi",
+      "--token",
+      "test-token",
+      "--agent",
+      "pi"
+    );
+
+    const configToml = fs.readFileSync(path.join(home, "config.toml"), "utf8");
+    const show = await runCli("--home", home, "endpoint", "show", "discord-pi");
+
+    expect(configToml).toContain('agent = { provider = "pi", command = "pi", outputMode = "concise" }');
+    expect(configToml).not.toContain('model =');
+    expect(configToml).not.toContain('reasoningEffort =');
+    expect(show.stdout).toContain("Agent       pi");
+    expect(show.stdout).toContain("Model       default");
+    expect(show.stdout).toContain("Reasoning   default");
   });
 
   it("requires endpoint id for scripted Discord add", async () => {

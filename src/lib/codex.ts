@@ -62,6 +62,10 @@ export async function runCodex(
   prompt: string,
   options: AgentRunOptions = {}
 ): Promise<AgentRunResult> {
+  if (endpoint.agent.provider !== "codex") {
+    throw new Error(`Codex runner received ${endpoint.agent.provider} agent config.`);
+  }
+
   if (options.runMode === "fresh") {
     return runFreshCodex(home, workspace, endpoint, prompt, options);
   }
@@ -133,6 +137,10 @@ async function runFreshCodex(
   prompt: string,
   options: AgentRunOptions = {}
 ): Promise<AgentRunResult> {
+  if (endpoint.agent.provider !== "codex") {
+    throw new Error(`Codex runner received ${endpoint.agent.provider} agent config.`);
+  }
+
   const agent = endpoint.agent;
   const fresh = await runCodexOnce({
     home,

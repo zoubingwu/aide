@@ -281,7 +281,7 @@ function discordResponseText(result: AgentRunResult): string {
     return stderr;
   }
 
-  return `Codex failed with exit code ${result.exitCode}. Check aide logs for details.`;
+  return `Agent failed with exit code ${result.exitCode}. Check aide logs for details.`;
 }
 
 async function startDiscordContextTools(

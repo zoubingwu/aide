@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import { agentProviderLabel, makeAssistantPrompt } from "../src/lib/agent.js";
 
 describe("agent", () => {
-  it("labels the default Codex provider", () => {
+  it("labels supported agent providers", () => {
     expect(agentProviderLabel("codex")).toBe("Codex");
+    expect(agentProviderLabel("pi")).toBe("Pi");
   });
 
   it("builds the shared assistant prompt with metadata and user message sections", () => {

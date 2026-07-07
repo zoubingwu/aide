@@ -37,7 +37,7 @@ Config file
 - Token values belong in this file and should stay out of terminal output.
 - Each endpoint is one [[endpoints]] table.
 - Supported endpoint provider: discord.
-- Supported agent provider: codex.
+- Supported agent providers: codex, pi.
 - Trigger source values use channel:<id>.
 - Agent command, model, reasoning effort, and output mode apply on the next agent request.
 - Endpoint token and trigger changes apply on the next start or restart.
@@ -50,6 +50,8 @@ Config example
   token = "<discord-bot-token>"
   trigger = { requireMention = true, freeResponseSources = ["channel:123"] }
   agent = { provider = "codex", command = "codex", model = "gpt-5.5", reasoningEffort = "medium", outputMode = "concise" }
+  # Pi uses its configured default model and thinking level when model and reasoningEffort are omitted.
+  # agent = { provider = "pi", command = "pi", outputMode = "concise" }
 
 Trigger guide
 - Trigger settings are per endpoint.

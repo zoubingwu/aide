@@ -1,5 +1,6 @@
 import { loadConfig, type AideConfig } from "../lib/config.js";
 import { printTable } from "../lib/format.js";
+import type { AgentConfig } from "../lib/types.js";
 import type { CommandOptions } from "./options.js";
 import { homeFromOptions } from "./options.js";
 
@@ -15,12 +16,18 @@ function configRows(config: AideConfig): string[][] {
     [`endpoints.${endpoint.id}.token`, secretStatus(endpoint.token)],
     [`endpoints.${endpoint.id}.trigger.requireMention`, formatBoolean(endpoint.trigger.requireMention)],
     [`endpoints.${endpoint.id}.trigger.freeResponseSources`, formatList(endpoint.trigger.freeResponseSources)],
-    [`endpoints.${endpoint.id}.agent.provider`, endpoint.agent.provider],
-    [`endpoints.${endpoint.id}.agent.command`, endpoint.agent.command],
-    [`endpoints.${endpoint.id}.agent.model`, endpoint.agent.model],
-    [`endpoints.${endpoint.id}.agent.reasoningEffort`, endpoint.agent.reasoningEffort],
-    [`endpoints.${endpoint.id}.agent.outputMode`, endpoint.agent.outputMode]
+    ...agentRows(endpoint.id, endpoint.agent)
   ]);
+}
+
+function agentRows(endpointId: string, agent: AgentConfig): string[][] {
+  return [
+    [`endpoints.${endpointId}.agent.provider`, agent.provider],
+    [`endpoints.${endpointId}.agent.command`, agent.command],
+    [`endpoints.${endpointId}.agent.model`, agent.model ?? "default"],
+    [`endpoints.${endpointId}.agent.reasoningEffort`, agent.reasoningEffort ?? "default"],
+    [`endpoints.${endpointId}.agent.outputMode`, agent.outputMode]
+  ];
 }
 
 function secretStatus(value: string): string {

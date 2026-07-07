@@ -2,6 +2,7 @@ import { agentProviderLabel as catalogAgentProviderLabel } from "./agents.js";
 import type { AgentProvider, AgentRunResult, Endpoint } from "./types.js";
 import type { AgentRunOptions } from "./agent-tools.js";
 import { runCodex } from "./codex.js";
+import { runPi } from "./pi.js";
 
 export interface AssistantPromptContext {
   source?: string | undefined;
@@ -39,6 +40,8 @@ export async function runAgent(
   switch (endpoint.agent.provider) {
     case "codex":
       return runCodex(home, workspace, endpoint, prompt, options);
+    case "pi":
+      return runPi(home, workspace, endpoint, prompt, options);
   }
 }
 

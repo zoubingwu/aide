@@ -17,12 +17,22 @@ import {
   slugifyId
 } from "../lib/paths.js";
 import { inspectEndpointWorkspace, ensureEndpointWorkspace, endpointWorkspace } from "../lib/workspace.js";
-import type { AgentConfig, AgentProvider, CodexAgentConfig, CodexReasoningEffort, Endpoint, Provider } from "../lib/types.js";
+import type {
+  AgentConfig,
+  AgentProvider,
+  CodexAgentConfig,
+  CodexReasoningEffort,
+  Endpoint,
+  PiAgentConfig,
+  PiThinkingLevel,
+  Provider
+} from "../lib/types.js";
 import type { CommandOptions } from "./options.js";
 import { homeFromOptions, stringOption } from "./options.js";
 
 const DEFAULT_DISCORD_ENDPOINT_ID = "discord";
 const REASONING_EFFORTS: CodexReasoningEffort[] = ["low", "medium", "high", "xhigh"];
+const PI_THINKING_LEVELS: PiThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
 const ENDPOINT_PROVIDERS: Array<{ provider: Provider; label: string; description: string }> = [
   { provider: "discord", label: "Discord", description: "Discord bot endpoint" }
 ];
@@ -71,8 +81,8 @@ export async function showEndpointCommand(id: string, options: CommandOptions): 
   console.log(`Status      ${statusLabel(endpoint.enabled)}`);
   console.log(`Agent       ${endpoint.agent.provider}`);
   console.log(`Command     ${endpoint.agent.command}`);
-  console.log(`Model       ${endpoint.agent.model}`);
-  console.log(`Reasoning   ${endpoint.agent.reasoningEffort}`);
+  console.log(`Model       ${agentModelLabel(endpoint.agent)}`);
+  console.log(`Reasoning   ${agentReasoningLabel(endpoint.agent)}`);
   console.log(`Output      ${endpoint.agent.outputMode}`);
   console.log(`Mention     ${endpoint.trigger.requireMention ? "required" : "free"}`);
   console.log(`Free chats  ${endpoint.trigger.freeResponseSources.join(",") || "none"}`);
@@ -239,6 +249,8 @@ async function agentFromOptions(options: CommandOptions): Promise<AgentConfig> {
   switch (provider) {
     case "codex":
       return codexAgentFromOptions(options);
+    case "pi":
+      return piAgentFromOptions(options);
   }
 }
 
@@ -257,7 +269,7 @@ async function resolveAgentProvider(options: CommandOptions): Promise<AgentProvi
   const installedAgents = await detectInstalledAgents(agentCommand ? { codex: agentCommand } : {});
 
   if (installedAgents.length === 0) {
-    throw new Error("No supported CLI agent found. Install Codex CLI and run `aide endpoint add` again.");
+    throw new Error("No supported CLI agent found. Install Codex or Pi CLI and run `aide endpoint add` again.");
   }
 
   const response = await prompts({
@@ -279,14 +291,44 @@ async function resolveAgentProvider(options: CommandOptions): Promise<AgentProvi
 }
 
 function codexAgentFromOptions(options: CommandOptions): CodexAgentConfig {
-  const defaults = defaultAgentConfig("codex");
+  const defaults = defaultAgentConfig("codex") as CodexAgentConfig;
   return {
     provider: "codex",
-    command: stringOption(options, "agentCommand") ?? defaults.command,
+    command: agentCommandForProvider("codex", options, defaults.command),
     model: stringOption(options, "model") ?? defaults.model,
     reasoningEffort: parseReasoningEffort(stringOption(options, "reasoningEffort") ?? defaults.reasoningEffort),
     outputMode: defaults.outputMode
   };
+}
+
+function piAgentFromOptions(options: CommandOptions): PiAgentConfig {
+  const defaults = defaultAgentConfig("pi") as PiAgentConfig;
+  const model = stringOption(options, "model");
+  const reasoningEffort = stringOption(options, "reasoningEffort");
+
+  return {
+    provider: "pi",
+    command: agentCommandForProvider("pi", options, defaults.command),
+    ...(model ? { model } : {}),
+    ...(reasoningEffort ? { reasoningEffort: parsePiThinkingLevel(reasoningEffort) } : {}),
+    outputMode: defaults.outputMode
+  };
+}
+
+function agentCommandForProvider(provider: AgentProvider, options: CommandOptions, fallback: string): string {
+  const command = stringOption(options, "agentCommand");
+
+  if (!command) {
+    return fallback;
+  }
+
+  const explicitProvider = stringOption(options, "agent");
+
+  if (!explicitProvider) {
+    return provider === "codex" ? command : fallback;
+  }
+
+  return parseAgentProvider(explicitProvider) === provider ? command : fallback;
 }
 
 function parseReasoningEffort(value: string): CodexReasoningEffort {
@@ -295,6 +337,22 @@ function parseReasoningEffort(value: string): CodexReasoningEffort {
   }
 
   throw new Error(`Codex reasoning effort must be one of: ${REASONING_EFFORTS.join(", ")}.`);
+}
+
+function parsePiThinkingLevel(value: string): PiThinkingLevel {
+  if (PI_THINKING_LEVELS.includes(value as PiThinkingLevel)) {
+    return value as PiThinkingLevel;
+  }
+
+  throw new Error(`Pi thinking level must be one of: ${PI_THINKING_LEVELS.join(", ")}.`);
+}
+
+function agentModelLabel(agent: AgentConfig): string {
+  return agent.model ?? "default";
+}
+
+function agentReasoningLabel(agent: AgentConfig): string {
+  return agent.reasoningEffort ?? "default";
 }
 
 async function collectDiscordEndpointAnswers(options: CommandOptions): Promise<{
