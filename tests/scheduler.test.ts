@@ -343,6 +343,30 @@ describe("scheduler execution", () => {
     scheduler.stop();
   });
 
+  it("keeps future one-shot schedules after manual runs", async () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = onceSchedule();
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest: vi.fn().mockResolvedValue(agentResult({ response: "manual reminder" })),
+      deliver
+    });
+
+    await expect(scheduler.runManualSchedule(schedule.id)).resolves.toBe("ran");
+
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "manual reminder");
+    expect(loadSchedules(home)).toEqual([schedule]);
+    scheduler.stop();
+  });
+
   it("drains queued manual schedule run requests", async () => {
     const home = tempHome();
     ensureAideHome(home);
@@ -366,6 +390,56 @@ describe("scheduler execution", () => {
     expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "queued brief");
     expect(loadScheduleRunRequests(home)).toEqual([]);
     expect(fs.readFileSync(path.join(logsDir(home), RUNTIME_LOG_FILE), "utf8")).toContain("schedule_run_request_received");
+    scheduler.stop();
+  });
+
+  it("keeps queued manual run requests until each run finishes", async () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const first = dailySchedule();
+    const second = { ...dailySchedule(), id: "daily-market", message: "Generate market brief." };
+    const firstRequest = addScheduleRunRequest(home, first.id, new Date("2026-05-10T01:00:00.000Z"));
+    const secondRequest = addScheduleRunRequest(home, second.id, new Date("2026-05-10T02:00:00.000Z"));
+    let markFirstStarted: (() => void) | undefined;
+    const firstStarted = new Promise<void>((resolve) => {
+      markFirstStarted = resolve;
+    });
+    let finishFirst: ((value: AgentRunResult) => void) | undefined;
+    const handleRequest = vi.fn(async (_home: string, _endpoint: Endpoint, message: string) => {
+      if (message === first.message) {
+        const pending = new Promise<AgentRunResult>((resolve) => {
+          finishFirst = resolve;
+        });
+        markFirstStarted?.();
+        return pending;
+      }
+
+      return agentResult({ response: "second brief" });
+    });
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [first, second]);
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest,
+      deliver
+    });
+
+    const drain = scheduler.runRequestedSchedules();
+    await firstStarted;
+
+    expect(loadScheduleRunRequests(home)).toEqual([firstRequest, secondRequest]);
+
+    finishFirst?.(agentResult({ response: "first brief" }));
+    await drain;
+
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, first.target, "first brief");
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, second.target, "second brief");
+    expect(loadScheduleRunRequests(home)).toEqual([]);
     scheduler.stop();
   });
 

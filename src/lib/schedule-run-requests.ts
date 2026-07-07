@@ -36,12 +36,6 @@ export function addScheduleRunRequest(home: string, scheduleId: string, now = ne
   return request;
 }
 
-export function takeScheduleRunRequests(home: string): ScheduleRunRequest[] {
-  const requests = loadScheduleRunRequests(home);
-  writeScheduleRunRequests(home, []);
-  return requests;
-}
-
 export function removeScheduleRunRequest(home: string, id: string): void {
   writeScheduleRunRequests(home, loadScheduleRunRequests(home).filter((request) => request.id !== id));
 }

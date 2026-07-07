@@ -12,7 +12,7 @@ import {
 } from "./delivery-retries.js";
 import { deliverDiscordMessage } from "./discord-delivery.js";
 import { appendRuntimeLog } from "./logging.js";
-import { takeScheduleRunRequests } from "./schedule-run-requests.js";
+import { loadScheduleRunRequests, removeScheduleRunRequest, type ScheduleRunRequest } from "./schedule-run-requests.js";
 import {
   claimScheduleOccurrence,
   loadScheduleCheckpoints,
@@ -45,6 +45,7 @@ export interface ScheduleExecution {
     context?: AssistantRequestContext
   ) => Promise<AgentRunResult>) | undefined;
   deliver?: ((endpoint: Endpoint, client: unknown, target: string, response: string) => Promise<void>) | undefined;
+  source?: RunSource | undefined;
 }
 
 export interface RuntimeSchedulerOptions {
@@ -67,7 +68,7 @@ interface RunningJob {
 
 type ScheduleRunStatus = "ran" | "skipped";
 type ScheduleExecutionStatus = "completed" | "agent_failed" | "delivery_invalid" | "delivery_pending" | "skipped";
-type RunSource = "scheduled" | "recovery" | "retry" | "manual";
+export type RunSource = "scheduled" | "recovery" | "retry" | "manual";
 
 export async function executeScheduleOnce(execution: ScheduleExecution): Promise<ScheduleExecutionStatus> {
   const endpoint = execution.endpoints.find((candidate) => candidate.id === execution.schedule.endpoint);
@@ -185,7 +186,7 @@ export async function executeScheduleOnce(execution: ScheduleExecution): Promise
 }
 
 function completeSchedule(execution: ScheduleExecution): void {
-  if (execution.schedule.kind !== "once") {
+  if (execution.schedule.kind !== "once" || execution.source === "manual") {
     return;
   }
 
@@ -205,6 +206,7 @@ export class RuntimeScheduler {
   private reloadTimer: NodeJS.Timeout | undefined;
   private deliveryRetryTimer: NodeJS.Timeout | undefined;
   private deliveryDrain: Promise<void> = Promise.resolve();
+  private scheduleRunDrain: Promise<void> = Promise.resolve();
   private stopped = false;
 
   constructor(private readonly options: RuntimeSchedulerOptions) {}
@@ -402,7 +404,8 @@ export class RuntimeScheduler {
         endpoints: this.options.endpoints,
         clients: this.options.clients,
         handleRequest: this.options.handleRequest,
-        deliver: this.options.deliver
+        deliver: this.options.deliver,
+        source
       });
     } catch (error) {
       appendRuntimeLog(this.options.home, "schedule_run_failed", {
@@ -436,10 +439,19 @@ export class RuntimeScheduler {
   }
 
   async runRequestedSchedules(): Promise<void> {
-    let requests: ReturnType<typeof takeScheduleRunRequests>;
+    const drain = this.scheduleRunDrain.then(
+      () => this.drainRequestedSchedules(),
+      () => this.drainRequestedSchedules()
+    );
+    this.scheduleRunDrain = drain.catch(() => undefined);
+    await drain;
+  }
+
+  private async drainRequestedSchedules(): Promise<void> {
+    let requests: ScheduleRunRequest[];
 
     try {
-      requests = takeScheduleRunRequests(this.options.home);
+      requests = loadScheduleRunRequests(this.options.home);
     } catch (error) {
       appendRuntimeLog(this.options.home, "schedule_run_request_load_failed", { error: errorMessage(error) });
       return;
@@ -452,6 +464,19 @@ export class RuntimeScheduler {
         requestedAt: request.requestedAt
       });
       await this.runManualSchedule(request.scheduleId);
+      this.removeRunRequest(request);
+    }
+  }
+
+  private removeRunRequest(request: ScheduleRunRequest): void {
+    try {
+      removeScheduleRunRequest(this.options.home, request.id);
+    } catch (error) {
+      appendRuntimeLog(this.options.home, "schedule_run_request_remove_failed", {
+        schedule: request.scheduleId,
+        request: request.id,
+        error: errorMessage(error)
+      });
     }
   }
 

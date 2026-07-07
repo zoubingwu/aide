@@ -8,8 +8,8 @@ import { logsDir, scheduleRunRequestsPath } from "../src/lib/paths.js";
 import {
   addScheduleRunRequest,
   loadScheduleRunRequests,
+  removeScheduleRunRequest,
   requestScheduleRun,
-  takeScheduleRunRequests
 } from "../src/lib/schedule-run-requests.js";
 import { SCHEDULE_RELOAD_SIGNAL } from "../src/lib/schedule-reload.js";
 
@@ -24,15 +24,15 @@ describe("schedule run requests", () => {
     }
   });
 
-  it("stores and drains manual schedule run requests", () => {
+  it("stores and removes manual schedule run requests", () => {
     const home = tempHome();
     ensureAideHome(home);
     const first = addScheduleRunRequest(home, "daily-brief", new Date("2026-05-10T01:00:00.000Z"));
     const second = addScheduleRunRequest(home, "daily-market", new Date("2026-05-10T02:00:00.000Z"));
 
     expect(loadScheduleRunRequests(home)).toEqual([first, second]);
-    expect(takeScheduleRunRequests(home)).toEqual([first, second]);
-    expect(loadScheduleRunRequests(home)).toEqual([]);
+    removeScheduleRunRequest(home, first.id);
+    expect(loadScheduleRunRequests(home)).toEqual([second]);
     expect(fs.statSync(scheduleRunRequestsPath(home)).mode & 0o777).toBe(0o600);
   });
 
