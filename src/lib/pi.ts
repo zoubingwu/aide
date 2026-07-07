@@ -317,7 +317,9 @@ export default async function aideMcpTools(pi) {
   const registeredNames = new Set();
 
   for (const server of toolServers) {
-    const listed = await mcpRequest(server.url, "tools/list", {});
+    const client = new McpHttpClient(server.url);
+    await client.initialize();
+    const listed = await client.request("tools/list", {});
     const tools = Array.isArray(listed.tools) ? listed.tools : [];
 
     for (const tool of tools) {
@@ -334,7 +336,7 @@ export default async function aideMcpTools(pi) {
         promptGuidelines: ["Use " + toolName + " when the current request needs " + server.name + " context."],
         parameters: schemaObject(tool.inputSchema),
         async execute(_toolCallId, params, signal) {
-          const result = await mcpRequest(server.url, "tools/call", {
+          const result = await client.request("tools/call", {
             name: tool.name,
             arguments: params
           }, signal);
@@ -353,6 +355,84 @@ export default async function aideMcpTools(pi) {
   }
 }
 
+class McpHttpClient {
+  constructor(url) {
+    this.url = url;
+    this.protocolVersion = "2025-11-25";
+  }
+
+  async initialize(signal) {
+    const result = await this.request("initialize", {
+      protocolVersion: this.protocolVersion,
+      capabilities: {},
+      clientInfo: {
+        name: "aide-pi-mcp-tools",
+        version: "1.0.0"
+      }
+    }, signal);
+
+    if (typeof result.protocolVersion === "string") {
+      this.protocolVersion = result.protocolVersion;
+    }
+
+    await this.notify("notifications/initialized", signal);
+  }
+
+  async request(method, params, signal) {
+    const id = Date.now() + Math.random();
+    const response = await this.post({
+      jsonrpc: "2.0",
+      id,
+      method,
+      params
+    }, signal);
+    const payload = await readMcpResponse(response, id);
+
+    if (payload.error) {
+      throw new Error(payload.error.message ?? JSON.stringify(payload.error));
+    }
+
+    return payload.result ?? {};
+  }
+
+  async notify(method, signal) {
+    const response = await this.post({
+      jsonrpc: "2.0",
+      method
+    }, signal);
+
+    if (response.status !== 202) {
+      await response.body?.cancel();
+    }
+  }
+
+  async post(message, signal) {
+    const headers = {
+      ...JSON_HEADERS,
+      "mcp-protocol-version": this.protocolVersion,
+      ...(this.sessionId ? { "mcp-session-id": this.sessionId } : {})
+    };
+    const response = await fetch(this.url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(message),
+      signal
+    });
+    const sessionId = response.headers.get("mcp-session-id");
+
+    if (sessionId) {
+      this.sessionId = sessionId;
+    }
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(text || "MCP request failed with HTTP " + response.status);
+    }
+
+    return response;
+  }
+}
+
 function parseToolServers(value) {
   if (!value) {
     return [];
@@ -368,25 +448,43 @@ function parseToolServers(value) {
   }
 }
 
-async function mcpRequest(url, method, params, signal) {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: JSON_HEADERS,
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: Date.now() + Math.random(),
-      method,
-      params
-    }),
-    signal
-  });
-  const payload = await response.json();
-
-  if (payload.error) {
-    throw new Error(payload.error.message ?? JSON.stringify(payload.error));
+async function readMcpResponse(response, id) {
+  if (response.status === 202) {
+    return {};
   }
 
-  return payload.result ?? {};
+  const contentType = response.headers.get("content-type") ?? "";
+  const payload = contentType.includes("text/event-stream")
+    ? readSseJson(await response.text(), id)
+    : await response.json();
+
+  return Array.isArray(payload)
+    ? payload.find((item) => item?.id === id) ?? {}
+    : payload;
+}
+
+function readSseJson(text, id) {
+  const messages = text
+    .split(/\r?\n\r?\n/)
+    .flatMap((event) => {
+      const data = event
+        .split(/\r?\n/)
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice(5).trim())
+        .join("\n");
+
+      if (!data) {
+        return [];
+      }
+
+      try {
+        return [JSON.parse(data)];
+      } catch {
+        return [];
+      }
+    });
+
+  return messages.find((item) => item?.id === id) ?? messages[0] ?? {};
 }
 
 function uniqueToolName(name, serverName, registeredNames) {

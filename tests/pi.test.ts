@@ -245,14 +245,59 @@ describe("pi", () => {
         AIDE_PI_TOOL_SERVERS: JSON.stringify(toolServers)
       }
     });
-    expect(fs.readFileSync(extensionPath, "utf8")).toContain("tools/call");
+    expect(fs.readFileSync(extensionPath, "utf8")).toContain("notifications/initialized");
   });
 
   it("registers generated Pi MCP extension tools", async () => {
     const home = tempHome();
     const workspace = tempHome();
+    const requests: Array<{
+      method: string | undefined;
+      session: string | undefined;
+      protocol: string | undefined;
+    }> = [];
+    let initialized = false;
     const server = http.createServer(async (req, res) => {
       const body = JSON.parse(await requestBody(req)) as { method?: string; id?: unknown; params?: Record<string, unknown> };
+      const session = req.headers["mcp-session-id"];
+      const protocol = req.headers["mcp-protocol-version"];
+      requests.push({
+        method: body.method,
+        session: typeof session === "string" ? session : undefined,
+        protocol: typeof protocol === "string" ? protocol : undefined
+      });
+
+      if (body.method === "initialize") {
+        res.writeHead(200, { "content-type": "application/json", "mcp-session-id": "session-1" });
+        res.end(JSON.stringify({
+          jsonrpc: "2.0",
+          id: body.id,
+          result: {
+            protocolVersion: "2025-11-25",
+            capabilities: { tools: {} },
+            serverInfo: { name: "fake-mcp", version: "1.0.0" }
+          }
+        }));
+        return;
+      }
+
+      if (body.method === "notifications/initialized") {
+        initialized = session === "session-1";
+        res.writeHead(202);
+        res.end();
+        return;
+      }
+
+      if (!initialized || session !== "session-1") {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({
+          jsonrpc: "2.0",
+          id: body.id,
+          error: { code: -32000, message: "MCP session is not initialized." }
+        }));
+        return;
+      }
+
       const result = body.method === "tools/list"
         ? {
           tools: [{
@@ -300,8 +345,18 @@ describe("pi", () => {
       });
 
       expect(registeredTools.map((tool) => tool.name)).toEqual(["discord_get_recent_messages"]);
+      expect(requests).toEqual([
+        { method: "initialize", session: undefined, protocol: "2025-11-25" },
+        { method: "notifications/initialized", session: "session-1", protocol: "2025-11-25" },
+        { method: "tools/list", session: "session-1", protocol: "2025-11-25" }
+      ]);
       await expect(registeredTools[0]?.execute("call-1", { source: "channel:123" })).resolves.toMatchObject({
         content: [{ type: "text", text: "called discord_get_recent_messages" }]
+      });
+      expect(requests.at(-1)).toEqual({
+        method: "tools/call",
+        session: "session-1",
+        protocol: "2025-11-25"
       });
     } finally {
       if (previousToolServers === undefined) {
