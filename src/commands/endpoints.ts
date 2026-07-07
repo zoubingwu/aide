@@ -294,7 +294,7 @@ function codexAgentFromOptions(options: CommandOptions): CodexAgentConfig {
   const defaults = defaultAgentConfig("codex") as CodexAgentConfig;
   return {
     provider: "codex",
-    command: stringOption(options, "agentCommand") ?? defaults.command,
+    command: agentCommandForProvider("codex", options, defaults.command),
     model: stringOption(options, "model") ?? defaults.model,
     reasoningEffort: parseReasoningEffort(stringOption(options, "reasoningEffort") ?? defaults.reasoningEffort),
     outputMode: defaults.outputMode
@@ -308,11 +308,27 @@ function piAgentFromOptions(options: CommandOptions): PiAgentConfig {
 
   return {
     provider: "pi",
-    command: stringOption(options, "agentCommand") ?? defaults.command,
+    command: agentCommandForProvider("pi", options, defaults.command),
     ...(model ? { model } : {}),
     ...(reasoningEffort ? { reasoningEffort: parsePiThinkingLevel(reasoningEffort) } : {}),
     outputMode: defaults.outputMode
   };
+}
+
+function agentCommandForProvider(provider: AgentProvider, options: CommandOptions, fallback: string): string {
+  const command = stringOption(options, "agentCommand");
+
+  if (!command) {
+    return fallback;
+  }
+
+  const explicitProvider = stringOption(options, "agent");
+
+  if (!explicitProvider) {
+    return provider === "codex" ? command : fallback;
+  }
+
+  return parseAgentProvider(explicitProvider) === provider ? command : fallback;
 }
 
 function parseReasoningEffort(value: string): CodexReasoningEffort {
