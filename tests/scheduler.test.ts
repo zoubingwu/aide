@@ -443,6 +443,61 @@ describe("scheduler execution", () => {
     scheduler.stop();
   });
 
+  it("keeps active-run manual requests queued until the active run finishes", async () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = dailySchedule();
+    let markActiveStarted: (() => void) | undefined;
+    const activeStarted = new Promise<void>((resolve) => {
+      markActiveStarted = resolve;
+    });
+    let finishActive: ((value: AgentRunResult) => void) | undefined;
+    const activePending = new Promise<AgentRunResult>((resolve) => {
+      finishActive = resolve;
+    });
+    let runCount = 0;
+    const handleRequest = vi.fn(() => {
+      runCount += 1;
+
+      if (runCount === 1) {
+        markActiveStarted?.();
+        return activePending;
+      }
+
+      return Promise.resolve(agentResult({ response: "queued brief" }));
+    });
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest,
+      deliver
+    });
+
+    const active = scheduler.runManualSchedule(schedule.id);
+    await activeStarted;
+    const request = addScheduleRunRequest(home, schedule.id, new Date("2026-05-10T01:00:00.000Z"));
+
+    await scheduler.runRequestedSchedules();
+
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+    expect(loadScheduleRunRequests(home)).toEqual([request]);
+
+    finishActive?.(agentResult({ response: "active brief" }));
+    await active;
+    await waitFor(() => expect(loadScheduleRunRequests(home)).toEqual([]));
+
+    expect(handleRequest).toHaveBeenCalledTimes(2);
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "active brief");
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "queued brief");
+    scheduler.stop();
+  });
+
   it("retries pending delivery without rerunning the agent", async () => {
     vi.useFakeTimers({ now: new Date("2026-05-10T10:00:00.000Z") });
     const home = tempHome();
@@ -1086,6 +1141,23 @@ function bindRun(
 
 function bindRecoverMissedRuns(scheduler: RuntimeScheduler): (schedules: Schedule[], now?: Date) => Promise<void> {
   return (scheduler as unknown as { recoverMissedRuns(schedules: Schedule[], now?: Date): Promise<void> }).recoverMissedRuns.bind(scheduler);
+}
+
+async function waitFor(assertion: () => void): Promise<void> {
+  const deadline = Date.now() + 1_000;
+  let lastError: unknown;
+
+  while (Date.now() < deadline) {
+    try {
+      assertion();
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+
+  throw lastError;
 }
 
 function deliveryResponses(deliver: ReturnType<typeof vi.fn>): unknown[] {

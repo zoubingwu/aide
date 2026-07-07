@@ -66,7 +66,7 @@ interface RunningJob {
   stop(): void;
 }
 
-type ScheduleRunStatus = "ran" | "skipped";
+type ScheduleRunStatus = "ran" | "skipped" | "deferred";
 type ScheduleExecutionStatus = "completed" | "agent_failed" | "delivery_invalid" | "delivery_pending" | "skipped";
 export type RunSource = "scheduled" | "recovery" | "retry" | "manual";
 
@@ -385,7 +385,7 @@ export class RuntimeScheduler {
 
     if (this.running.has(schedule.id)) {
       appendRuntimeLog(this.options.home, "schedule_skipped_running", { schedule: schedule.id });
-      return "skipped";
+      return source === "manual" ? "deferred" : "skipped";
     }
 
     if (isPlannedRun && schedule.kind !== "once") {
@@ -415,6 +415,10 @@ export class RuntimeScheduler {
       status = "agent_failed";
     } finally {
       this.running.delete(schedule.id);
+
+      if (!this.stopped) {
+        void this.runRequestedSchedules();
+      }
     }
 
     if (schedule.kind !== "once" && source !== "manual") {
@@ -463,8 +467,11 @@ export class RuntimeScheduler {
         request: request.id,
         requestedAt: request.requestedAt
       });
-      await this.runManualSchedule(request.scheduleId);
-      this.removeRunRequest(request);
+      const status = await this.runManualSchedule(request.scheduleId);
+
+      if (status !== "deferred") {
+        this.removeRunRequest(request);
+      }
     }
   }
 
