@@ -9,7 +9,7 @@ import {
   addScheduleRunRequest,
   loadScheduleRunRequests,
   removeScheduleRunRequest,
-  requestScheduleRun,
+  requestScheduleRun
 } from "../src/lib/schedule-run-requests.js";
 import { SCHEDULE_RELOAD_SIGNAL } from "../src/lib/schedule-reload.js";
 
@@ -34,6 +34,21 @@ describe("schedule run requests", () => {
     removeScheduleRunRequest(home, first.id);
     expect(loadScheduleRunRequests(home)).toEqual([second]);
     expect(fs.statSync(scheduleRunRequestsPath(home)).mode & 0o777).toBe(0o600);
+  });
+
+  it("recovers a stale request lock before updating the queue", () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const lockPath = `${scheduleRunRequestsPath(home)}.lock`;
+    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+    fs.writeFileSync(lockPath, "stale\n");
+    const staleAt = new Date(Date.now() - 60_000);
+    fs.utimesSync(lockPath, staleAt, staleAt);
+
+    const request = addScheduleRunRequest(home, "daily-brief", new Date("2026-05-10T01:00:00.000Z"));
+
+    expect(loadScheduleRunRequests(home)).toEqual([request]);
+    expect(fs.existsSync(lockPath)).toBe(false);
   });
 
   it("does nothing when the runtime is stopped", () => {

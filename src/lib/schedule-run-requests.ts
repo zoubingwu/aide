@@ -18,11 +18,15 @@ const scheduleRunRequestsFileSchema = z.object({
   requests: z.array(scheduleRunRequestSchema).default([])
 });
 
+const LOCK_WAIT_MS = 2_000;
+const LOCK_RETRY_MS = 10;
+const LOCK_STALE_MS = 30_000;
+
 export type ScheduleRunRequest = z.infer<typeof scheduleRunRequestSchema>;
 
 export function loadScheduleRunRequests(home: string): ScheduleRunRequest[] {
   assertInitialized(home);
-  return scheduleRunRequestsFileSchema.parse(readJson(scheduleRunRequestsPath(home), { requests: [] })).requests;
+  return readScheduleRunRequests(home);
 }
 
 export function addScheduleRunRequest(home: string, scheduleId: string, now = new Date()): ScheduleRunRequest {
@@ -32,12 +36,12 @@ export function addScheduleRunRequest(home: string, scheduleId: string, now = ne
     requestedAt: now.toISOString()
   };
 
-  writeScheduleRunRequests(home, [...loadScheduleRunRequests(home), request]);
+  updateScheduleRunRequests(home, (requests) => [...requests, request]);
   return request;
 }
 
 export function removeScheduleRunRequest(home: string, id: string): void {
-  writeScheduleRunRequests(home, loadScheduleRunRequests(home).filter((request) => request.id !== id));
+  updateScheduleRunRequests(home, (requests) => requests.filter((request) => request.id !== id));
 }
 
 export function requestScheduleRun(home: string, scheduleId: string): boolean {
@@ -69,10 +73,90 @@ export function requestScheduleRun(home: string, scheduleId: string): boolean {
   }
 }
 
+function updateScheduleRunRequests(home: string, update: (requests: ScheduleRunRequest[]) => ScheduleRunRequest[]): void {
+  assertInitialized(home);
+  withScheduleRunRequestLock(home, () => {
+    writeScheduleRunRequests(home, update(readScheduleRunRequests(home)));
+  });
+}
+
+function readScheduleRunRequests(home: string): ScheduleRunRequest[] {
+  return scheduleRunRequestsFileSchema.parse(readJson(scheduleRunRequestsPath(home), { requests: [] })).requests;
+}
+
 function writeScheduleRunRequests(home: string, requests: ScheduleRunRequest[]): void {
   const body = scheduleRunRequestsFileSchema.parse({ requests });
   const filePath = scheduleRunRequestsPath(home);
+  const tempPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
+
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600 });
-  fs.chmodSync(filePath, 0o600);
+  try {
+    fs.writeFileSync(tempPath, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600 });
+    fs.chmodSync(tempPath, 0o600);
+    fs.renameSync(tempPath, filePath);
+  } catch (error) {
+    fs.rmSync(tempPath, { force: true });
+    throw error;
+  }
+}
+
+function withScheduleRunRequestLock<T>(home: string, task: () => T): T {
+  const filePath = scheduleRunRequestsPath(home);
+  const lockPath = `${filePath}.lock`;
+  const deadline = Date.now() + LOCK_WAIT_MS;
+
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+
+  while (true) {
+    let fd: number | undefined;
+
+    try {
+      fd = fs.openSync(lockPath, "wx", 0o600);
+      fs.writeFileSync(fd, `${process.pid}\n${new Date().toISOString()}\n`);
+      return task();
+    } catch (error) {
+      if (fd !== undefined) {
+        throw error;
+      }
+
+      if (errorCode(error) !== "EEXIST") {
+        throw error;
+      }
+
+      removeStaleLock(lockPath);
+
+      if (Date.now() >= deadline) {
+        throw new Error(`Timed out waiting for schedule run request lock: ${lockPath}`);
+      }
+
+      sleepSync(LOCK_RETRY_MS);
+    } finally {
+      if (fd !== undefined) {
+        fs.closeSync(fd);
+        fs.rmSync(lockPath, { force: true });
+      }
+    }
+  }
+}
+
+function removeStaleLock(lockPath: string): void {
+  try {
+    const stat = fs.statSync(lockPath);
+
+    if (Date.now() - stat.mtimeMs > LOCK_STALE_MS) {
+      fs.rmSync(lockPath, { force: true });
+    }
+  } catch (error) {
+    if (errorCode(error) !== "ENOENT") {
+      throw error;
+    }
+  }
+}
+
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function errorCode(error: unknown): string | undefined {
+  return typeof error === "object" && error !== null && "code" in error ? String(error.code) : undefined;
 }
