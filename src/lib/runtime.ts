@@ -141,6 +141,7 @@ export async function startRuntime(home: string): Promise<void> {
 
   scheduler = new RuntimeScheduler({ home, endpoints, clients });
   scheduler.start();
+  void scheduler.runRequestedSchedules();
   const stopDeliveryRecoveryListeners = registerDeliveryRecoveryListeners(home, clients, () => {
     void scheduler?.retryPendingDeliveries({ force: true });
   });
