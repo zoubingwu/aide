@@ -1,7 +1,9 @@
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { EventEmitter } from "node:events";
+import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { execa } from "execa";
 import {
@@ -208,6 +210,110 @@ describe("pi", () => {
     ]);
   });
 
+  it("loads MCP tool servers through a generated Pi extension", async () => {
+    const home = tempHome();
+    const workspace = tempHome();
+    const toolServers = [{ name: "aide-discord-context", url: "http://127.0.0.1:43210/mcp" }];
+    const stdout = JSON.stringify({
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "done" }],
+        stopReason: "stop"
+      }
+    });
+
+    mockExeca().mockResolvedValueOnce({
+      stdout,
+      stderr: "",
+      exitCode: 0
+    } as never);
+
+    await runPi(home, workspace, endpoint, "hello", { toolServers });
+
+    const extensionPath = path.join(home, "state", "pi-mcp-tools.mjs");
+    const [, args, options] = vi.mocked(execa).mock.calls[0] as unknown as [string, string[], Record<string, unknown>];
+
+    expect(args.slice(args.indexOf("--extension"), args.indexOf("--extension") + 2)).toEqual([
+      "--extension",
+      extensionPath
+    ]);
+    expect(args.slice(-2)).toEqual(["--continue", "hello"]);
+    expect(options).toMatchObject({
+      cwd: workspace,
+      env: {
+        AIDE_PI_TOOL_SERVERS: JSON.stringify(toolServers)
+      }
+    });
+    expect(fs.readFileSync(extensionPath, "utf8")).toContain("tools/call");
+  });
+
+  it("registers generated Pi MCP extension tools", async () => {
+    const home = tempHome();
+    const workspace = tempHome();
+    const server = http.createServer(async (req, res) => {
+      const body = JSON.parse(await requestBody(req)) as { method?: string; id?: unknown; params?: Record<string, unknown> };
+      const result = body.method === "tools/list"
+        ? {
+          tools: [{
+            name: "discord_get_recent_messages",
+            description: "Read recent Discord messages.",
+            inputSchema: { type: "object", properties: { source: { type: "string" } }, required: ["source"] }
+          }]
+        }
+        : { content: [{ type: "text", text: `called ${String(body.params?.name)}` }] };
+
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ jsonrpc: "2.0", id: body.id, result }));
+    });
+    await listen(server);
+    const address = server.address();
+
+    if (!address || typeof address === "string") {
+      throw new Error("MCP test server did not bind to a TCP port.");
+    }
+
+    const toolServers = [{ name: "aide-discord-context", url: `http://127.0.0.1:${address.port}/mcp` }];
+    const previousToolServers = process.env.AIDE_PI_TOOL_SERVERS;
+
+    try {
+      mockExeca().mockResolvedValueOnce({
+        stdout: JSON.stringify({
+          type: "message_end",
+          message: { role: "assistant", content: [{ type: "text", text: "done" }], stopReason: "stop" }
+        }),
+        stderr: "",
+        exitCode: 0
+      } as never);
+
+      await runPi(home, workspace, endpoint, "hello", { toolServers });
+      process.env.AIDE_PI_TOOL_SERVERS = JSON.stringify(toolServers);
+
+      const extensionPath = path.join(home, "state", "pi-mcp-tools.mjs");
+      const extension = await import(`${pathToFileURL(extensionPath).href}?test=${Date.now()}`);
+      const registeredTools: Array<{ name: string; execute: (id: string, params: Record<string, unknown>) => Promise<unknown> }> = [];
+
+      await extension.default({
+        registerTool(tool: { name: string; execute: (id: string, params: Record<string, unknown>) => Promise<unknown> }) {
+          registeredTools.push(tool);
+        }
+      });
+
+      expect(registeredTools.map((tool) => tool.name)).toEqual(["discord_get_recent_messages"]);
+      await expect(registeredTools[0]?.execute("call-1", { source: "channel:123" })).resolves.toMatchObject({
+        content: [{ type: "text", text: "called discord_get_recent_messages" }]
+      });
+    } finally {
+      if (previousToolServers === undefined) {
+        delete process.env.AIDE_PI_TOOL_SERVERS;
+      } else {
+        process.env.AIDE_PI_TOOL_SERVERS = previousToolServers;
+      }
+
+      await closeServer(server);
+    }
+  });
+
   it("streams Pi JSONL events before the process exits", async () => {
     const home = tempHome();
     const workspace = tempHome();
@@ -330,4 +436,33 @@ function readActivityEvents(home: string): Array<{
 }> {
   const content = fs.readFileSync(path.join(logsDir(home), ACTIVITY_LOG_FILE), "utf8");
   return content.trim().split(/\r?\n/).map((line) => JSON.parse(line));
+}
+
+async function requestBody(req: http.IncomingMessage): Promise<string> {
+  const chunks: Buffer[] = [];
+
+  for await (const chunk of req) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+function listen(server: http.Server): Promise<void> {
+  return new Promise((resolve, reject) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+    server.once("error", reject);
+  });
+}
+
+function closeServer(server: http.Server): Promise<void> {
+  return new Promise((resolve, reject) => {
+    server.close((error) => {
+      if (error) {
+        reject(error);
+      } else {
+        resolve();
+      }
+    });
+  });
 }

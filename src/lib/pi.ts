@@ -1,23 +1,29 @@
+import fs from "node:fs";
+import path from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { execa } from "execa";
 import { appendActivityLog, endpointActivity } from "./logging.js";
+import { stateDir } from "./paths.js";
 import { deferredRestartEnv } from "./runtime-restart.js";
-import type { AgentRunOptions } from "./agent-tools.js";
+import type { AgentRunOptions, AgentToolServer } from "./agent-tools.js";
 import type { AgentRunResult, AgentUsage, Endpoint, PiAgentConfig } from "./types.js";
 
 type PiAttempt = "resume" | "fresh";
 type PiProcessResult = Omit<AgentRunResult, "response" | "hasTextResponse" | "resumed">;
 
+const PI_TOOL_SERVERS_ENV = "AIDE_PI_TOOL_SERVERS";
+const PI_MCP_EXTENSION_FILE = "pi-mcp-tools.mjs";
+
 interface PiEventQueue {
   current: Promise<void>;
 }
 
-export function buildPiArgs(agent: PiAgentConfig, prompt: string): string[] {
-  return [...piConfigArgs(agent), "--continue", prompt];
+export function buildPiArgs(agent: PiAgentConfig, prompt: string, toolServerExtension?: string): string[] {
+  return [...piConfigArgs(agent), ...piToolServerExtensionArgs(toolServerExtension), "--continue", prompt];
 }
 
-export function buildFreshPiArgs(agent: PiAgentConfig, prompt: string): string[] {
-  return [...piConfigArgs(agent), prompt];
+export function buildFreshPiArgs(agent: PiAgentConfig, prompt: string, toolServerExtension?: string): string[] {
+  return [...piConfigArgs(agent), ...piToolServerExtensionArgs(toolServerExtension), prompt];
 }
 
 export async function runPi(
@@ -89,10 +95,11 @@ interface PiRunContext {
 }
 
 async function runPiAttempt(context: PiRunContext): Promise<AgentRunResult> {
+  const toolServerConfig = preparePiToolServerConfig(context.home, context.options.toolServers);
   const args = context.attempt === "resume"
-    ? buildPiArgs(context.agent, context.prompt)
-    : buildFreshPiArgs(context.agent, context.prompt);
-  const processResult = await runPiProcess({ ...context, args });
+    ? buildPiArgs(context.agent, context.prompt, toolServerConfig?.extensionPath)
+    : buildFreshPiArgs(context.agent, context.prompt, toolServerConfig?.extensionPath);
+  const processResult = await runPiProcess({ ...context, args, toolServerEnv: toolServerConfig?.env });
   const cancelled = processResult.cancelled || context.options.abortSignal?.aborted;
 
   if (cancelled) {
@@ -118,7 +125,7 @@ async function runPiAttempt(context: PiRunContext): Promise<AgentRunResult> {
   };
 }
 
-async function runPiProcess(context: PiRunContext & { args: string[] }): Promise<PiProcessResult> {
+async function runPiProcess(context: PiRunContext & { args: string[]; toolServerEnv?: Record<string, string> | undefined }): Promise<PiProcessResult> {
   appendPiLog(context, "pi_cli_started", {
     command: context.agent.command,
     args: context.args.map((arg) => (arg === context.prompt ? "{prompt}" : arg)),
@@ -153,9 +160,7 @@ async function runPiProcess(context: PiRunContext & { args: string[] }): Promise
       all: false,
       stdin: "ignore",
       ...(context.options.abortSignal ? { cancelSignal: context.options.abortSignal } : {}),
-      ...(context.options.deferredRestartId
-        ? { env: deferredRestartEnv(context.home, context.options.deferredRestartId) }
-        : {})
+      ...piProcessEnv(context)
     });
     const stdout = readableStdout(subprocess);
 
@@ -270,6 +275,159 @@ function piConfigArgs(agent: PiAgentConfig): string[] {
     ...(agent.reasoningEffort ? ["--thinking", agent.reasoningEffort] : [])
   ];
 }
+
+function piToolServerExtensionArgs(extensionPath: string | undefined): string[] {
+  return extensionPath ? ["--extension", extensionPath] : [];
+}
+
+function preparePiToolServerConfig(home: string, toolServers: AgentToolServer[] | undefined): { extensionPath: string; env: Record<string, string> } | undefined {
+  if (!toolServers?.length) {
+    return undefined;
+  }
+
+  const directory = stateDir(home);
+  const extensionPath = path.join(directory, PI_MCP_EXTENSION_FILE);
+  fs.mkdirSync(directory, { recursive: true });
+  fs.writeFileSync(extensionPath, PI_MCP_EXTENSION_SOURCE);
+
+  return {
+    extensionPath,
+    env: { [PI_TOOL_SERVERS_ENV]: JSON.stringify(toolServers) }
+  };
+}
+
+function piProcessEnv(context: PiRunContext & { toolServerEnv?: Record<string, string> | undefined }): { env: Record<string, string> } | Record<string, never> {
+  const env = {
+    ...context.toolServerEnv,
+    ...(context.options.deferredRestartId ? deferredRestartEnv(context.home, context.options.deferredRestartId) : {})
+  };
+
+  return Object.keys(env).length > 0 ? { env } : {};
+}
+
+const PI_MCP_EXTENSION_SOURCE = String.raw`
+const TOOL_SERVERS_ENV = "AIDE_PI_TOOL_SERVERS";
+const JSON_HEADERS = {
+  "accept": "application/json, text/event-stream",
+  "content-type": "application/json"
+};
+
+export default async function aideMcpTools(pi) {
+  const toolServers = parseToolServers(process.env[TOOL_SERVERS_ENV]);
+  const registeredNames = new Set();
+
+  for (const server of toolServers) {
+    const listed = await mcpRequest(server.url, "tools/list", {});
+    const tools = Array.isArray(listed.tools) ? listed.tools : [];
+
+    for (const tool of tools) {
+      if (!tool || typeof tool.name !== "string") {
+        continue;
+      }
+
+      const toolName = uniqueToolName(tool.name, server.name, registeredNames);
+      pi.registerTool({
+        name: toolName,
+        label: tool.title ?? tool.name,
+        description: tool.description ?? "Call a scoped MCP tool.",
+        promptSnippet: tool.description ?? "Call a scoped MCP tool.",
+        promptGuidelines: ["Use " + toolName + " when the current request needs " + server.name + " context."],
+        parameters: schemaObject(tool.inputSchema),
+        async execute(_toolCallId, params, signal) {
+          const result = await mcpRequest(server.url, "tools/call", {
+            name: tool.name,
+            arguments: params
+          }, signal);
+
+          return {
+            content: toolContent(result),
+            details: {
+              server: server.name,
+              tool: tool.name,
+              mcp: result
+            }
+          };
+        }
+      });
+    }
+  }
+}
+
+function parseToolServers(value) {
+  if (!value) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed)
+      ? parsed.filter((server) => typeof server?.name === "string" && typeof server?.url === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+async function mcpRequest(url, method, params, signal) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: Date.now() + Math.random(),
+      method,
+      params
+    }),
+    signal
+  });
+  const payload = await response.json();
+
+  if (payload.error) {
+    throw new Error(payload.error.message ?? JSON.stringify(payload.error));
+  }
+
+  return payload.result ?? {};
+}
+
+function uniqueToolName(name, serverName, registeredNames) {
+  if (!registeredNames.has(name)) {
+    registeredNames.add(name);
+    return name;
+  }
+
+  const prefixed = toolNameSegment(serverName) + "_" + name;
+  registeredNames.add(prefixed);
+  return prefixed;
+}
+
+function toolNameSegment(value) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "mcp";
+}
+
+function schemaObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value
+    : { type: "object", properties: {}, additionalProperties: true };
+}
+
+function toolContent(value) {
+  if (Array.isArray(value?.content)) {
+    return value.content.flatMap((item) => {
+      if (item?.type === "text" && typeof item.text === "string") {
+        return [{ type: "text", text: item.text }];
+      }
+
+      if (item?.type === "image" && typeof item.data === "string" && typeof item.mimeType === "string") {
+        return [{ type: "image", data: item.data, mimeType: item.mimeType }];
+      }
+
+      return [{ type: "text", text: JSON.stringify(item) }];
+    });
+  }
+
+  return [{ type: "text", text: JSON.stringify(value) }];
+}
+`;
 
 function piResponseCandidates(payload: Record<string, unknown>): string[] {
   if (payload.type === "message_end" || payload.type === "turn_end") {
