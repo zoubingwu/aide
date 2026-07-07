@@ -147,6 +147,7 @@ export async function startRuntime(home: string): Promise<void> {
   const reloadSchedules = () => {
     appendRuntimeLog(home, "schedule_reload_signal", { pid: process.pid });
     scheduler?.reload();
+    void scheduler?.runRequestedSchedules();
   };
   process.on(SCHEDULE_RELOAD_SIGNAL, reloadSchedules);
   markRuntimeRunning(home);

@@ -7,6 +7,7 @@ import { addPendingDelivery, loadPendingDeliveries } from "../src/lib/delivery-r
 import { RUNTIME_LOG_FILE } from "../src/lib/logging.js";
 import { logsDir, scheduleCheckpointsPath, schedulesPath } from "../src/lib/paths.js";
 import { loadScheduleCheckpoints, recordScheduleCheck } from "../src/lib/schedule-checkpoints.js";
+import { addScheduleRunRequest, loadScheduleRunRequests } from "../src/lib/schedule-run-requests.js";
 import { executeScheduleOnce, RuntimeScheduler } from "../src/lib/scheduler.js";
 import { loadSchedules, writeSchedules } from "../src/lib/schedules.js";
 import type { AgentRunResult, Endpoint, Schedule } from "../src/lib/types.js";
@@ -303,6 +304,68 @@ describe("scheduler execution", () => {
     const log = fs.readFileSync(path.join(logsDir(home), RUNTIME_LOG_FILE), "utf8");
     expect(log).toContain("schedule_retry_scheduled");
     expect(log).toContain("network unavailable");
+    scheduler.stop();
+  });
+
+  it("runs manual schedules without claiming a scheduled occurrence", async () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = dailySchedule();
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    const handleRequest = vi.fn().mockResolvedValue(agentResult({ response: "manual brief" }));
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest,
+      deliver
+    });
+
+    await expect(scheduler.runManualSchedule(schedule.id)).resolves.toBe("ran");
+
+    expect(handleRequest).toHaveBeenCalledWith(
+      home,
+      endpoint,
+      schedule.message,
+      `schedule:${schedule.id}`,
+      expect.objectContaining({ runMode: "fresh" })
+    );
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "manual brief");
+    expect(loadScheduleCheckpoints(home)[schedule.id]?.lastProcessedOccurrenceAt).toBeUndefined();
+
+    const log = fs.readFileSync(path.join(logsDir(home), RUNTIME_LOG_FILE), "utf8");
+    expect(log).toContain("schedule_due");
+    expect(log).toContain("schedule_delivered");
+    scheduler.stop();
+  });
+
+  it("drains queued manual schedule run requests", async () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = dailySchedule();
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+    addScheduleRunRequest(home, schedule.id, new Date("2026-05-10T01:00:00.000Z"));
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest: vi.fn().mockResolvedValue(agentResult({ response: "queued brief" })),
+      deliver
+    });
+
+    await scheduler.runRequestedSchedules();
+
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "queued brief");
+    expect(loadScheduleRunRequests(home)).toEqual([]);
+    expect(fs.readFileSync(path.join(logsDir(home), RUNTIME_LOG_FILE), "utf8")).toContain("schedule_run_request_received");
     scheduler.stop();
   });
 

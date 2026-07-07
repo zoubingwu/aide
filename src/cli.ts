@@ -174,6 +174,9 @@ function runScheduleCli(argv: string[]): void {
     .command("show", "Show schedule details")
     .option("--id <id>", "Schedule id")
     .action(wrapLazy(async () => (await import("./commands/schedules.js")).showScheduleCommand));
+  cli
+    .command("run <id>", "Run a schedule now")
+    .action(wrapLazy(async () => (await import("./commands/schedules.js")).runScheduleCommand));
   cli.command("config", "Manage schedule config").action(() => runScheduleConfigCli(["node", "aide schedule config"]));
 
   handleNoMatch(cli, cli.parse(argv));

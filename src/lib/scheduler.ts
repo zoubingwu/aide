@@ -12,6 +12,7 @@ import {
 } from "./delivery-retries.js";
 import { deliverDiscordMessage } from "./discord-delivery.js";
 import { appendRuntimeLog } from "./logging.js";
+import { takeScheduleRunRequests } from "./schedule-run-requests.js";
 import {
   claimScheduleOccurrence,
   loadScheduleCheckpoints,
@@ -66,7 +67,7 @@ interface RunningJob {
 
 type ScheduleRunStatus = "ran" | "skipped";
 type ScheduleExecutionStatus = "completed" | "agent_failed" | "delivery_invalid" | "delivery_pending" | "skipped";
-type RunSource = "scheduled" | "recovery" | "retry";
+type RunSource = "scheduled" | "recovery" | "retry" | "manual";
 
 export async function executeScheduleOnce(execution: ScheduleExecution): Promise<ScheduleExecutionStatus> {
   const endpoint = execution.endpoints.find((candidate) => candidate.id === execution.schedule.endpoint);
@@ -359,7 +360,7 @@ export class RuntimeScheduler {
     }
 
     const checkedAt = new Date();
-    const isPlannedRun = source !== "retry";
+    const isPlannedRun = source === "scheduled" || source === "recovery";
     const scheduleOccurrence = isPlannedRun ? occurrenceAt ?? currentScheduleOccurrence(schedule, checkedAt) : undefined;
 
     if (
@@ -413,11 +414,45 @@ export class RuntimeScheduler {
       this.running.delete(schedule.id);
     }
 
-    if (schedule.kind !== "once") {
+    if (schedule.kind !== "once" && source !== "manual") {
       this.updateRecurringRetry(schedule, status);
     }
 
     return "ran";
+  }
+
+  async runManualSchedule(id: string): Promise<ScheduleRunStatus> {
+    const schedule = this.findEnabledSchedule(id);
+
+    if (!schedule) {
+      appendRuntimeLog(this.options.home, "schedule_run_request_invalid", {
+        schedule: id,
+        reason: "missing or disabled"
+      });
+      return "skipped";
+    }
+
+    return this.run(schedule, "manual");
+  }
+
+  async runRequestedSchedules(): Promise<void> {
+    let requests: ReturnType<typeof takeScheduleRunRequests>;
+
+    try {
+      requests = takeScheduleRunRequests(this.options.home);
+    } catch (error) {
+      appendRuntimeLog(this.options.home, "schedule_run_request_load_failed", { error: errorMessage(error) });
+      return;
+    }
+
+    for (const request of requests) {
+      appendRuntimeLog(this.options.home, "schedule_run_request_received", {
+        schedule: request.scheduleId,
+        request: request.id,
+        requestedAt: request.requestedAt
+      });
+      await this.runManualSchedule(request.scheduleId);
+    }
   }
 
   private async recoverMissedRuns(schedules: Schedule[], now = new Date()): Promise<void> {

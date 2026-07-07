@@ -131,9 +131,10 @@ describe("CLI help", () => {
   it("shows schedule subcommands", async () => {
     const { stdout } = await runCli("schedule", "--help");
 
-    expect(stdout).toContain("list    List schedules");
-    expect(stdout).toContain("show    Show schedule details");
-    expect(stdout).toContain("config  Manage schedule config");
+    expect(stdout).toContain("list      List schedules");
+    expect(stdout).toContain("show      Show schedule details");
+    expect(stdout).toContain("run <id>  Run a schedule now");
+    expect(stdout).toContain("config    Manage schedule config");
     expect(stdout).not.toContain("add <prompt>");
     expect(stdout).not.toContain("reload");
     expect(stdout).not.toContain("pause");
@@ -160,6 +161,27 @@ describe("CLI help", () => {
       )
     ).rejects.toMatchObject({
       stderr: expect.stringContaining("Unknown command: add")
+    });
+  });
+
+  it("requires a running runtime for manual schedule runs", async () => {
+    const home = tempHome();
+    await runCli("--home", home, "init");
+    writeSchedules(home, [
+      {
+        id: "daily-brief",
+        endpoint: "discord-main",
+        enabled: true,
+        kind: "daily",
+        target: "channel:123",
+        message: "Generate my daily brief.",
+        time: "09:00",
+        timezone: "Asia/Shanghai"
+      }
+    ]);
+
+    await expect(runCli("--home", home, "schedule", "run", "daily-brief")).rejects.toMatchObject({
+      stderr: expect.stringContaining("Aide runtime is not running. Start it with `aide start`.")
     });
   });
 
