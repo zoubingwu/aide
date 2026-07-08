@@ -198,7 +198,7 @@ function completeSchedule(execution: ScheduleExecution): void {
 
 export class RuntimeScheduler {
   private readonly jobs = new Map<string, RunningJob>();
-  private readonly running = new Set<string>();
+  private readonly running = new Map<string, RunSource>();
   private readonly onceRetryAt = new Map<string, number>();
   private readonly retryTimers = new Map<string, NodeJS.Timeout>();
   private readonly retryAttempts = new Map<string, number>();
@@ -379,6 +379,13 @@ export class RuntimeScheduler {
       return "skipped";
     }
 
+    const runningSource = this.running.get(schedule.id);
+
+    if (isPlannedRun && runningSource === "manual") {
+      appendRuntimeLog(this.options.home, "schedule_skipped_running", { schedule: schedule.id });
+      return "skipped";
+    }
+
     if (
       isPlannedRun &&
       schedule.kind !== "once" &&
@@ -397,7 +404,7 @@ export class RuntimeScheduler {
       this.clearRecurringRetry(schedule.id);
     }
 
-    this.running.add(schedule.id);
+    this.running.set(schedule.id, source);
     appendRuntimeLog(this.options.home, "schedule_due", { schedule: schedule.id });
 
     let status: ScheduleExecutionStatus = "agent_failed";
