@@ -187,11 +187,11 @@ function removeStaleLockFile(lockPath: string): void {
     const staleStat = fs.statSync(lockPath);
     const staleOwner = lockOwner(lockPath);
 
-    if (Date.now() - staleStat.mtimeMs > LOCK_STALE_MS) {
+    if (Date.now() - staleStat.mtimeMs > LOCK_STALE_MS && !lockOwnerIsAlive(staleOwner)) {
       const currentStat = fs.statSync(lockPath);
       const currentOwner = lockOwner(lockPath);
 
-      if (sameLockFile(staleStat, currentStat) && currentOwner === staleOwner) {
+      if (sameLockFile(staleStat, currentStat) && currentOwner === staleOwner && !lockOwnerIsAlive(currentOwner)) {
         removeOwnedLock(lockPath, currentOwner);
       }
     }
@@ -204,6 +204,21 @@ function removeStaleLockFile(lockPath: string): void {
 
 function lockOwner(lockPath: string): string {
   return fs.readFileSync(lockPath, "utf8").split("\n", 1)[0] ?? "";
+}
+
+function lockOwnerIsAlive(owner: string): boolean {
+  const pid = Number(owner.split(":", 1)[0]);
+
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return false;
+  }
+
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return errorCode(error) === "EPERM";
+  }
 }
 
 function withStaleLockCleanupLock<T>(lockPath: string, task: () => T): T | undefined {

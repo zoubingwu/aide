@@ -51,6 +51,22 @@ describe("schedule run requests", () => {
     expect(fs.existsSync(lockPath)).toBe(false);
   });
 
+  it("keeps stale request locks owned by live processes", () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const lockPath = `${scheduleRunRequestsPath(home)}.lock`;
+    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+    fs.writeFileSync(lockPath, `${process.pid}:live-owner\n`);
+    fs.utimesSync(lockPath, new Date(0), new Date(0));
+    vi.spyOn(Date, "now").mockReturnValueOnce(60_000).mockReturnValue(62_001);
+
+    expect(() => addScheduleRunRequest(home, "daily-brief", new Date("2026-05-10T01:00:00.000Z"))).toThrow(
+      "Timed out waiting for schedule run request lock"
+    );
+    expect(fs.readFileSync(lockPath, "utf8")).toBe(`${process.pid}:live-owner\n`);
+    expect(loadScheduleRunRequests(home)).toEqual([]);
+  });
+
   it("keeps a fresh request lock that replaces a stale lock during recovery", () => {
     const home = tempHome();
     ensureAideHome(home);
