@@ -383,7 +383,7 @@ export class RuntimeScheduler {
 
     if (isPlannedRun && runningSource === "manual") {
       appendRuntimeLog(this.options.home, "schedule_skipped_running", { schedule: schedule.id });
-      return "skipped";
+      return source === "recovery" ? "deferred" : "skipped";
     }
 
     if (
@@ -550,7 +550,11 @@ export class RuntimeScheduler {
           occurrenceAt: occurrenceAt.toISOString(),
           checkedAfter: checkpoint.lastCheckedAt
         });
-        await this.run(schedule, "recovery", occurrenceAt);
+        const status = await this.run(schedule, "recovery", occurrenceAt);
+
+        if (status === "deferred") {
+          continue;
+        }
       }
 
       this.recordScheduleCheck(schedule.id, now);

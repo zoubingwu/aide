@@ -555,6 +555,64 @@ describe("scheduler execution", () => {
     scheduler.stop();
   });
 
+  it("keeps recovery checkpoints unchanged when manual runs are active", async () => {
+    vi.useFakeTimers({ now: new Date("2026-05-10T01:00:30.000Z") });
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = dailySchedule();
+    let markManualStarted: (() => void) | undefined;
+    const manualStarted = new Promise<void>((resolve) => {
+      markManualStarted = resolve;
+    });
+    let finishManual: ((value: AgentRunResult) => void) | undefined;
+    const manualPending = new Promise<AgentRunResult>((resolve) => {
+      finishManual = resolve;
+    });
+    let runCount = 0;
+    const handleRequest = vi.fn(() => {
+      runCount += 1;
+
+      if (runCount === 1) {
+        markManualStarted?.();
+        return manualPending;
+      }
+
+      return Promise.resolve(agentResult({ response: "recovered brief" }));
+    });
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+    recordScheduleCheck(home, schedule.id, new Date("2026-05-10T00:59:30.000Z"));
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest,
+      deliver
+    });
+    const recoverMissedRuns = bindRecoverMissedRuns(scheduler);
+
+    const manualRun = scheduler.runManualSchedule(schedule.id);
+    await manualStarted;
+    await recoverMissedRuns([schedule], new Date());
+
+    expect(loadScheduleCheckpoints(home)[schedule.id]).toEqual({
+      lastCheckedAt: "2026-05-10T00:59:30.000Z"
+    });
+
+    finishManual?.(agentResult({ response: "manual brief" }));
+    await manualRun;
+    await recoverMissedRuns([schedule], new Date());
+
+    expect(handleRequest).toHaveBeenCalledTimes(2);
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "manual brief");
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "recovered brief");
+    expect(loadScheduleCheckpoints(home)[schedule.id]?.lastProcessedOccurrenceAt).toBe("2026-05-10T01:00:00.000Z");
+    scheduler.stop();
+  });
+
   it("waits for missed-run recovery before draining startup manual requests", async () => {
     vi.useFakeTimers({ now: new Date("2026-05-10T02:00:00.000Z") });
     const home = tempHome();
