@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { defaultCodexAgentConfig, defaultEndpointTriggerConfig, ensureAideHome, writeEndpoints } from "../src/lib/config.js";
 import { addPendingDelivery, loadPendingDeliveries } from "../src/lib/delivery-retries.js";
 import { RUNTIME_LOG_FILE } from "../src/lib/logging.js";
-import { logsDir, scheduleCheckpointsPath, schedulesPath } from "../src/lib/paths.js";
+import { logsDir, scheduleCheckpointsPath, scheduleRunRequestsPath, schedulesPath } from "../src/lib/paths.js";
 import { loadScheduleCheckpoints, recordScheduleCheck } from "../src/lib/schedule-checkpoints.js";
 import { addScheduleRunRequest, loadScheduleRunRequests } from "../src/lib/schedule-run-requests.js";
 import { executeScheduleOnce, RuntimeScheduler } from "../src/lib/scheduler.js";
@@ -516,6 +516,38 @@ describe("scheduler execution", () => {
     expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "queued brief");
     expect(loadScheduleRunRequests(home)).toEqual([]);
     expect(fs.readFileSync(path.join(logsDir(home), RUNTIME_LOG_FILE), "utf8")).toContain("schedule_run_request_received");
+    scheduler.stop();
+  });
+
+  it("stops draining when a completed manual request cannot be removed", async () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = dailySchedule();
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+    const request = addScheduleRunRequest(home, schedule.id, new Date("2026-05-10T01:00:00.000Z"));
+    const lockPath = `${scheduleRunRequestsPath(home)}.lock`;
+    fs.writeFileSync(lockPath, "busy-owner\n2026-05-10T01:00:00.000Z\n");
+    vi.spyOn(Date, "now").mockReturnValueOnce(60_000).mockReturnValue(62_001);
+    const handleRequest = vi.fn().mockResolvedValue(agentResult({ response: "queued brief" }));
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest,
+      deliver
+    });
+
+    await scheduler.runRequestedSchedules();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "queued brief");
+    expect(loadScheduleRunRequests(home)).toEqual([request]);
+    expect(fs.readFileSync(path.join(logsDir(home), RUNTIME_LOG_FILE), "utf8")).toContain("schedule_run_request_remove_failed");
     scheduler.stop();
   });
 

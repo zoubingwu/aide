@@ -208,6 +208,7 @@ export class RuntimeScheduler {
   private recoveryDrain: Promise<void> = Promise.resolve();
   private deliveryDrain: Promise<void> = Promise.resolve();
   private scheduleRunDrain: Promise<void> = Promise.resolve();
+  private drainingScheduleRunRequests = false;
   private stopped = false;
 
   constructor(private readonly options: RuntimeSchedulerOptions) {}
@@ -433,7 +434,7 @@ export class RuntimeScheduler {
     } finally {
       this.running.delete(schedule.id);
 
-      if (!this.stopped) {
+      if (!this.stopped && !(source === "manual" && this.drainingScheduleRunRequests)) {
         void this.runRequestedSchedules();
       }
     }
@@ -479,44 +480,54 @@ export class RuntimeScheduler {
   }
 
   private async drainRequestedSchedules(): Promise<void> {
-    let requests: ScheduleRunRequest[];
+    this.drainingScheduleRunRequests = true;
 
     try {
-      requests = loadScheduleRunRequests(this.options.home);
-    } catch (error) {
-      appendRuntimeLog(this.options.home, "schedule_run_request_load_failed", { error: errorMessage(error) });
-      return;
-    }
+      let requests: ScheduleRunRequest[];
 
-    for (const request of requests) {
-      if (this.stopped) {
+      try {
+        requests = loadScheduleRunRequests(this.options.home);
+      } catch (error) {
+        appendRuntimeLog(this.options.home, "schedule_run_request_load_failed", { error: errorMessage(error) });
         return;
       }
 
-      appendRuntimeLog(this.options.home, "schedule_run_request_received", {
-        schedule: request.scheduleId,
-        request: request.id,
-        requestedAt: request.requestedAt
-      });
-      const status = await this.runManualSchedule(request.scheduleId);
+      for (const request of requests) {
+        if (this.stopped) {
+          return;
+        }
 
-      if (status !== "deferred") {
-        this.removeRunRequest(request);
-      } else {
-        return;
+        appendRuntimeLog(this.options.home, "schedule_run_request_received", {
+          schedule: request.scheduleId,
+          request: request.id,
+          requestedAt: request.requestedAt
+        });
+        const status = await this.runManualSchedule(request.scheduleId);
+
+        if (status === "deferred") {
+          return;
+        }
+
+        if (!this.removeRunRequest(request)) {
+          return;
+        }
       }
+    } finally {
+      this.drainingScheduleRunRequests = false;
     }
   }
 
-  private removeRunRequest(request: ScheduleRunRequest): void {
+  private removeRunRequest(request: ScheduleRunRequest): boolean {
     try {
       removeScheduleRunRequest(this.options.home, request.id);
+      return true;
     } catch (error) {
       appendRuntimeLog(this.options.home, "schedule_run_request_remove_failed", {
         schedule: request.scheduleId,
         request: request.id,
         error: errorMessage(error)
       });
+      return false;
     }
   }
 
