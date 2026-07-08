@@ -383,7 +383,7 @@ export class RuntimeScheduler {
 
     if (isPlannedRun && runningSource === "manual") {
       appendRuntimeLog(this.options.home, "schedule_skipped_running", { schedule: schedule.id });
-      return source === "recovery" ? "deferred" : "skipped";
+      return source === "recovery" || schedule.kind === "once" ? "deferred" : "skipped";
     }
 
     if (

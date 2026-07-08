@@ -433,6 +433,66 @@ describe("scheduler execution", () => {
     scheduler.stop();
   });
 
+  it("retries one-shot schedules blocked by active manual runs", async () => {
+    vi.useFakeTimers({ now: new Date("2026-05-10T09:59:59.000Z") });
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule: Schedule = {
+      ...onceSchedule(),
+      runAt: "2026-05-10T10:00:00.000Z"
+    };
+    let markManualStarted: (() => void) | undefined;
+    const manualStarted = new Promise<void>((resolve) => {
+      markManualStarted = resolve;
+    });
+    let finishManual: ((value: AgentRunResult) => void) | undefined;
+    const manualPending = new Promise<AgentRunResult>((resolve) => {
+      finishManual = resolve;
+    });
+    let runCount = 0;
+    const handleRequest = vi.fn(() => {
+      runCount += 1;
+
+      if (runCount === 1) {
+        markManualStarted?.();
+        return manualPending;
+      }
+
+      return Promise.resolve(agentResult({ response: "scheduled reminder" }));
+    });
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest,
+      deliver
+    });
+    scheduler.reload();
+
+    const manualRun = scheduler.runManualSchedule(schedule.id);
+    await manualStarted;
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+    expect(loadSchedules(home)).toEqual([schedule]);
+
+    finishManual?.(agentResult({ response: "manual reminder" }));
+    await manualRun;
+    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.runOnlyPendingTimersAsync();
+
+    expect(handleRequest).toHaveBeenCalledTimes(2);
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "manual reminder");
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "scheduled reminder");
+    expect(loadSchedules(home)).toEqual([]);
+    scheduler.stop();
+  });
+
   it("drains queued manual schedule run requests", async () => {
     const home = tempHome();
     ensureAideHome(home);
