@@ -24,6 +24,11 @@ const LOCK_STALE_MS = 30_000;
 
 export type ScheduleRunRequest = z.infer<typeof scheduleRunRequestSchema>;
 
+interface ScheduleRunRequestLock {
+  path: string;
+  owner: string;
+}
+
 export function loadScheduleRunRequests(home: string): ScheduleRunRequest[] {
   assertInitialized(home);
   return readScheduleRunRequests(home);
@@ -75,8 +80,8 @@ export function requestScheduleRun(home: string, scheduleId: string): boolean {
 
 function updateScheduleRunRequests(home: string, update: (requests: ScheduleRunRequest[]) => ScheduleRunRequest[]): void {
   assertInitialized(home);
-  withScheduleRunRequestLock(home, () => {
-    writeScheduleRunRequests(home, update(readScheduleRunRequests(home)));
+  withScheduleRunRequestLock(home, (lock) => {
+    writeScheduleRunRequests(home, update(readScheduleRunRequests(home)), lock);
   });
 }
 
@@ -84,7 +89,7 @@ function readScheduleRunRequests(home: string): ScheduleRunRequest[] {
   return scheduleRunRequestsFileSchema.parse(readJson(scheduleRunRequestsPath(home), { requests: [] })).requests;
 }
 
-function writeScheduleRunRequests(home: string, requests: ScheduleRunRequest[]): void {
+function writeScheduleRunRequests(home: string, requests: ScheduleRunRequest[], lock: ScheduleRunRequestLock): void {
   const body = scheduleRunRequestsFileSchema.parse({ requests });
   const filePath = scheduleRunRequestsPath(home);
   const tempPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
@@ -93,6 +98,7 @@ function writeScheduleRunRequests(home: string, requests: ScheduleRunRequest[]):
   try {
     fs.writeFileSync(tempPath, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600 });
     fs.chmodSync(tempPath, 0o600);
+    assertOwnedLock(lock);
     fs.renameSync(tempPath, filePath);
   } catch (error) {
     fs.rmSync(tempPath, { force: true });
@@ -100,7 +106,7 @@ function writeScheduleRunRequests(home: string, requests: ScheduleRunRequest[]):
   }
 }
 
-function withScheduleRunRequestLock<T>(home: string, task: () => T): T {
+function withScheduleRunRequestLock<T>(home: string, task: (lock: ScheduleRunRequestLock) => T): T {
   const filePath = scheduleRunRequestsPath(home);
   const lockPath = `${filePath}.lock`;
   const deadline = Date.now() + LOCK_WAIT_MS;
@@ -115,7 +121,7 @@ function withScheduleRunRequestLock<T>(home: string, task: () => T): T {
       lockOwner = `${process.pid}:${randomUUID()}`;
       fd = fs.openSync(lockPath, "wx", 0o600);
       fs.writeFileSync(fd, `${lockOwner}\n${new Date().toISOString()}\n`);
-      return task();
+      return task({ path: lockPath, owner: lockOwner });
     } catch (error) {
       if (fd !== undefined) {
         throw error;
@@ -141,6 +147,20 @@ function withScheduleRunRequestLock<T>(home: string, task: () => T): T {
         }
       }
     }
+  }
+}
+
+function assertOwnedLock(lock: ScheduleRunRequestLock): void {
+  try {
+    if (fs.readFileSync(lock.path, "utf8").split("\n", 1)[0] !== lock.owner) {
+      throw new Error(`Lost schedule run request lock ownership: ${lock.path}`);
+    }
+  } catch (error) {
+    if (errorCode(error) === "ENOENT") {
+      throw new Error(`Lost schedule run request lock ownership: ${lock.path}`);
+    }
+
+    throw error;
   }
 }
 

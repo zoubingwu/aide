@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { execa } from "execa";
@@ -183,6 +184,54 @@ describe("CLI help", () => {
     await expect(runCli("--home", home, "schedule", "run", "daily-brief")).rejects.toMatchObject({
       stderr: expect.stringContaining("Aide runtime is not running. Start it with `aide start`.")
     });
+  });
+
+  it("queues valid manual schedule runs with unrelated invalid entries", async () => {
+    const home = tempHome();
+    await runCli("--home", home, "init");
+    writeSchedules(home, [
+      {
+        id: "daily-brief",
+        endpoint: "discord-main",
+        enabled: true,
+        kind: "daily",
+        target: "channel:123",
+        message: "Generate my daily brief.",
+        time: "09:00",
+        timezone: "Asia/Shanghai"
+      },
+      {
+        id: "bad-timezone",
+        endpoint: "discord-main",
+        enabled: true,
+        kind: "daily",
+        target: "channel:456",
+        message: "Generate a broken brief.",
+        time: "09:00",
+        timezone: "Europe/Lnodon"
+      }
+    ]);
+    const runtime = spawn("sleep", ["30"], { stdio: "ignore" });
+
+    if (!runtime.pid) {
+      throw new Error("Failed to start fake runtime");
+    }
+
+    try {
+      fs.writeFileSync(
+        path.join(home, "runtime.json"),
+        `${JSON.stringify({ status: "running", home, pid: runtime.pid }, null, 2)}\n`
+      );
+
+      const { stdout } = await runCli("--home", home, "schedule", "run", "daily-brief");
+
+      expect(stdout).toContain("Requested schedule run: daily-brief");
+      expect(JSON.parse(fs.readFileSync(path.join(home, "state", "schedule-run-requests.json"), "utf8")).requests).toMatchObject([
+        { scheduleId: "daily-brief" }
+      ]);
+    } finally {
+      runtime.kill("SIGKILL");
+    }
   });
 
   it("lists and shows a cron schedule", async () => {

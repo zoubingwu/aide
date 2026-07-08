@@ -91,10 +91,10 @@ describe("schedule run requests", () => {
     const home = tempHome();
     ensureAideHome(home);
     const lockPath = `${scheduleRunRequestsPath(home)}.lock`;
-    const closeSync = fs.closeSync.bind(fs);
+    const renameSync = fs.renameSync.bind(fs);
     let replaced = false;
-    vi.spyOn(fs, "closeSync").mockImplementation((fd: number) => {
-      closeSync(fd);
+    vi.spyOn(fs, "renameSync").mockImplementation((oldPath: fs.PathLike, newPath: fs.PathLike) => {
+      renameSync(oldPath, newPath);
 
       if (!replaced) {
         replaced = true;
@@ -107,6 +107,40 @@ describe("schedule run requests", () => {
 
     expect(loadScheduleRunRequests(home)).toEqual([request]);
     expect(fs.readFileSync(lockPath, "utf8")).toBe("fresh-owner\n2026-05-10T01:00:00.000Z\n");
+  });
+
+  it("does not overwrite the queue after losing lock ownership before write", () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const filePath = scheduleRunRequestsPath(home);
+    const lockPath = `${filePath}.lock`;
+    const freshRequest = {
+      id: "fresh-request",
+      scheduleId: "daily-market",
+      requestedAt: "2026-05-10T02:00:00.000Z"
+    };
+    const writeFileSync = fs.writeFileSync.bind(fs) as (
+      file: fs.PathOrFileDescriptor,
+      data: string | NodeJS.ArrayBufferView,
+      options?: fs.WriteFileOptions
+    ) => void;
+    let replaced = false;
+    vi.spyOn(fs, "writeFileSync").mockImplementation(((target, data, options) => {
+      writeFileSync(target, data, options);
+
+      if (!replaced && typeof target !== "number" && target.toString().endsWith(".tmp")) {
+        replaced = true;
+        fs.rmSync(lockPath, { force: true });
+        writeFileSync(lockPath, "fresh-owner\n2026-05-10T02:00:00.000Z\n");
+        writeFileSync(filePath, `${JSON.stringify({ requests: [freshRequest] }, null, 2)}\n`, { mode: 0o600 });
+      }
+    }) as typeof fs.writeFileSync);
+
+    expect(() => addScheduleRunRequest(home, "daily-brief", new Date("2026-05-10T01:00:00.000Z"))).toThrow(
+      "Lost schedule run request lock ownership"
+    );
+    expect(loadScheduleRunRequests(home)).toEqual([freshRequest]);
+    expect(fs.readFileSync(lockPath, "utf8")).toBe("fresh-owner\n2026-05-10T02:00:00.000Z\n");
   });
 
   it("does nothing when the runtime is stopped", () => {

@@ -2,7 +2,7 @@ import { printTable, statusLabel } from "../lib/format.js";
 import { openPath } from "../lib/open.js";
 import { schedulesPath } from "../lib/paths.js";
 import { requestScheduleRun } from "../lib/schedule-run-requests.js";
-import { findSchedule, loadSchedules } from "../lib/schedules.js";
+import { findSchedule, loadRuntimeSchedules, loadSchedules } from "../lib/schedules.js";
 import type { CommandOptions } from "./options.js";
 import { homeFromOptions, stringOption } from "./options.js";
 
@@ -68,7 +68,11 @@ export function showScheduleCommand(options: CommandOptions): void {
 
 export function runScheduleCommand(id: string, options: CommandOptions): void {
   const home = homeFromOptions(options);
-  const schedule = findSchedule(home, id);
+  const schedule = loadRuntimeSchedules(home).schedules.find((candidate) => candidate.id === id);
+
+  if (!schedule) {
+    throw new Error(`Schedule not found: ${id}`);
+  }
 
   if (!schedule.enabled) {
     throw new Error(`Schedule is paused: ${id}`);
