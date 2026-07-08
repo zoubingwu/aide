@@ -141,12 +141,14 @@ export async function startRuntime(home: string): Promise<void> {
 
   scheduler = new RuntimeScheduler({ home, endpoints, clients });
   scheduler.start();
+  void scheduler.runRequestedSchedules();
   const stopDeliveryRecoveryListeners = registerDeliveryRecoveryListeners(home, clients, () => {
     void scheduler?.retryPendingDeliveries({ force: true });
   });
   const reloadSchedules = () => {
     appendRuntimeLog(home, "schedule_reload_signal", { pid: process.pid });
     scheduler?.reload();
+    void scheduler?.runRequestedSchedules();
   };
   process.on(SCHEDULE_RELOAD_SIGNAL, reloadSchedules);
   markRuntimeRunning(home);

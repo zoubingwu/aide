@@ -53,6 +53,14 @@ export function scheduleCheckpointsPath(home: string): string {
   return path.join(stateDir(home), "schedule-checkpoints.json");
 }
 
+export function scheduleRunRequestsPath(home: string): string {
+  return path.join(stateDir(home), "schedule-run-requests.json");
+}
+
+export function completedScheduleRunRequestsPath(home: string): string {
+  return path.join(stateDir(home), "schedule-run-completed.json");
+}
+
 export function deferredRestartPath(home: string): string {
   return path.join(stateDir(home), "deferred-restart.json");
 }

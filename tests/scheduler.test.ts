@@ -5,8 +5,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { defaultCodexAgentConfig, defaultEndpointTriggerConfig, ensureAideHome, writeEndpoints } from "../src/lib/config.js";
 import { addPendingDelivery, loadPendingDeliveries } from "../src/lib/delivery-retries.js";
 import { RUNTIME_LOG_FILE } from "../src/lib/logging.js";
-import { logsDir, scheduleCheckpointsPath, schedulesPath } from "../src/lib/paths.js";
+import { logsDir, scheduleCheckpointsPath, scheduleRunRequestsPath, schedulesPath } from "../src/lib/paths.js";
 import { loadScheduleCheckpoints, recordScheduleCheck } from "../src/lib/schedule-checkpoints.js";
+import { addScheduleRunRequest, loadCompletedScheduleRunRequests, loadScheduleRunRequests } from "../src/lib/schedule-run-requests.js";
 import { executeScheduleOnce, RuntimeScheduler } from "../src/lib/scheduler.js";
 import { loadSchedules, writeSchedules } from "../src/lib/schedules.js";
 import type { AgentRunResult, Endpoint, Schedule } from "../src/lib/types.js";
@@ -304,6 +305,675 @@ describe("scheduler execution", () => {
     expect(log).toContain("schedule_retry_scheduled");
     expect(log).toContain("network unavailable");
     scheduler.stop();
+  });
+
+  it("keeps recurring retries queued while manual runs are active", async () => {
+    vi.useFakeTimers({ now: new Date("2026-05-10T10:00:00.000Z") });
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = dailySchedule();
+    let markManualStarted: (() => void) | undefined;
+    const manualStarted = new Promise<void>((resolve) => {
+      markManualStarted = resolve;
+    });
+    let finishManual: ((value: AgentRunResult) => void) | undefined;
+    const manualPending = new Promise<AgentRunResult>((resolve) => {
+      finishManual = resolve;
+    });
+    let runCount = 0;
+    const handleRequest = vi.fn(() => {
+      runCount += 1;
+
+      if (runCount === 1) {
+        return Promise.resolve(agentResult({ exitCode: 1, response: "network unavailable" }));
+      }
+
+      if (runCount === 2) {
+        markManualStarted?.();
+        return manualPending;
+      }
+
+      return Promise.resolve(agentResult({ response: "retry brief" }));
+    });
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([["discord-main", {} as never]]),
+      handleRequest,
+      deliver
+    });
+    const run = bindRun(scheduler);
+
+    await run(schedule);
+    const manualRun = scheduler.runManualSchedule(schedule.id);
+    await manualStarted;
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+
+    expect(handleRequest).toHaveBeenCalledTimes(2);
+    expect(
+      fs
+        .readFileSync(path.join(logsDir(home), RUNTIME_LOG_FILE), "utf8")
+        .trim()
+        .split(/\r?\n/)
+        .map((line) => JSON.parse(line))
+    ).toContainEqual(expect.objectContaining({ message: "schedule_retry_deferred", attempt: 1 }));
+
+    finishManual?.(agentResult({ response: "manual brief" }));
+    await manualRun;
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+
+    expect(handleRequest).toHaveBeenCalledTimes(3);
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "manual brief");
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "retry brief");
+    scheduler.stop();
+  });
+
+  it("runs manual schedules without claiming a scheduled occurrence", async () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = dailySchedule();
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    const handleRequest = vi.fn().mockResolvedValue(agentResult({ response: "manual brief" }));
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest,
+      deliver
+    });
+
+    await expect(scheduler.runManualSchedule(schedule.id)).resolves.toBe("ran");
+
+    expect(handleRequest).toHaveBeenCalledWith(
+      home,
+      endpoint,
+      schedule.message,
+      `schedule:${schedule.id}`,
+      expect.objectContaining({ runMode: "fresh" })
+    );
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "manual brief");
+    expect(loadScheduleCheckpoints(home)[schedule.id]?.lastProcessedOccurrenceAt).toBeUndefined();
+
+    const log = fs.readFileSync(path.join(logsDir(home), RUNTIME_LOG_FILE), "utf8");
+    expect(log).toContain("schedule_due");
+    expect(log).toContain("schedule_delivered");
+    scheduler.stop();
+  });
+
+  it("keeps future one-shot schedules after manual runs", async () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = onceSchedule();
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest: vi.fn().mockResolvedValue(agentResult({ response: "manual reminder" })),
+      deliver
+    });
+
+    await expect(scheduler.runManualSchedule(schedule.id)).resolves.toBe("ran");
+
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "manual reminder");
+    expect(loadSchedules(home)).toEqual([schedule]);
+    scheduler.stop();
+  });
+
+  it("retries one-shot schedules blocked by active manual runs", async () => {
+    vi.useFakeTimers({ now: new Date("2026-05-10T09:59:59.000Z") });
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule: Schedule = {
+      ...onceSchedule(),
+      runAt: "2026-05-10T10:00:00.000Z"
+    };
+    let markManualStarted: (() => void) | undefined;
+    const manualStarted = new Promise<void>((resolve) => {
+      markManualStarted = resolve;
+    });
+    let finishManual: ((value: AgentRunResult) => void) | undefined;
+    const manualPending = new Promise<AgentRunResult>((resolve) => {
+      finishManual = resolve;
+    });
+    let runCount = 0;
+    const handleRequest = vi.fn(() => {
+      runCount += 1;
+
+      if (runCount === 1) {
+        markManualStarted?.();
+        return manualPending;
+      }
+
+      return Promise.resolve(agentResult({ response: "scheduled reminder" }));
+    });
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest,
+      deliver
+    });
+    scheduler.reload();
+
+    const manualRun = scheduler.runManualSchedule(schedule.id);
+    await manualStarted;
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+    expect(loadSchedules(home)).toEqual([schedule]);
+
+    finishManual?.(agentResult({ response: "manual reminder" }));
+    await manualRun;
+    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.runOnlyPendingTimersAsync();
+
+    expect(handleRequest).toHaveBeenCalledTimes(2);
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "manual reminder");
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "scheduled reminder");
+    expect(loadSchedules(home)).toEqual([]);
+    scheduler.stop();
+  });
+
+  it("drains queued manual schedule run requests", async () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = dailySchedule();
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+    addScheduleRunRequest(home, schedule.id, new Date("2026-05-10T01:00:00.000Z"));
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest: vi.fn().mockResolvedValue(agentResult({ response: "queued brief" })),
+      deliver
+    });
+
+    await scheduler.runRequestedSchedules();
+
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "queued brief");
+    expect(loadScheduleRunRequests(home)).toEqual([]);
+    expect(fs.readFileSync(path.join(logsDir(home), RUNTIME_LOG_FILE), "utf8")).toContain("schedule_run_request_received");
+    scheduler.stop();
+  });
+
+  it("stops draining when a completed manual request cannot be removed", async () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = dailySchedule();
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+    const request = addScheduleRunRequest(home, schedule.id, new Date("2026-05-10T01:00:00.000Z"));
+    const lockPath = `${scheduleRunRequestsPath(home)}.lock`;
+    writeRequestLock(lockPath, "busy-owner");
+    vi.spyOn(Date, "now").mockReturnValueOnce(60_000).mockReturnValue(62_001);
+    const handleRequest = vi.fn().mockResolvedValue(agentResult({ response: "queued brief" }));
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest,
+      deliver
+    });
+
+    await scheduler.runRequestedSchedules();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "queued brief");
+    expect(loadScheduleRunRequests(home)).toEqual([request]);
+    expect(fs.readFileSync(path.join(logsDir(home), RUNTIME_LOG_FILE), "utf8")).toContain("schedule_run_request_remove_failed");
+    scheduler.stop();
+  });
+
+  it("does not re-run completed manual requests when another drain is queued after removal fails", async () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = dailySchedule();
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+    const request = addScheduleRunRequest(home, schedule.id, new Date("2026-05-10T01:00:00.000Z"));
+    let markStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    let finishRequest: ((value: AgentRunResult) => void) | undefined;
+    const pending = new Promise<AgentRunResult>((resolve) => {
+      finishRequest = resolve;
+    });
+    const handleRequest = vi.fn(() => {
+      markStarted?.();
+      return pending;
+    });
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest,
+      deliver
+    });
+
+    const firstDrain = scheduler.runRequestedSchedules();
+    await started;
+    const secondDrain = scheduler.runRequestedSchedules();
+    writeRequestLock(`${scheduleRunRequestsPath(home)}.lock`, "busy-owner");
+    vi.spyOn(Date, "now")
+      .mockReturnValueOnce(60_000)
+      .mockReturnValueOnce(62_001)
+      .mockReturnValueOnce(70_000)
+      .mockReturnValueOnce(70_000)
+      .mockReturnValue(72_001);
+
+    finishRequest?.(agentResult({ response: "queued brief" }));
+    await Promise.all([firstDrain, secondDrain]);
+
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "queued brief");
+    expect(loadScheduleRunRequests(home)).toEqual([request]);
+    scheduler.stop();
+  });
+
+  it("does not re-run completed manual requests after restart when removal failed", async () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = dailySchedule();
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+    const request = addScheduleRunRequest(home, schedule.id, new Date("2026-05-10T01:00:00.000Z"));
+    const lockPath = `${scheduleRunRequestsPath(home)}.lock`;
+    writeRequestLock(lockPath, "busy-owner");
+    vi.spyOn(Date, "now").mockReturnValueOnce(60_000).mockReturnValue(62_001);
+
+    const firstScheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest: vi.fn().mockResolvedValue(agentResult({ response: "queued brief" })),
+      deliver
+    });
+
+    await firstScheduler.runRequestedSchedules();
+    firstScheduler.stop();
+
+    expect(loadScheduleRunRequests(home)).toEqual([request]);
+    expect([...loadCompletedScheduleRunRequests(home)]).toEqual([request.id]);
+
+    vi.restoreAllMocks();
+    fs.rmSync(lockPath, { recursive: true, force: true });
+    const restartedHandleRequest = vi.fn().mockResolvedValue(agentResult({ response: "replayed brief" }));
+    const secondScheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest: restartedHandleRequest,
+      deliver
+    });
+
+    await secondScheduler.runRequestedSchedules();
+
+    expect(restartedHandleRequest).toHaveBeenCalledTimes(0);
+    expect(loadScheduleRunRequests(home)).toEqual([]);
+    expect([...loadCompletedScheduleRunRequests(home)]).toEqual([]);
+    secondScheduler.stop();
+  });
+
+  it("keeps queued manual run requests until each run finishes", async () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const first = dailySchedule();
+    const second = { ...dailySchedule(), id: "daily-market", message: "Generate market brief." };
+    const firstRequest = addScheduleRunRequest(home, first.id, new Date("2026-05-10T01:00:00.000Z"));
+    const secondRequest = addScheduleRunRequest(home, second.id, new Date("2026-05-10T02:00:00.000Z"));
+    let markFirstStarted: (() => void) | undefined;
+    const firstStarted = new Promise<void>((resolve) => {
+      markFirstStarted = resolve;
+    });
+    let finishFirst: ((value: AgentRunResult) => void) | undefined;
+    const handleRequest = vi.fn(async (_home: string, _endpoint: Endpoint, message: string) => {
+      if (message === first.message) {
+        const pending = new Promise<AgentRunResult>((resolve) => {
+          finishFirst = resolve;
+        });
+        markFirstStarted?.();
+        return pending;
+      }
+
+      return agentResult({ response: "second brief" });
+    });
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [first, second]);
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest,
+      deliver
+    });
+
+    const drain = scheduler.runRequestedSchedules();
+    await firstStarted;
+
+    expect(loadScheduleRunRequests(home)).toEqual([firstRequest, secondRequest]);
+
+    finishFirst?.(agentResult({ response: "first brief" }));
+    await drain;
+
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, first.target, "first brief");
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, second.target, "second brief");
+    expect(loadScheduleRunRequests(home)).toEqual([]);
+    scheduler.stop();
+  });
+
+  it("keeps active-run manual requests queued until the active run finishes", async () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = dailySchedule();
+    let markActiveStarted: (() => void) | undefined;
+    const activeStarted = new Promise<void>((resolve) => {
+      markActiveStarted = resolve;
+    });
+    let finishActive: ((value: AgentRunResult) => void) | undefined;
+    const activePending = new Promise<AgentRunResult>((resolve) => {
+      finishActive = resolve;
+    });
+    let runCount = 0;
+    const handleRequest = vi.fn(() => {
+      runCount += 1;
+
+      if (runCount === 1) {
+        markActiveStarted?.();
+        return activePending;
+      }
+
+      return Promise.resolve(agentResult({ response: "queued brief" }));
+    });
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest,
+      deliver
+    });
+
+    const active = scheduler.runManualSchedule(schedule.id);
+    await activeStarted;
+    const request = addScheduleRunRequest(home, schedule.id, new Date("2026-05-10T01:00:00.000Z"));
+
+    await scheduler.runRequestedSchedules();
+
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+    expect(loadScheduleRunRequests(home)).toEqual([request]);
+
+    finishActive?.(agentResult({ response: "active brief" }));
+    await active;
+    await waitFor(() => expect(loadScheduleRunRequests(home)).toEqual([]));
+
+    expect(handleRequest).toHaveBeenCalledTimes(2);
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "active brief");
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "queued brief");
+    scheduler.stop();
+  });
+
+  it("keeps planned occurrences unclaimed while manual runs are active", async () => {
+    vi.useFakeTimers({ now: new Date("2026-05-10T01:00:00.000Z") });
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = dailySchedule();
+    let markManualStarted: (() => void) | undefined;
+    const manualStarted = new Promise<void>((resolve) => {
+      markManualStarted = resolve;
+    });
+    let finishManual: ((value: AgentRunResult) => void) | undefined;
+    const manualPending = new Promise<AgentRunResult>((resolve) => {
+      finishManual = resolve;
+    });
+    let runCount = 0;
+    const handleRequest = vi.fn(() => {
+      runCount += 1;
+
+      if (runCount === 1) {
+        markManualStarted?.();
+        return manualPending;
+      }
+
+      return Promise.resolve(agentResult({ response: "planned brief" }));
+    });
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+    recordScheduleCheck(home, schedule.id, new Date("2026-05-10T00:59:30.000Z"));
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest,
+      deliver
+    });
+    const run = bindRun(scheduler);
+
+    const manualRun = scheduler.runManualSchedule(schedule.id);
+    await manualStarted;
+    await expect(run(schedule, "scheduled", new Date("2026-05-10T01:00:00.000Z"))).resolves.toBe("skipped");
+
+    expect(loadScheduleCheckpoints(home)[schedule.id]?.lastProcessedOccurrenceAt).toBeUndefined();
+
+    finishManual?.(agentResult({ response: "manual brief" }));
+    await manualRun;
+    vi.setSystemTime(new Date("2026-05-10T01:00:30.000Z"));
+    await bindRecoverMissedRuns(scheduler)([schedule], new Date());
+
+    expect(handleRequest).toHaveBeenCalledTimes(2);
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "manual brief");
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "planned brief");
+    expect(loadScheduleCheckpoints(home)[schedule.id]?.lastProcessedOccurrenceAt).toBe("2026-05-10T01:00:00.000Z");
+    scheduler.stop();
+  });
+
+  it("keeps recovery checkpoints unchanged when manual runs are active", async () => {
+    vi.useFakeTimers({ now: new Date("2026-05-10T01:00:30.000Z") });
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = dailySchedule();
+    let markManualStarted: (() => void) | undefined;
+    const manualStarted = new Promise<void>((resolve) => {
+      markManualStarted = resolve;
+    });
+    let finishManual: ((value: AgentRunResult) => void) | undefined;
+    const manualPending = new Promise<AgentRunResult>((resolve) => {
+      finishManual = resolve;
+    });
+    let runCount = 0;
+    const handleRequest = vi.fn(() => {
+      runCount += 1;
+
+      if (runCount === 1) {
+        markManualStarted?.();
+        return manualPending;
+      }
+
+      return Promise.resolve(agentResult({ response: "recovered brief" }));
+    });
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+    recordScheduleCheck(home, schedule.id, new Date("2026-05-10T00:59:30.000Z"));
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest,
+      deliver
+    });
+    const recoverMissedRuns = bindRecoverMissedRuns(scheduler);
+
+    const manualRun = scheduler.runManualSchedule(schedule.id);
+    await manualStarted;
+    await recoverMissedRuns([schedule], new Date());
+
+    expect(loadScheduleCheckpoints(home)[schedule.id]).toEqual({
+      lastCheckedAt: "2026-05-10T00:59:30.000Z"
+    });
+
+    finishManual?.(agentResult({ response: "manual brief" }));
+    await manualRun;
+    await recoverMissedRuns([schedule], new Date());
+
+    expect(handleRequest).toHaveBeenCalledTimes(2);
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "manual brief");
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "recovered brief");
+    expect(loadScheduleCheckpoints(home)[schedule.id]?.lastProcessedOccurrenceAt).toBe("2026-05-10T01:00:00.000Z");
+    scheduler.stop();
+  });
+
+  it("waits for missed-run recovery before draining startup manual requests", async () => {
+    vi.useFakeTimers({ now: new Date("2026-05-10T02:00:00.000Z") });
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = dailySchedule();
+    let markRecoveryStarted: (() => void) | undefined;
+    const recoveryStarted = new Promise<void>((resolve) => {
+      markRecoveryStarted = resolve;
+    });
+    let finishRecovery: ((value: AgentRunResult) => void) | undefined;
+    const recoveryPending = new Promise<AgentRunResult>((resolve) => {
+      finishRecovery = resolve;
+    });
+    let runCount = 0;
+    const handleRequest = vi.fn(() => {
+      runCount += 1;
+
+      if (runCount === 1) {
+        markRecoveryStarted?.();
+        return recoveryPending;
+      }
+
+      return Promise.resolve(agentResult({ response: "manual brief" }));
+    });
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+    recordScheduleCheck(home, schedule.id, new Date("2026-05-10T00:30:00.000Z"));
+    addScheduleRunRequest(home, schedule.id, new Date("2026-05-10T01:30:00.000Z"));
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest,
+      deliver
+    });
+
+    scheduler.reload();
+    await recoveryStarted;
+    const manualDrain = scheduler.runRequestedSchedules();
+    let manualDrainDone = false;
+    void manualDrain.then(() => {
+      manualDrainDone = true;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(manualDrainDone).toBe(false);
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+
+    finishRecovery?.(agentResult({ response: "recovered brief" }));
+    await manualDrain;
+
+    expect(handleRequest).toHaveBeenCalledTimes(2);
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "recovered brief");
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "manual brief");
+    expect(loadScheduleRunRequests(home)).toEqual([]);
+    scheduler.stop();
+  });
+
+  it("leaves remaining manual requests queued after shutdown starts", async () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const first = dailySchedule();
+    const second = { ...dailySchedule(), id: "daily-market", message: "Generate market brief." };
+    addScheduleRunRequest(home, first.id, new Date("2026-05-10T01:00:00.000Z"));
+    const secondRequest = addScheduleRunRequest(home, second.id, new Date("2026-05-10T02:00:00.000Z"));
+    let markFirstStarted: (() => void) | undefined;
+    const firstStarted = new Promise<void>((resolve) => {
+      markFirstStarted = resolve;
+    });
+    let finishFirst: ((value: AgentRunResult) => void) | undefined;
+    const firstPending = new Promise<AgentRunResult>((resolve) => {
+      finishFirst = resolve;
+    });
+    const handleRequest = vi.fn((_: string, __: Endpoint, message: string) => {
+      if (message === first.message) {
+        markFirstStarted?.();
+        return firstPending;
+      }
+
+      return Promise.resolve(agentResult({ response: "second brief" }));
+    });
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [first, second]);
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest,
+      deliver
+    });
+
+    const drain = scheduler.runRequestedSchedules();
+    await firstStarted;
+    scheduler.stop();
+    finishFirst?.(agentResult({ response: "first brief" }));
+    await drain;
+
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, first.target, "first brief");
+    expect(loadScheduleRunRequests(home)).toEqual([secondRequest]);
   });
 
   it("retries pending delivery without rerunning the agent", async () => {
@@ -941,14 +1611,31 @@ function biweeklySchedule(): Schedule {
 
 function bindRun(
   scheduler: RuntimeScheduler
-): (schedule: Schedule, source?: "scheduled" | "recovery" | "retry", occurrenceAt?: Date) => Promise<"ran" | "skipped"> {
+): (schedule: Schedule, source?: "scheduled" | "recovery" | "retry", occurrenceAt?: Date) => Promise<"ran" | "skipped" | "deferred"> {
   return (scheduler as unknown as {
-    run(schedule: Schedule, source?: "scheduled" | "recovery" | "retry", occurrenceAt?: Date): Promise<"ran" | "skipped">;
+    run(schedule: Schedule, source?: "scheduled" | "recovery" | "retry", occurrenceAt?: Date): Promise<"ran" | "skipped" | "deferred">;
   }).run.bind(scheduler);
 }
 
 function bindRecoverMissedRuns(scheduler: RuntimeScheduler): (schedules: Schedule[], now?: Date) => Promise<void> {
   return (scheduler as unknown as { recoverMissedRuns(schedules: Schedule[], now?: Date): Promise<void> }).recoverMissedRuns.bind(scheduler);
+}
+
+async function waitFor(assertion: () => void): Promise<void> {
+  const deadline = Date.now() + 1_000;
+  let lastError: unknown;
+
+  while (Date.now() < deadline) {
+    try {
+      assertion();
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+
+  throw lastError;
 }
 
 function deliveryResponses(deliver: ReturnType<typeof vi.fn>): unknown[] {
@@ -959,4 +1646,10 @@ function tempHome(): string {
   const target = fs.mkdtempSync(path.join(os.tmpdir(), "aide-scheduler-"));
   cleanupPaths.push(target);
   return target;
+}
+
+function writeRequestLock(lockPath: string, owner: string): void {
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+  fs.mkdirSync(lockPath, { mode: 0o700 });
+  fs.writeFileSync(path.join(lockPath, owner), `${owner}\n2026-05-10T01:00:00.000Z\n`, { mode: 0o600 });
 }

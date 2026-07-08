@@ -1,7 +1,8 @@
 import { printTable, statusLabel } from "../lib/format.js";
 import { openPath } from "../lib/open.js";
 import { schedulesPath } from "../lib/paths.js";
-import { findSchedule, loadSchedules } from "../lib/schedules.js";
+import { requestScheduleRun } from "../lib/schedule-run-requests.js";
+import { findSchedule, loadRuntimeSchedules, loadSchedules } from "../lib/schedules.js";
 import type { CommandOptions } from "./options.js";
 import { homeFromOptions, stringOption } from "./options.js";
 
@@ -63,6 +64,25 @@ export function showScheduleCommand(options: CommandOptions): void {
   if (schedule.runAt) {
     console.log(`RunAt      ${schedule.runAt}`);
   }
+}
+
+export function runScheduleCommand(id: string, options: CommandOptions): void {
+  const home = homeFromOptions(options);
+  const schedule = loadRuntimeSchedules(home).schedules.find((candidate) => candidate.id === id);
+
+  if (!schedule) {
+    throw new Error(`Schedule not found: ${id}`);
+  }
+
+  if (!schedule.enabled) {
+    throw new Error(`Schedule is paused: ${id}`);
+  }
+
+  if (!requestScheduleRun(home, id)) {
+    throw new Error("Aide runtime is not running. Start it with `aide start`.");
+  }
+
+  console.log(`Requested schedule run: ${id}`);
 }
 
 export async function openScheduleConfigCommand(options: CommandOptions): Promise<void> {

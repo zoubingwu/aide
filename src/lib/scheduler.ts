@@ -13,6 +13,14 @@ import {
 import { deliverDiscordMessage } from "./discord-delivery.js";
 import { appendRuntimeLog } from "./logging.js";
 import {
+  addCompletedScheduleRunRequest,
+  loadCompletedScheduleRunRequests,
+  loadScheduleRunRequests,
+  removeCompletedScheduleRunRequest,
+  removeScheduleRunRequest,
+  type ScheduleRunRequest
+} from "./schedule-run-requests.js";
+import {
   claimScheduleOccurrence,
   loadScheduleCheckpoints,
   pruneScheduleCheckpoints,
@@ -44,6 +52,7 @@ export interface ScheduleExecution {
     context?: AssistantRequestContext
   ) => Promise<AgentRunResult>) | undefined;
   deliver?: ((endpoint: Endpoint, client: unknown, target: string, response: string) => Promise<void>) | undefined;
+  source?: RunSource | undefined;
 }
 
 export interface RuntimeSchedulerOptions {
@@ -64,9 +73,9 @@ interface RunningJob {
   stop(): void;
 }
 
-type ScheduleRunStatus = "ran" | "skipped";
+type ScheduleRunStatus = "ran" | "skipped" | "deferred";
 type ScheduleExecutionStatus = "completed" | "agent_failed" | "delivery_invalid" | "delivery_pending" | "skipped";
-type RunSource = "scheduled" | "recovery" | "retry";
+export type RunSource = "scheduled" | "recovery" | "retry" | "manual";
 
 export async function executeScheduleOnce(execution: ScheduleExecution): Promise<ScheduleExecutionStatus> {
   const endpoint = execution.endpoints.find((candidate) => candidate.id === execution.schedule.endpoint);
@@ -184,7 +193,7 @@ export async function executeScheduleOnce(execution: ScheduleExecution): Promise
 }
 
 function completeSchedule(execution: ScheduleExecution): void {
-  if (execution.schedule.kind !== "once") {
+  if (execution.schedule.kind !== "once" || execution.source === "manual") {
     return;
   }
 
@@ -196,14 +205,18 @@ function completeSchedule(execution: ScheduleExecution): void {
 
 export class RuntimeScheduler {
   private readonly jobs = new Map<string, RunningJob>();
-  private readonly running = new Set<string>();
+  private readonly running = new Map<string, RunSource>();
   private readonly onceRetryAt = new Map<string, number>();
   private readonly retryTimers = new Map<string, NodeJS.Timeout>();
   private readonly retryAttempts = new Map<string, number>();
   private readonly runningDeliveries = new Set<string>();
   private reloadTimer: NodeJS.Timeout | undefined;
   private deliveryRetryTimer: NodeJS.Timeout | undefined;
+  private recoveryDrain: Promise<void> = Promise.resolve();
   private deliveryDrain: Promise<void> = Promise.resolve();
+  private scheduleRunDrain: Promise<void> = Promise.resolve();
+  private readonly completedRunRequests = new Set<string>();
+  private drainingScheduleRunRequests = false;
   private stopped = false;
 
   constructor(private readonly options: RuntimeSchedulerOptions) {}
@@ -278,7 +291,11 @@ export class RuntimeScheduler {
     const enabledIds = new Set(enabledSchedules.map((schedule) => schedule.id));
     this.pruneRecurringRetries(enabledIds);
     this.pruneScheduleCheckpoints(enabledIds);
-    void this.recoverMissedRuns(enabledSchedules);
+    const recovery = this.recoveryDrain.then(
+      () => this.recoverMissedRuns(enabledSchedules),
+      () => this.recoverMissedRuns(enabledSchedules)
+    );
+    this.recoveryDrain = recovery.catch(() => undefined);
   }
 
   private createJob(schedule: Schedule): RunningJob {
@@ -359,7 +376,7 @@ export class RuntimeScheduler {
     }
 
     const checkedAt = new Date();
-    const isPlannedRun = source !== "retry";
+    const isPlannedRun = source === "scheduled" || source === "recovery";
     const scheduleOccurrence = isPlannedRun ? occurrenceAt ?? currentScheduleOccurrence(schedule, checkedAt) : undefined;
 
     if (
@@ -369,6 +386,13 @@ export class RuntimeScheduler {
       !isBiweeklyOccurrence(schedule.startDate, scheduleOccurrence ?? checkedAt, schedule.timezone)
     ) {
       return "skipped";
+    }
+
+    const runningSource = this.running.get(schedule.id);
+
+    if (isPlannedRun && runningSource === "manual") {
+      appendRuntimeLog(this.options.home, "schedule_skipped_running", { schedule: schedule.id });
+      return source === "recovery" || schedule.kind === "once" ? "deferred" : "skipped";
     }
 
     if (
@@ -382,14 +406,19 @@ export class RuntimeScheduler {
 
     if (this.running.has(schedule.id)) {
       appendRuntimeLog(this.options.home, "schedule_skipped_running", { schedule: schedule.id });
-      return "skipped";
+      if (source === "retry" && runningSource === "manual") {
+        this.deferRecurringRetry(schedule);
+        return "deferred";
+      }
+
+      return source === "manual" ? "deferred" : "skipped";
     }
 
     if (isPlannedRun && schedule.kind !== "once") {
       this.clearRecurringRetry(schedule.id);
     }
 
-    this.running.add(schedule.id);
+    this.running.set(schedule.id, source);
     appendRuntimeLog(this.options.home, "schedule_due", { schedule: schedule.id });
 
     let status: ScheduleExecutionStatus = "agent_failed";
@@ -401,7 +430,8 @@ export class RuntimeScheduler {
         endpoints: this.options.endpoints,
         clients: this.options.clients,
         handleRequest: this.options.handleRequest,
-        deliver: this.options.deliver
+        deliver: this.options.deliver,
+        source
       });
     } catch (error) {
       appendRuntimeLog(this.options.home, "schedule_run_failed", {
@@ -411,13 +441,157 @@ export class RuntimeScheduler {
       status = "agent_failed";
     } finally {
       this.running.delete(schedule.id);
+
+      if (!this.stopped && !(source === "manual" && this.drainingScheduleRunRequests)) {
+        void this.runRequestedSchedules();
+      }
     }
 
-    if (schedule.kind !== "once") {
+    if (schedule.kind !== "once" && source !== "manual") {
       this.updateRecurringRetry(schedule, status);
     }
 
     return "ran";
+  }
+
+  async runManualSchedule(id: string): Promise<ScheduleRunStatus> {
+    if (this.stopped) {
+      appendRuntimeLog(this.options.home, "schedule_run_request_deferred_stopped", { schedule: id });
+      return "deferred";
+    }
+
+    const schedule = this.findEnabledSchedule(id);
+
+    if (!schedule) {
+      appendRuntimeLog(this.options.home, "schedule_run_request_invalid", {
+        schedule: id,
+        reason: "missing or disabled"
+      });
+      return "skipped";
+    }
+
+    return this.run(schedule, "manual");
+  }
+
+  async runRequestedSchedules(): Promise<void> {
+    const recoverThenDrain = () =>
+      this.recoveryDrain.then(
+        () => this.drainRequestedSchedules(),
+        () => this.drainRequestedSchedules()
+      );
+    const drain = this.scheduleRunDrain.then(
+      () => recoverThenDrain(),
+      () => recoverThenDrain()
+    );
+    this.scheduleRunDrain = drain.catch(() => undefined);
+    await drain;
+  }
+
+  private async drainRequestedSchedules(): Promise<void> {
+    this.drainingScheduleRunRequests = true;
+
+    try {
+      let requests: ScheduleRunRequest[];
+
+      try {
+        requests = loadScheduleRunRequests(this.options.home);
+      } catch (error) {
+        appendRuntimeLog(this.options.home, "schedule_run_request_load_failed", { error: errorMessage(error) });
+        return;
+      }
+
+      this.loadCompletedRunRequests();
+      const requestIds = new Set(requests.map((request) => request.id));
+      for (const id of this.completedRunRequests) {
+        if (!requestIds.has(id)) {
+          this.clearCompletedRunRequest(id);
+        }
+      }
+
+      for (const request of requests) {
+        if (this.stopped) {
+          return;
+        }
+
+        if (this.completedRunRequests.has(request.id)) {
+          if (!this.removeRunRequest(request)) {
+            return;
+          }
+
+          this.clearCompletedRunRequest(request.id);
+          continue;
+        }
+
+        appendRuntimeLog(this.options.home, "schedule_run_request_received", {
+          schedule: request.scheduleId,
+          request: request.id,
+          requestedAt: request.requestedAt
+        });
+        const status = await this.runManualSchedule(request.scheduleId);
+
+        if (status === "deferred") {
+          return;
+        }
+
+        if (!this.removeRunRequest(request)) {
+          this.markCompletedRunRequest(request);
+          return;
+        }
+      }
+    } finally {
+      this.drainingScheduleRunRequests = false;
+    }
+  }
+
+  private removeRunRequest(request: ScheduleRunRequest): boolean {
+    try {
+      removeScheduleRunRequest(this.options.home, request.id);
+      return true;
+    } catch (error) {
+      appendRuntimeLog(this.options.home, "schedule_run_request_remove_failed", {
+        schedule: request.scheduleId,
+        request: request.id,
+        error: errorMessage(error)
+      });
+      return false;
+    }
+  }
+
+  private loadCompletedRunRequests(): void {
+    try {
+      for (const id of loadCompletedScheduleRunRequests(this.options.home)) {
+        this.completedRunRequests.add(id);
+      }
+    } catch (error) {
+      appendRuntimeLog(this.options.home, "schedule_run_request_completed_load_failed", { error: errorMessage(error) });
+    }
+  }
+
+  private markCompletedRunRequest(request: ScheduleRunRequest): void {
+    this.completedRunRequests.add(request.id);
+
+    try {
+      addCompletedScheduleRunRequest(this.options.home, request.id);
+    } catch (error) {
+      appendRuntimeLog(this.options.home, "schedule_run_request_completed_mark_failed", {
+        schedule: request.scheduleId,
+        request: request.id,
+        error: errorMessage(error)
+      });
+    }
+  }
+
+  private clearCompletedRunRequest(id: string): void {
+    this.completedRunRequests.delete(id);
+
+    try {
+      removeCompletedScheduleRunRequest(this.options.home, id);
+    } catch (error) {
+      appendRuntimeLog(this.options.home, "schedule_run_request_completed_clear_failed", {
+        request: id,
+        error: errorMessage(error)
+      });
+    }
   }
 
   private async recoverMissedRuns(schedules: Schedule[], now = new Date()): Promise<void> {
@@ -455,7 +629,11 @@ export class RuntimeScheduler {
           occurrenceAt: occurrenceAt.toISOString(),
           checkedAfter: checkpoint.lastCheckedAt
         });
-        await this.run(schedule, "recovery", occurrenceAt);
+        const status = await this.run(schedule, "recovery", occurrenceAt);
+
+        if (status === "deferred") {
+          continue;
+        }
       }
 
       this.recordScheduleCheck(schedule.id, now);
@@ -525,7 +703,20 @@ export class RuntimeScheduler {
     }
 
     this.retryAttempts.set(schedule.id, nextAttempt);
+    this.scheduleRecurringRetry(schedule, nextAttempt, "schedule_retry_scheduled");
+  }
 
+  private deferRecurringRetry(schedule: Schedule): void {
+    const attempt = this.retryAttempts.get(schedule.id);
+
+    if (attempt === undefined) {
+      return;
+    }
+
+    this.scheduleRecurringRetry(schedule, attempt, "schedule_retry_deferred");
+  }
+
+  private scheduleRecurringRetry(schedule: Schedule, attempt: number, message: "schedule_retry_scheduled" | "schedule_retry_deferred"): void {
     const existing = this.retryTimers.get(schedule.id);
     if (existing) {
       clearTimeout(existing);
@@ -544,9 +735,9 @@ export class RuntimeScheduler {
     }, RECURRING_RETRY_MS);
 
     this.retryTimers.set(schedule.id, timer);
-    appendRuntimeLog(this.options.home, "schedule_retry_scheduled", {
+    appendRuntimeLog(this.options.home, message, {
       schedule: schedule.id,
-      attempt: nextAttempt,
+      attempt,
       delayMs: RECURRING_RETRY_MS
     });
   }
