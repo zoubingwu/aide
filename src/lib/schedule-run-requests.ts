@@ -177,6 +177,12 @@ function removeOwnedLock(lockPath: string, lockOwner: string): void {
 }
 
 function removeStaleLock(lockPath: string): void {
+  withStaleLockCleanupLock(lockPath, () => {
+    removeStaleLockFile(lockPath);
+  });
+}
+
+function removeStaleLockFile(lockPath: string): void {
   try {
     const staleStat = fs.statSync(lockPath);
 
@@ -190,6 +196,37 @@ function removeStaleLock(lockPath: string): void {
   } catch (error) {
     if (errorCode(error) !== "ENOENT") {
       throw error;
+    }
+  }
+}
+
+function withStaleLockCleanupLock<T>(lockPath: string, task: () => T): T | undefined {
+  const cleanupLockPath = `${lockPath}.cleanup`;
+  let fd: number | undefined;
+  let lockOwner: string | undefined;
+
+  try {
+    lockOwner = `${process.pid}:${randomUUID()}`;
+    fd = fs.openSync(cleanupLockPath, "wx", 0o600);
+    fs.writeFileSync(fd, `${lockOwner}\n${new Date().toISOString()}\n`);
+    return task();
+  } catch (error) {
+    if (fd !== undefined) {
+      throw error;
+    }
+
+    if (errorCode(error) === "EEXIST") {
+      return undefined;
+    }
+
+    throw error;
+  } finally {
+    if (fd !== undefined) {
+      fs.closeSync(fd);
+
+      if (lockOwner) {
+        removeOwnedLock(cleanupLockPath, lockOwner);
+      }
     }
   }
 }

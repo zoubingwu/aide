@@ -87,6 +87,24 @@ describe("schedule run requests", () => {
     expect(loadScheduleRunRequests(home)).toEqual([]);
   });
 
+  it("leaves stale lock cleanup to the active cleanup owner", () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const lockPath = `${scheduleRunRequestsPath(home)}.lock`;
+    const cleanupLockPath = `${lockPath}.cleanup`;
+    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+    fs.writeFileSync(lockPath, "stale\n");
+    fs.writeFileSync(cleanupLockPath, "cleanup-owner\n");
+    fs.utimesSync(lockPath, new Date(0), new Date(0));
+    vi.spyOn(Date, "now").mockReturnValueOnce(60_000).mockReturnValue(62_001);
+
+    expect(() => addScheduleRunRequest(home, "daily-brief", new Date("2026-05-10T01:00:00.000Z"))).toThrow(
+      "Timed out waiting for schedule run request lock"
+    );
+    expect(fs.readFileSync(lockPath, "utf8")).toBe("stale\n");
+    expect(loadScheduleRunRequests(home)).toEqual([]);
+  });
+
   it("keeps a fresh request lock that replaces this process lock before release", () => {
     const home = tempHome();
     ensureAideHome(home);
