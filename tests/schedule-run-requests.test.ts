@@ -51,6 +51,42 @@ describe("schedule run requests", () => {
     expect(fs.existsSync(lockPath)).toBe(false);
   });
 
+  it("keeps a fresh request lock that replaces a stale lock during recovery", () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const lockPath = `${scheduleRunRequestsPath(home)}.lock`;
+    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+    fs.writeFileSync(lockPath, "stale\n");
+    fs.utimesSync(lockPath, new Date(0), new Date(0));
+    const statSync = fs.statSync.bind(fs) as (target: fs.PathLike) => fs.Stats;
+    let lockStats = 0;
+    vi.spyOn(Date, "now")
+      .mockReturnValueOnce(60_000)
+      .mockReturnValueOnce(60_000)
+      .mockReturnValue(62_001);
+    vi.spyOn(fs, "statSync").mockImplementation(((target: fs.PathLike) => {
+      const stat = statSync(target);
+
+      if (target.toString() === lockPath) {
+        lockStats += 1;
+
+        if (lockStats === 1) {
+          fs.rmSync(lockPath, { force: true });
+          fs.writeFileSync(lockPath, "fresh\n");
+          fs.utimesSync(lockPath, new Date(60_000), new Date(60_000));
+        }
+      }
+
+      return stat;
+    }) as typeof fs.statSync);
+
+    expect(() => addScheduleRunRequest(home, "daily-brief", new Date("2026-05-10T01:00:00.000Z"))).toThrow(
+      "Timed out waiting for schedule run request lock"
+    );
+    expect(fs.readFileSync(lockPath, "utf8")).toBe("fresh\n");
+    expect(loadScheduleRunRequests(home)).toEqual([]);
+  });
+
   it("does nothing when the runtime is stopped", () => {
     const home = tempHome();
     ensureAideHome(home);

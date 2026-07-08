@@ -141,16 +141,29 @@ function withScheduleRunRequestLock<T>(home: string, task: () => T): T {
 
 function removeStaleLock(lockPath: string): void {
   try {
-    const stat = fs.statSync(lockPath);
+    const staleStat = fs.statSync(lockPath);
 
-    if (Date.now() - stat.mtimeMs > LOCK_STALE_MS) {
-      fs.rmSync(lockPath, { force: true });
+    if (Date.now() - staleStat.mtimeMs > LOCK_STALE_MS) {
+      const currentStat = fs.statSync(lockPath);
+
+      if (sameLockFile(staleStat, currentStat)) {
+        fs.rmSync(lockPath, { force: true });
+      }
     }
   } catch (error) {
     if (errorCode(error) !== "ENOENT") {
       throw error;
     }
   }
+}
+
+function sameLockFile(left: fs.Stats, right: fs.Stats): boolean {
+  return (
+    left.dev === right.dev &&
+    left.ino === right.ino &&
+    left.mtimeMs === right.mtimeMs &&
+    left.size === right.size
+  );
 }
 
 function sleepSync(ms: number): void {
