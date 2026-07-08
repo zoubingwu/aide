@@ -216,6 +216,7 @@ function withStaleLockCleanupLock<T>(lockPath: string, task: () => T): T | undef
     }
 
     if (errorCode(error) === "EEXIST") {
+      removeStaleLockFile(cleanupLockPath);
       return undefined;
     }
 
