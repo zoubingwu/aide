@@ -109,10 +109,12 @@ function withScheduleRunRequestLock<T>(home: string, task: () => T): T {
 
   while (true) {
     let fd: number | undefined;
+    let lockOwner: string | undefined;
 
     try {
+      lockOwner = `${process.pid}:${randomUUID()}`;
       fd = fs.openSync(lockPath, "wx", 0o600);
-      fs.writeFileSync(fd, `${process.pid}\n${new Date().toISOString()}\n`);
+      fs.writeFileSync(fd, `${lockOwner}\n${new Date().toISOString()}\n`);
       return task();
     } catch (error) {
       if (fd !== undefined) {
@@ -133,8 +135,23 @@ function withScheduleRunRequestLock<T>(home: string, task: () => T): T {
     } finally {
       if (fd !== undefined) {
         fs.closeSync(fd);
-        fs.rmSync(lockPath, { force: true });
+
+        if (lockOwner) {
+          removeOwnedLock(lockPath, lockOwner);
+        }
       }
+    }
+  }
+}
+
+function removeOwnedLock(lockPath: string, lockOwner: string): void {
+  try {
+    if (fs.readFileSync(lockPath, "utf8").split("\n", 1)[0] === lockOwner) {
+      fs.rmSync(lockPath, { force: true });
+    }
+  } catch (error) {
+    if (errorCode(error) !== "ENOENT") {
+      throw error;
     }
   }
 }

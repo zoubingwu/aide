@@ -87,6 +87,28 @@ describe("schedule run requests", () => {
     expect(loadScheduleRunRequests(home)).toEqual([]);
   });
 
+  it("keeps a fresh request lock that replaces this process lock before release", () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const lockPath = `${scheduleRunRequestsPath(home)}.lock`;
+    const closeSync = fs.closeSync.bind(fs);
+    let replaced = false;
+    vi.spyOn(fs, "closeSync").mockImplementation((fd: number) => {
+      closeSync(fd);
+
+      if (!replaced) {
+        replaced = true;
+        fs.rmSync(lockPath, { force: true });
+        fs.writeFileSync(lockPath, "fresh-owner\n2026-05-10T01:00:00.000Z\n");
+      }
+    });
+
+    const request = addScheduleRunRequest(home, "daily-brief", new Date("2026-05-10T01:00:00.000Z"));
+
+    expect(loadScheduleRunRequests(home)).toEqual([request]);
+    expect(fs.readFileSync(lockPath, "utf8")).toBe("fresh-owner\n2026-05-10T01:00:00.000Z\n");
+  });
+
   it("does nothing when the runtime is stopped", () => {
     const home = tempHome();
     ensureAideHome(home);
