@@ -123,6 +123,41 @@ describe("schedule run requests", () => {
     expect(fs.existsSync(cleanupLockPath)).toBe(false);
   });
 
+  it("keeps a fresh cleanup lock that replaces a stale cleanup lock during recovery", () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const lockPath = `${scheduleRunRequestsPath(home)}.lock`;
+    const cleanupLockPath = `${lockPath}.cleanup`;
+    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+    fs.writeFileSync(lockPath, "stale\n");
+    fs.writeFileSync(cleanupLockPath, "stale-cleanup-owner\n");
+    fs.utimesSync(lockPath, new Date(0), new Date(0));
+    fs.utimesSync(cleanupLockPath, new Date(0), new Date(0));
+    vi.spyOn(Date, "now").mockReturnValueOnce(60_000).mockReturnValue(62_001);
+    const readFileSync = fs.readFileSync.bind(fs) as (file: fs.PathOrFileDescriptor, options?: unknown) => string | Buffer;
+    let cleanupReads = 0;
+    vi.spyOn(fs, "readFileSync").mockImplementation(((target, options) => {
+      if (target.toString() === cleanupLockPath) {
+        cleanupReads += 1;
+
+        if (cleanupReads === 2) {
+          fs.rmSync(cleanupLockPath, { force: true });
+          fs.writeFileSync(cleanupLockPath, "fresh-cleanup-owner\n2026-05-10T01:00:00.000Z\n");
+          fs.utimesSync(cleanupLockPath, new Date(60_000), new Date(60_000));
+        }
+      }
+
+      return readFileSync(target, options);
+    }) as typeof fs.readFileSync);
+
+    expect(() => addScheduleRunRequest(home, "daily-brief", new Date("2026-05-10T01:00:00.000Z"))).toThrow(
+      "Timed out waiting for schedule run request lock"
+    );
+    expect(fs.readFileSync(lockPath, "utf8")).toBe("stale\n");
+    expect(fs.readFileSync(cleanupLockPath, "utf8")).toBe("fresh-cleanup-owner\n2026-05-10T01:00:00.000Z\n");
+    expect(loadScheduleRunRequests(home)).toEqual([]);
+  });
+
   it("keeps a fresh request lock that replaces this process lock before release", () => {
     const home = tempHome();
     ensureAideHome(home);

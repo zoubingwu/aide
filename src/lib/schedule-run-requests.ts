@@ -185,12 +185,14 @@ function removeStaleLock(lockPath: string): void {
 function removeStaleLockFile(lockPath: string): void {
   try {
     const staleStat = fs.statSync(lockPath);
+    const staleOwner = lockOwner(lockPath);
 
     if (Date.now() - staleStat.mtimeMs > LOCK_STALE_MS) {
       const currentStat = fs.statSync(lockPath);
+      const currentOwner = lockOwner(lockPath);
 
-      if (sameLockFile(staleStat, currentStat)) {
-        fs.rmSync(lockPath, { force: true });
+      if (sameLockFile(staleStat, currentStat) && currentOwner === staleOwner) {
+        removeOwnedLock(lockPath, currentOwner);
       }
     }
   } catch (error) {
@@ -198,6 +200,10 @@ function removeStaleLockFile(lockPath: string): void {
       throw error;
     }
   }
+}
+
+function lockOwner(lockPath: string): string {
+  return fs.readFileSync(lockPath, "utf8").split("\n", 1)[0] ?? "";
 }
 
 function withStaleLockCleanupLock<T>(lockPath: string, task: () => T): T | undefined {
