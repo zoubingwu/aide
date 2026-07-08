@@ -5,7 +5,7 @@ import { z } from "zod";
 import { assertInitialized, readJson } from "./config.js";
 import { appendRuntimeLog } from "./logging.js";
 import { runtimeDisplayStatus } from "./runtime-state.js";
-import { scheduleRunRequestsPath } from "./paths.js";
+import { completedScheduleRunRequestsPath, scheduleRunRequestsPath } from "./paths.js";
 import { SCHEDULE_RELOAD_SIGNAL } from "./schedule-reload.js";
 
 const scheduleRunRequestSchema = z.object({
@@ -16,6 +16,9 @@ const scheduleRunRequestSchema = z.object({
 
 const scheduleRunRequestsFileSchema = z.object({
   requests: z.array(scheduleRunRequestSchema).default([])
+});
+const completedScheduleRunRequestsFileSchema = z.object({
+  requests: z.array(z.string().min(1)).default([])
 });
 
 const LOCK_WAIT_MS = 2_000;
@@ -47,6 +50,19 @@ export function addScheduleRunRequest(home: string, scheduleId: string, now = ne
 
 export function removeScheduleRunRequest(home: string, id: string): void {
   updateScheduleRunRequests(home, (requests) => requests.filter((request) => request.id !== id));
+}
+
+export function loadCompletedScheduleRunRequests(home: string): Set<string> {
+  assertInitialized(home);
+  return new Set(completedScheduleRunRequestsFileSchema.parse(readJson(completedScheduleRunRequestsPath(home), { requests: [] })).requests);
+}
+
+export function addCompletedScheduleRunRequest(home: string, id: string): void {
+  updateCompletedScheduleRunRequests(home, (requests) => (requests.includes(id) ? requests : [...requests, id]));
+}
+
+export function removeCompletedScheduleRunRequest(home: string, id: string): void {
+  updateCompletedScheduleRunRequests(home, (requests) => requests.filter((requestId) => requestId !== id));
 }
 
 export function requestScheduleRun(home: string, scheduleId: string): boolean {
@@ -87,6 +103,27 @@ function updateScheduleRunRequests(home: string, update: (requests: ScheduleRunR
 
 function readScheduleRunRequests(home: string): ScheduleRunRequest[] {
   return scheduleRunRequestsFileSchema.parse(readJson(scheduleRunRequestsPath(home), { requests: [] })).requests;
+}
+
+function updateCompletedScheduleRunRequests(home: string, update: (requests: string[]) => string[]): void {
+  assertInitialized(home);
+  writeCompletedScheduleRunRequests(home, update([...loadCompletedScheduleRunRequests(home)]));
+}
+
+function writeCompletedScheduleRunRequests(home: string, requests: string[]): void {
+  const body = completedScheduleRunRequestsFileSchema.parse({ requests });
+  const filePath = completedScheduleRunRequestsPath(home);
+  const tempPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
+
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  try {
+    fs.writeFileSync(tempPath, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600 });
+    fs.chmodSync(tempPath, 0o600);
+    fs.renameSync(tempPath, filePath);
+  } catch (error) {
+    fs.rmSync(tempPath, { force: true });
+    throw error;
+  }
 }
 
 function writeScheduleRunRequests(home: string, requests: ScheduleRunRequest[], lock: ScheduleRunRequestLock): void {

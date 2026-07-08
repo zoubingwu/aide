@@ -7,7 +7,7 @@ import { addPendingDelivery, loadPendingDeliveries } from "../src/lib/delivery-r
 import { RUNTIME_LOG_FILE } from "../src/lib/logging.js";
 import { logsDir, scheduleCheckpointsPath, scheduleRunRequestsPath, schedulesPath } from "../src/lib/paths.js";
 import { loadScheduleCheckpoints, recordScheduleCheck } from "../src/lib/schedule-checkpoints.js";
-import { addScheduleRunRequest, loadScheduleRunRequests } from "../src/lib/schedule-run-requests.js";
+import { addScheduleRunRequest, loadCompletedScheduleRunRequests, loadScheduleRunRequests } from "../src/lib/schedule-run-requests.js";
 import { executeScheduleOnce, RuntimeScheduler } from "../src/lib/scheduler.js";
 import { loadSchedules, writeSchedules } from "../src/lib/schedules.js";
 import type { AgentRunResult, Endpoint, Schedule } from "../src/lib/types.js";
@@ -599,6 +599,52 @@ describe("scheduler execution", () => {
     expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "queued brief");
     expect(loadScheduleRunRequests(home)).toEqual([request]);
     scheduler.stop();
+  });
+
+  it("does not re-run completed manual requests after restart when removal failed", async () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = dailySchedule();
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+    const request = addScheduleRunRequest(home, schedule.id, new Date("2026-05-10T01:00:00.000Z"));
+    const lockPath = `${scheduleRunRequestsPath(home)}.lock`;
+    fs.writeFileSync(lockPath, "busy-owner\n2026-05-10T01:00:00.000Z\n");
+    vi.spyOn(Date, "now").mockReturnValueOnce(60_000).mockReturnValue(62_001);
+
+    const firstScheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest: vi.fn().mockResolvedValue(agentResult({ response: "queued brief" })),
+      deliver
+    });
+
+    await firstScheduler.runRequestedSchedules();
+    firstScheduler.stop();
+
+    expect(loadScheduleRunRequests(home)).toEqual([request]);
+    expect([...loadCompletedScheduleRunRequests(home)]).toEqual([request.id]);
+
+    vi.restoreAllMocks();
+    fs.rmSync(lockPath, { force: true });
+    const restartedHandleRequest = vi.fn().mockResolvedValue(agentResult({ response: "replayed brief" }));
+    const secondScheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest: restartedHandleRequest,
+      deliver
+    });
+
+    await secondScheduler.runRequestedSchedules();
+
+    expect(restartedHandleRequest).toHaveBeenCalledTimes(0);
+    expect(loadScheduleRunRequests(home)).toEqual([]);
+    expect([...loadCompletedScheduleRunRequests(home)]).toEqual([]);
+    secondScheduler.stop();
   });
 
   it("keeps queued manual run requests until each run finishes", async () => {

@@ -12,7 +12,14 @@ import {
 } from "./delivery-retries.js";
 import { deliverDiscordMessage } from "./discord-delivery.js";
 import { appendRuntimeLog } from "./logging.js";
-import { loadScheduleRunRequests, removeScheduleRunRequest, type ScheduleRunRequest } from "./schedule-run-requests.js";
+import {
+  addCompletedScheduleRunRequest,
+  loadCompletedScheduleRunRequests,
+  loadScheduleRunRequests,
+  removeCompletedScheduleRunRequest,
+  removeScheduleRunRequest,
+  type ScheduleRunRequest
+} from "./schedule-run-requests.js";
 import {
   claimScheduleOccurrence,
   loadScheduleCheckpoints,
@@ -493,10 +500,11 @@ export class RuntimeScheduler {
         return;
       }
 
+      this.loadCompletedRunRequests();
       const requestIds = new Set(requests.map((request) => request.id));
       for (const id of this.completedRunRequests) {
         if (!requestIds.has(id)) {
-          this.completedRunRequests.delete(id);
+          this.clearCompletedRunRequest(id);
         }
       }
 
@@ -510,7 +518,7 @@ export class RuntimeScheduler {
             return;
           }
 
-          this.completedRunRequests.delete(request.id);
+          this.clearCompletedRunRequest(request.id);
           continue;
         }
 
@@ -526,7 +534,7 @@ export class RuntimeScheduler {
         }
 
         if (!this.removeRunRequest(request)) {
-          this.completedRunRequests.add(request.id);
+          this.markCompletedRunRequest(request);
           return;
         }
       }
@@ -546,6 +554,43 @@ export class RuntimeScheduler {
         error: errorMessage(error)
       });
       return false;
+    }
+  }
+
+  private loadCompletedRunRequests(): void {
+    try {
+      for (const id of loadCompletedScheduleRunRequests(this.options.home)) {
+        this.completedRunRequests.add(id);
+      }
+    } catch (error) {
+      appendRuntimeLog(this.options.home, "schedule_run_request_completed_load_failed", { error: errorMessage(error) });
+    }
+  }
+
+  private markCompletedRunRequest(request: ScheduleRunRequest): void {
+    this.completedRunRequests.add(request.id);
+
+    try {
+      addCompletedScheduleRunRequest(this.options.home, request.id);
+    } catch (error) {
+      appendRuntimeLog(this.options.home, "schedule_run_request_completed_mark_failed", {
+        schedule: request.scheduleId,
+        request: request.id,
+        error: errorMessage(error)
+      });
+    }
+  }
+
+  private clearCompletedRunRequest(id: string): void {
+    this.completedRunRequests.delete(id);
+
+    try {
+      removeCompletedScheduleRunRequest(this.options.home, id);
+    } catch (error) {
+      appendRuntimeLog(this.options.home, "schedule_run_request_completed_clear_failed", {
+        request: id,
+        error: errorMessage(error)
+      });
     }
   }
 
