@@ -529,7 +529,7 @@ describe("scheduler execution", () => {
     writeSchedules(home, [schedule]);
     const request = addScheduleRunRequest(home, schedule.id, new Date("2026-05-10T01:00:00.000Z"));
     const lockPath = `${scheduleRunRequestsPath(home)}.lock`;
-    fs.writeFileSync(lockPath, "busy-owner\n2026-05-10T01:00:00.000Z\n");
+    writeRequestLock(lockPath, "busy-owner");
     vi.spyOn(Date, "now").mockReturnValueOnce(60_000).mockReturnValue(62_001);
     const handleRequest = vi.fn().mockResolvedValue(agentResult({ response: "queued brief" }));
 
@@ -584,7 +584,7 @@ describe("scheduler execution", () => {
     const firstDrain = scheduler.runRequestedSchedules();
     await started;
     const secondDrain = scheduler.runRequestedSchedules();
-    fs.writeFileSync(`${scheduleRunRequestsPath(home)}.lock`, "busy-owner\n2026-05-10T01:00:00.000Z\n");
+    writeRequestLock(`${scheduleRunRequestsPath(home)}.lock`, "busy-owner");
     vi.spyOn(Date, "now")
       .mockReturnValueOnce(60_000)
       .mockReturnValueOnce(62_001)
@@ -611,7 +611,7 @@ describe("scheduler execution", () => {
     writeSchedules(home, [schedule]);
     const request = addScheduleRunRequest(home, schedule.id, new Date("2026-05-10T01:00:00.000Z"));
     const lockPath = `${scheduleRunRequestsPath(home)}.lock`;
-    fs.writeFileSync(lockPath, "busy-owner\n2026-05-10T01:00:00.000Z\n");
+    writeRequestLock(lockPath, "busy-owner");
     vi.spyOn(Date, "now").mockReturnValueOnce(60_000).mockReturnValue(62_001);
 
     const firstScheduler = new RuntimeScheduler({
@@ -629,7 +629,7 @@ describe("scheduler execution", () => {
     expect([...loadCompletedScheduleRunRequests(home)]).toEqual([request.id]);
 
     vi.restoreAllMocks();
-    fs.rmSync(lockPath, { force: true });
+    fs.rmSync(lockPath, { recursive: true, force: true });
     const restartedHandleRequest = vi.fn().mockResolvedValue(agentResult({ response: "replayed brief" }));
     const secondScheduler = new RuntimeScheduler({
       home,
@@ -1646,4 +1646,10 @@ function tempHome(): string {
   const target = fs.mkdtempSync(path.join(os.tmpdir(), "aide-scheduler-"));
   cleanupPaths.push(target);
   return target;
+}
+
+function writeRequestLock(lockPath: string, owner: string): void {
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+  fs.mkdirSync(lockPath, { mode: 0o700 });
+  fs.writeFileSync(path.join(lockPath, owner), `${owner}\n2026-05-10T01:00:00.000Z\n`, { mode: 0o600 });
 }

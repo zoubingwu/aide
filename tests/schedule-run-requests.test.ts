@@ -40,10 +40,8 @@ describe("schedule run requests", () => {
     const home = tempHome();
     ensureAideHome(home);
     const lockPath = `${scheduleRunRequestsPath(home)}.lock`;
-    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
-    fs.writeFileSync(lockPath, "stale\n");
     const staleAt = new Date(Date.now() - 60_000);
-    fs.utimesSync(lockPath, staleAt, staleAt);
+    writeLock(lockPath, "stale", staleAt);
 
     const request = addScheduleRunRequest(home, "daily-brief", new Date("2026-05-10T01:00:00.000Z"));
 
@@ -55,15 +53,13 @@ describe("schedule run requests", () => {
     const home = tempHome();
     ensureAideHome(home);
     const lockPath = `${scheduleRunRequestsPath(home)}.lock`;
-    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
-    fs.writeFileSync(lockPath, `${process.pid}:live-owner\n`);
-    fs.utimesSync(lockPath, new Date(0), new Date(0));
+    writeLock(lockPath, `${process.pid}.live-owner`, new Date(0));
     vi.spyOn(Date, "now").mockReturnValueOnce(60_000).mockReturnValue(62_001);
 
     expect(() => addScheduleRunRequest(home, "daily-brief", new Date("2026-05-10T01:00:00.000Z"))).toThrow(
       "Timed out waiting for schedule run request lock"
     );
-    expect(fs.readFileSync(lockPath, "utf8")).toBe(`${process.pid}:live-owner\n`);
+    expect(readLockOwner(lockPath)).toBe(`${process.pid}.live-owner`);
     expect(loadScheduleRunRequests(home)).toEqual([]);
   });
 
@@ -71,9 +67,7 @@ describe("schedule run requests", () => {
     const home = tempHome();
     ensureAideHome(home);
     const lockPath = `${scheduleRunRequestsPath(home)}.lock`;
-    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
-    fs.writeFileSync(lockPath, "stale\n");
-    fs.utimesSync(lockPath, new Date(0), new Date(0));
+    writeLock(lockPath, "stale", new Date(0));
     const statSync = fs.statSync.bind(fs) as (target: fs.PathLike) => fs.Stats;
     let lockStats = 0;
     vi.spyOn(Date, "now")
@@ -87,9 +81,7 @@ describe("schedule run requests", () => {
         lockStats += 1;
 
         if (lockStats === 1) {
-          fs.rmSync(lockPath, { force: true });
-          fs.writeFileSync(lockPath, "fresh\n");
-          fs.utimesSync(lockPath, new Date(60_000), new Date(60_000));
+          replaceLock(lockPath, "fresh", new Date(60_000));
         }
       }
 
@@ -99,7 +91,7 @@ describe("schedule run requests", () => {
     expect(() => addScheduleRunRequest(home, "daily-brief", new Date("2026-05-10T01:00:00.000Z"))).toThrow(
       "Timed out waiting for schedule run request lock"
     );
-    expect(fs.readFileSync(lockPath, "utf8")).toBe("fresh\n");
+    expect(readLockOwner(lockPath)).toBe("fresh");
     expect(loadScheduleRunRequests(home)).toEqual([]);
   });
 
@@ -108,16 +100,14 @@ describe("schedule run requests", () => {
     ensureAideHome(home);
     const lockPath = `${scheduleRunRequestsPath(home)}.lock`;
     const cleanupLockPath = `${lockPath}.cleanup`;
-    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
-    fs.writeFileSync(lockPath, "stale\n");
-    fs.writeFileSync(cleanupLockPath, "cleanup-owner\n");
-    fs.utimesSync(lockPath, new Date(0), new Date(0));
+    writeLock(lockPath, "stale", new Date(0));
+    writeLock(cleanupLockPath, "cleanup-owner");
     vi.spyOn(Date, "now").mockReturnValueOnce(60_000).mockReturnValue(62_001);
 
     expect(() => addScheduleRunRequest(home, "daily-brief", new Date("2026-05-10T01:00:00.000Z"))).toThrow(
       "Timed out waiting for schedule run request lock"
     );
-    expect(fs.readFileSync(lockPath, "utf8")).toBe("stale\n");
+    expect(readLockOwner(lockPath)).toBe("stale");
     expect(loadScheduleRunRequests(home)).toEqual([]);
   });
 
@@ -126,11 +116,8 @@ describe("schedule run requests", () => {
     ensureAideHome(home);
     const lockPath = `${scheduleRunRequestsPath(home)}.lock`;
     const cleanupLockPath = `${lockPath}.cleanup`;
-    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
-    fs.writeFileSync(lockPath, "stale\n");
-    fs.writeFileSync(cleanupLockPath, "stale-cleanup-owner\n");
-    fs.utimesSync(lockPath, new Date(0), new Date(0));
-    fs.utimesSync(cleanupLockPath, new Date(0), new Date(0));
+    writeLock(lockPath, "stale", new Date(0));
+    writeLock(cleanupLockPath, "stale-cleanup-owner", new Date(0));
 
     const request = addScheduleRunRequest(home, "daily-brief", new Date("2026-05-10T01:00:00.000Z"));
 
@@ -144,33 +131,30 @@ describe("schedule run requests", () => {
     ensureAideHome(home);
     const lockPath = `${scheduleRunRequestsPath(home)}.lock`;
     const cleanupLockPath = `${lockPath}.cleanup`;
-    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
-    fs.writeFileSync(lockPath, "stale\n");
-    fs.writeFileSync(cleanupLockPath, "stale-cleanup-owner\n");
-    fs.utimesSync(lockPath, new Date(0), new Date(0));
-    fs.utimesSync(cleanupLockPath, new Date(0), new Date(0));
+    writeLock(lockPath, "stale", new Date(0));
+    writeLock(cleanupLockPath, "stale-cleanup-owner", new Date(0));
     vi.spyOn(Date, "now").mockReturnValueOnce(60_000).mockReturnValue(62_001);
-    const readFileSync = fs.readFileSync.bind(fs) as (file: fs.PathOrFileDescriptor, options?: unknown) => string | Buffer;
+    const readdirSync = fs.readdirSync.bind(fs) as (target: fs.PathLike) => string[];
     let cleanupReads = 0;
-    vi.spyOn(fs, "readFileSync").mockImplementation(((target, options) => {
+    vi.spyOn(fs, "readdirSync").mockImplementation(((target) => {
+      const entries = readdirSync(target);
+
       if (target.toString() === cleanupLockPath) {
         cleanupReads += 1;
 
         if (cleanupReads === 2) {
-          fs.rmSync(cleanupLockPath, { force: true });
-          fs.writeFileSync(cleanupLockPath, "fresh-cleanup-owner\n2026-05-10T01:00:00.000Z\n");
-          fs.utimesSync(cleanupLockPath, new Date(60_000), new Date(60_000));
+          replaceLock(cleanupLockPath, "fresh-cleanup-owner", new Date(60_000));
         }
       }
 
-      return readFileSync(target, options);
-    }) as typeof fs.readFileSync);
+      return entries;
+    }) as typeof fs.readdirSync);
 
     expect(() => addScheduleRunRequest(home, "daily-brief", new Date("2026-05-10T01:00:00.000Z"))).toThrow(
       "Timed out waiting for schedule run request lock"
     );
-    expect(fs.readFileSync(lockPath, "utf8")).toBe("stale\n");
-    expect(fs.readFileSync(cleanupLockPath, "utf8")).toBe("fresh-cleanup-owner\n2026-05-10T01:00:00.000Z\n");
+    expect(readLockOwner(lockPath)).toBe("stale");
+    expect(readLockOwner(cleanupLockPath)).toBe("fresh-cleanup-owner");
     expect(loadScheduleRunRequests(home)).toEqual([]);
   });
 
@@ -183,17 +167,16 @@ describe("schedule run requests", () => {
     vi.spyOn(fs, "renameSync").mockImplementation((oldPath: fs.PathLike, newPath: fs.PathLike) => {
       renameSync(oldPath, newPath);
 
-      if (!replaced) {
+      if (!replaced && newPath.toString() === scheduleRunRequestsPath(home)) {
         replaced = true;
-        fs.rmSync(lockPath, { force: true });
-        fs.writeFileSync(lockPath, "fresh-owner\n2026-05-10T01:00:00.000Z\n");
+        replaceLock(lockPath, "fresh-owner");
       }
     });
 
     const request = addScheduleRunRequest(home, "daily-brief", new Date("2026-05-10T01:00:00.000Z"));
 
     expect(loadScheduleRunRequests(home)).toEqual([request]);
-    expect(fs.readFileSync(lockPath, "utf8")).toBe("fresh-owner\n2026-05-10T01:00:00.000Z\n");
+    expect(readLockOwner(lockPath)).toBe("fresh-owner");
   });
 
   it("does not overwrite the queue after losing lock ownership before write", () => {
@@ -217,8 +200,9 @@ describe("schedule run requests", () => {
 
       if (!replaced && typeof target !== "number" && target.toString().endsWith(".tmp")) {
         replaced = true;
-        fs.rmSync(lockPath, { force: true });
-        writeFileSync(lockPath, "fresh-owner\n2026-05-10T02:00:00.000Z\n");
+        fs.rmSync(lockPath, { recursive: true, force: true });
+        fs.mkdirSync(lockPath, { mode: 0o700 });
+        writeFileSync(path.join(lockPath, "fresh-owner"), "fresh-owner\n2026-05-10T02:00:00.000Z\n", { mode: 0o600 });
         writeFileSync(filePath, `${JSON.stringify({ requests: [freshRequest] }, null, 2)}\n`, { mode: 0o600 });
       }
     }) as typeof fs.writeFileSync);
@@ -227,7 +211,7 @@ describe("schedule run requests", () => {
       "Lost schedule run request lock ownership"
     );
     expect(loadScheduleRunRequests(home)).toEqual([freshRequest]);
-    expect(fs.readFileSync(lockPath, "utf8")).toBe("fresh-owner\n2026-05-10T02:00:00.000Z\n");
+    expect(readLockOwner(lockPath)).toBe("fresh-owner");
   });
 
   it("does nothing when the runtime is stopped", () => {
@@ -261,4 +245,20 @@ function tempHome(): string {
   const target = fs.mkdtempSync(path.join(os.tmpdir(), "aide-schedule-run-requests-"));
   cleanupPaths.push(target);
   return target;
+}
+
+function writeLock(lockPath: string, owner: string, mtime = new Date("2026-05-10T01:00:00.000Z")): void {
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+  fs.mkdirSync(lockPath, { mode: 0o700 });
+  fs.writeFileSync(path.join(lockPath, owner), `${owner}\n2026-05-10T01:00:00.000Z\n`, { mode: 0o600 });
+  fs.utimesSync(lockPath, mtime, mtime);
+}
+
+function replaceLock(lockPath: string, owner: string, mtime = new Date("2026-05-10T01:00:00.000Z")): void {
+  fs.rmSync(lockPath, { recursive: true, force: true });
+  writeLock(lockPath, owner, mtime);
+}
+
+function readLockOwner(lockPath: string): string {
+  return fs.readdirSync(lockPath)[0] ?? "";
 }

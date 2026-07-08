@@ -151,20 +151,17 @@ function withScheduleRunRequestLock<T>(home: string, task: (lock: ScheduleRunReq
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
 
   while (true) {
-    let fd: number | undefined;
-    let lockOwner: string | undefined;
+    let lock: ScheduleRunRequestLock | undefined;
 
     try {
-      lockOwner = `${process.pid}:${randomUUID()}`;
-      fd = fs.openSync(lockPath, "wx", 0o600);
-      fs.writeFileSync(fd, `${lockOwner}\n${new Date().toISOString()}\n`);
-      return task({ path: lockPath, owner: lockOwner });
+      lock = acquireLock(lockPath);
+      return task(lock);
     } catch (error) {
-      if (fd !== undefined) {
+      if (lock !== undefined) {
         throw error;
       }
 
-      if (errorCode(error) !== "EEXIST") {
+      if (!isLockExistsError(error)) {
         throw error;
       }
 
@@ -176,12 +173,8 @@ function withScheduleRunRequestLock<T>(home: string, task: (lock: ScheduleRunReq
 
       sleepSync(LOCK_RETRY_MS);
     } finally {
-      if (fd !== undefined) {
-        fs.closeSync(fd);
-
-        if (lockOwner) {
-          removeOwnedLock(lockPath, lockOwner);
-        }
+      if (lock !== undefined) {
+        removeOwnedLock(lock.path, lock.owner);
       }
     }
   }
@@ -189,7 +182,7 @@ function withScheduleRunRequestLock<T>(home: string, task: (lock: ScheduleRunReq
 
 function assertOwnedLock(lock: ScheduleRunRequestLock): void {
   try {
-    if (fs.readFileSync(lock.path, "utf8").split("\n", 1)[0] !== lock.owner) {
+    if (lockOwner(lock.path) !== lock.owner) {
       throw new Error(`Lost schedule run request lock ownership: ${lock.path}`);
     }
   } catch (error) {
@@ -201,13 +194,36 @@ function assertOwnedLock(lock: ScheduleRunRequestLock): void {
   }
 }
 
+function acquireLock(lockPath: string): ScheduleRunRequestLock {
+  const owner = `${process.pid}.${randomUUID()}`;
+  const tempPath = `${lockPath}.${owner}.tmp`;
+
+  fs.mkdirSync(tempPath, { mode: 0o700 });
+  try {
+    fs.writeFileSync(lockOwnerPath(tempPath, owner), `${owner}\n${new Date().toISOString()}\n`, { mode: 0o600 });
+    fs.renameSync(tempPath, lockPath);
+    return { path: lockPath, owner };
+  } catch (error) {
+    fs.rmSync(tempPath, { recursive: true, force: true });
+    throw error;
+  }
+}
+
 function removeOwnedLock(lockPath: string, lockOwner: string): void {
   try {
-    if (fs.readFileSync(lockPath, "utf8").split("\n", 1)[0] === lockOwner) {
-      fs.rmSync(lockPath, { force: true });
-    }
+    fs.unlinkSync(lockOwnerPath(lockPath, lockOwner));
   } catch (error) {
-    if (errorCode(error) !== "ENOENT") {
+    if (errorCode(error) === "ENOENT") {
+      return;
+    }
+
+    throw error;
+  }
+
+  try {
+    fs.rmdirSync(lockPath);
+  } catch (error) {
+    if (errorCode(error) !== "ENOENT" && errorCode(error) !== "ENOTEMPTY") {
       throw error;
     }
   }
@@ -224,7 +240,7 @@ function removeStaleLockFile(lockPath: string): void {
     const staleStat = fs.statSync(lockPath);
     const staleOwner = lockOwner(lockPath);
 
-    if (Date.now() - staleStat.mtimeMs > LOCK_STALE_MS && !lockOwnerIsAlive(staleOwner)) {
+    if (staleOwner && Date.now() - staleStat.mtimeMs > LOCK_STALE_MS && !lockOwnerIsAlive(staleOwner)) {
       const currentStat = fs.statSync(lockPath);
       const currentOwner = lockOwner(lockPath);
 
@@ -240,11 +256,15 @@ function removeStaleLockFile(lockPath: string): void {
 }
 
 function lockOwner(lockPath: string): string {
-  return fs.readFileSync(lockPath, "utf8").split("\n", 1)[0] ?? "";
+  return fs.readdirSync(lockPath)[0] ?? "";
+}
+
+function lockOwnerPath(lockPath: string, owner: string): string {
+  return path.join(lockPath, owner);
 }
 
 function lockOwnerIsAlive(owner: string): boolean {
-  const pid = Number(owner.split(":", 1)[0]);
+  const pid = Number(owner.split(/[.:]/, 1)[0]);
 
   if (!Number.isInteger(pid) || pid <= 0) {
     return false;
@@ -260,32 +280,25 @@ function lockOwnerIsAlive(owner: string): boolean {
 
 function withStaleLockCleanupLock<T>(lockPath: string, task: () => T): T | undefined {
   const cleanupLockPath = `${lockPath}.cleanup`;
-  let fd: number | undefined;
-  let lockOwner: string | undefined;
+  let lock: ScheduleRunRequestLock | undefined;
 
   try {
-    lockOwner = `${process.pid}:${randomUUID()}`;
-    fd = fs.openSync(cleanupLockPath, "wx", 0o600);
-    fs.writeFileSync(fd, `${lockOwner}\n${new Date().toISOString()}\n`);
+    lock = acquireLock(cleanupLockPath);
     return task();
   } catch (error) {
-    if (fd !== undefined) {
+    if (lock !== undefined) {
       throw error;
     }
 
-    if (errorCode(error) === "EEXIST") {
+    if (isLockExistsError(error)) {
       removeStaleLockFile(cleanupLockPath);
       return undefined;
     }
 
     throw error;
   } finally {
-    if (fd !== undefined) {
-      fs.closeSync(fd);
-
-      if (lockOwner) {
-        removeOwnedLock(cleanupLockPath, lockOwner);
-      }
+    if (lock !== undefined) {
+      removeOwnedLock(lock.path, lock.owner);
     }
   }
 }
@@ -305,4 +318,9 @@ function sleepSync(ms: number): void {
 
 function errorCode(error: unknown): string | undefined {
   return typeof error === "object" && error !== null && "code" in error ? String(error.code) : undefined;
+}
+
+function isLockExistsError(error: unknown): boolean {
+  const code = errorCode(error);
+  return code === "EEXIST" || code === "ENOTEMPTY" || code === "ENOTDIR";
 }
