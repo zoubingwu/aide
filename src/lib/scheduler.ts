@@ -208,6 +208,7 @@ export class RuntimeScheduler {
   private recoveryDrain: Promise<void> = Promise.resolve();
   private deliveryDrain: Promise<void> = Promise.resolve();
   private scheduleRunDrain: Promise<void> = Promise.resolve();
+  private readonly completedRunRequests = new Set<string>();
   private drainingScheduleRunRequests = false;
   private stopped = false;
 
@@ -492,9 +493,25 @@ export class RuntimeScheduler {
         return;
       }
 
+      const requestIds = new Set(requests.map((request) => request.id));
+      for (const id of this.completedRunRequests) {
+        if (!requestIds.has(id)) {
+          this.completedRunRequests.delete(id);
+        }
+      }
+
       for (const request of requests) {
         if (this.stopped) {
           return;
+        }
+
+        if (this.completedRunRequests.has(request.id)) {
+          if (!this.removeRunRequest(request)) {
+            return;
+          }
+
+          this.completedRunRequests.delete(request.id);
+          continue;
         }
 
         appendRuntimeLog(this.options.home, "schedule_run_request_received", {
@@ -509,6 +526,7 @@ export class RuntimeScheduler {
         }
 
         if (!this.removeRunRequest(request)) {
+          this.completedRunRequests.add(request.id);
           return;
         }
       }

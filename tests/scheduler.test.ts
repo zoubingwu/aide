@@ -551,6 +551,56 @@ describe("scheduler execution", () => {
     scheduler.stop();
   });
 
+  it("does not re-run completed manual requests when another drain is queued after removal fails", async () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = dailySchedule();
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+    const request = addScheduleRunRequest(home, schedule.id, new Date("2026-05-10T01:00:00.000Z"));
+    let markStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    let finishRequest: ((value: AgentRunResult) => void) | undefined;
+    const pending = new Promise<AgentRunResult>((resolve) => {
+      finishRequest = resolve;
+    });
+    const handleRequest = vi.fn(() => {
+      markStarted?.();
+      return pending;
+    });
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([[endpoint.id, {} as never]]),
+      handleRequest,
+      deliver
+    });
+
+    const firstDrain = scheduler.runRequestedSchedules();
+    await started;
+    const secondDrain = scheduler.runRequestedSchedules();
+    fs.writeFileSync(`${scheduleRunRequestsPath(home)}.lock`, "busy-owner\n2026-05-10T01:00:00.000Z\n");
+    vi.spyOn(Date, "now")
+      .mockReturnValueOnce(60_000)
+      .mockReturnValueOnce(62_001)
+      .mockReturnValueOnce(70_000)
+      .mockReturnValueOnce(70_000)
+      .mockReturnValue(72_001);
+
+    finishRequest?.(agentResult({ response: "queued brief" }));
+    await Promise.all([firstDrain, secondDrain]);
+
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "queued brief");
+    expect(loadScheduleRunRequests(home)).toEqual([request]);
+    scheduler.stop();
+  });
+
   it("keeps queued manual run requests until each run finishes", async () => {
     const home = tempHome();
     ensureAideHome(home);
