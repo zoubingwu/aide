@@ -307,6 +307,72 @@ describe("scheduler execution", () => {
     scheduler.stop();
   });
 
+  it("keeps recurring retries queued while manual runs are active", async () => {
+    vi.useFakeTimers({ now: new Date("2026-05-10T10:00:00.000Z") });
+    const home = tempHome();
+    ensureAideHome(home);
+    const endpoint = discordEndpoint();
+    const schedule = dailySchedule();
+    let markManualStarted: (() => void) | undefined;
+    const manualStarted = new Promise<void>((resolve) => {
+      markManualStarted = resolve;
+    });
+    let finishManual: ((value: AgentRunResult) => void) | undefined;
+    const manualPending = new Promise<AgentRunResult>((resolve) => {
+      finishManual = resolve;
+    });
+    let runCount = 0;
+    const handleRequest = vi.fn(() => {
+      runCount += 1;
+
+      if (runCount === 1) {
+        return Promise.resolve(agentResult({ exitCode: 1, response: "network unavailable" }));
+      }
+
+      if (runCount === 2) {
+        markManualStarted?.();
+        return manualPending;
+      }
+
+      return Promise.resolve(agentResult({ response: "retry brief" }));
+    });
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    writeEndpoints(home, [endpoint]);
+    writeSchedules(home, [schedule]);
+
+    const scheduler = new RuntimeScheduler({
+      home,
+      endpoints: [endpoint],
+      clients: new Map([["discord-main", {} as never]]),
+      handleRequest,
+      deliver
+    });
+    const run = bindRun(scheduler);
+
+    await run(schedule);
+    const manualRun = scheduler.runManualSchedule(schedule.id);
+    await manualStarted;
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+
+    expect(handleRequest).toHaveBeenCalledTimes(2);
+    expect(
+      fs
+        .readFileSync(path.join(logsDir(home), RUNTIME_LOG_FILE), "utf8")
+        .trim()
+        .split(/\r?\n/)
+        .map((line) => JSON.parse(line))
+    ).toContainEqual(expect.objectContaining({ message: "schedule_retry_deferred", attempt: 1 }));
+
+    finishManual?.(agentResult({ response: "manual brief" }));
+    await manualRun;
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+
+    expect(handleRequest).toHaveBeenCalledTimes(3);
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "manual brief");
+    expect(deliver).toHaveBeenCalledWith(endpoint, {}, schedule.target, "retry brief");
+    scheduler.stop();
+  });
+
   it("runs manual schedules without claiming a scheduled occurrence", async () => {
     const home = tempHome();
     ensureAideHome(home);
@@ -1357,9 +1423,9 @@ function biweeklySchedule(): Schedule {
 
 function bindRun(
   scheduler: RuntimeScheduler
-): (schedule: Schedule, source?: "scheduled" | "recovery" | "retry", occurrenceAt?: Date) => Promise<"ran" | "skipped"> {
+): (schedule: Schedule, source?: "scheduled" | "recovery" | "retry", occurrenceAt?: Date) => Promise<"ran" | "skipped" | "deferred"> {
   return (scheduler as unknown as {
-    run(schedule: Schedule, source?: "scheduled" | "recovery" | "retry", occurrenceAt?: Date): Promise<"ran" | "skipped">;
+    run(schedule: Schedule, source?: "scheduled" | "recovery" | "retry", occurrenceAt?: Date): Promise<"ran" | "skipped" | "deferred">;
   }).run.bind(scheduler);
 }
 

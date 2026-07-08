@@ -397,6 +397,11 @@ export class RuntimeScheduler {
 
     if (this.running.has(schedule.id)) {
       appendRuntimeLog(this.options.home, "schedule_skipped_running", { schedule: schedule.id });
+      if (source === "retry" && runningSource === "manual") {
+        this.deferRecurringRetry(schedule);
+        return "deferred";
+      }
+
       return source === "manual" ? "deferred" : "skipped";
     }
 
@@ -624,7 +629,20 @@ export class RuntimeScheduler {
     }
 
     this.retryAttempts.set(schedule.id, nextAttempt);
+    this.scheduleRecurringRetry(schedule, nextAttempt, "schedule_retry_scheduled");
+  }
 
+  private deferRecurringRetry(schedule: Schedule): void {
+    const attempt = this.retryAttempts.get(schedule.id);
+
+    if (attempt === undefined) {
+      return;
+    }
+
+    this.scheduleRecurringRetry(schedule, attempt, "schedule_retry_deferred");
+  }
+
+  private scheduleRecurringRetry(schedule: Schedule, attempt: number, message: "schedule_retry_scheduled" | "schedule_retry_deferred"): void {
     const existing = this.retryTimers.get(schedule.id);
     if (existing) {
       clearTimeout(existing);
@@ -643,9 +661,9 @@ export class RuntimeScheduler {
     }, RECURRING_RETRY_MS);
 
     this.retryTimers.set(schedule.id, timer);
-    appendRuntimeLog(this.options.home, "schedule_retry_scheduled", {
+    appendRuntimeLog(this.options.home, message, {
       schedule: schedule.id,
-      attempt: nextAttempt,
+      attempt,
       delayMs: RECURRING_RETRY_MS
     });
   }
