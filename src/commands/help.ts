@@ -49,7 +49,7 @@ Config example
   enabled = true
   token = "<discord-bot-token>"
   trigger = { requireMention = true, freeResponseSources = ["channel:123"] }
-  agent = { provider = "codex", command = "codex", model = "gpt-5.5", reasoningEffort = "medium", outputMode = "concise" }
+  agent = { provider = "codex", command = "codex", model = "gpt-5.6-terra", reasoningEffort = "medium", outputMode = "concise" }
   # Pi uses its configured default model and thinking level when model and reasoningEffort are omitted.
   # agent = { provider = "pi", command = "pi", outputMode = "concise" }
 

@@ -57,7 +57,7 @@ describe("agents", () => {
     expect(defaultAgentConfig("codex")).toEqual({
       provider: "codex",
       command: "codex",
-      model: "gpt-5.5",
+      model: "gpt-5.6-terra",
       reasoningEffort: "medium",
       outputMode: "concise"
     });

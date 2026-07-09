@@ -90,7 +90,7 @@ describe("config", () => {
           agent: {
             provider: "codex",
             command: "codex",
-            model: "gpt-5.5",
+            model: "gpt-5.6-terra",
             reasoningEffort: "high",
             outputMode: "verbose"
           }
@@ -101,7 +101,7 @@ describe("config", () => {
     const content = fs.readFileSync(configPath(home), "utf8");
 
     expect(content).toContain('trigger = { requireMention = false, freeResponseSources = [ "channel:123", "channel:456" ] }');
-    expect(content).toContain('agent = { provider = "codex", command = "codex", model = "gpt-5.5", reasoningEffort = "high", outputMode = "verbose" }');
+    expect(content).toContain('agent = { provider = "codex", command = "codex", model = "gpt-5.6-terra", reasoningEffort = "high", outputMode = "verbose" }');
     expect(content).not.toContain("[endpoints.trigger]");
     expect(content).not.toContain("[endpoints.agent]");
     expect(loadEndpoints(home)[0]?.trigger.freeResponseSources).toEqual(["channel:123", "channel:456"]);
@@ -156,7 +156,7 @@ token = "test-token"
 [endpoints.agent]
 provider = "codex"
 command = "codex"
-model = "gpt-5.5"
+model = "gpt-5.6-terra"
 reasoningEffort = "medium"
 `
     );

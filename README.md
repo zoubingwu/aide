@@ -79,7 +79,7 @@ provider = "discord"
 enabled = true
 token = "<discord-bot-token>"
 trigger = { requireMention = true, freeResponseSources = [] }
-agent = { provider = "codex", command = "codex", model = "gpt-5.5", reasoningEffort = "medium", outputMode = "concise" }
+agent = { provider = "codex", command = "codex", model = "gpt-5.6-terra", reasoningEffort = "medium", outputMode = "concise" }
 ```
 
 Pi can use its own default model and thinking level:

@@ -67,7 +67,7 @@ describe("CLI help", () => {
     expect(stdout).toMatch(/endpoints\.discord-main\.token\s+configured/);
     expect(stdout).toMatch(/endpoints\.discord-main\.trigger\.requireMention\s+true/);
     expect(stdout).toMatch(/endpoints\.discord-main\.agent\.provider\s+codex/);
-    expect(stdout).toMatch(/endpoints\.discord-main\.agent\.model\s+gpt-5\.5/);
+    expect(stdout).toMatch(/endpoints\.discord-main\.agent\.model\s+gpt-5\.6-terra/);
     expect(stdout).toMatch(/endpoints\.discord-main\.agent\.outputMode\s+concise/);
     expect(stdout).not.toContain("test-token");
   });
@@ -302,7 +302,7 @@ describe("CLI help", () => {
     expect(stdout).toContain("Runtime coordination state: <home>/state/");
     expect(stdout).toContain("Supported agent providers: codex, pi.");
     expect(stdout).toContain('trigger = { requireMention = true, freeResponseSources = ["channel:123"] }');
-    expect(stdout).toContain('agent = { provider = "codex", command = "codex", model = "gpt-5.5", reasoningEffort = "medium", outputMode = "concise" }');
+    expect(stdout).toContain('agent = { provider = "codex", command = "codex", model = "gpt-5.6-terra", reasoningEffort = "medium", outputMode = "concise" }');
     expect(stdout).toContain('agent = { provider = "pi", command = "pi", outputMode = "concise" }');
     expect(stdout).toContain("Trigger settings are per endpoint.");
     expect(stdout).toContain("Mention-free server-channel triggers require Message Content Intent");
@@ -342,7 +342,7 @@ describe("CLI help", () => {
     expect(configToml).toContain('token = "test-token"');
     expect(configToml).toContain('provider = "codex"');
     expect(configToml).toContain('command = "codex"');
-    expect(configToml).toContain('model = "gpt-5.5"');
+    expect(configToml).toContain('model = "gpt-5.6-terra"');
     expect(configToml).toContain('reasoningEffort = "medium"');
     expect(configToml).toContain('outputMode = "concise"');
     expect(configToml).toContain("requireMention = true");
@@ -454,7 +454,7 @@ function seedEndpointConfig(home: string): void {
         agent: {
           provider: "codex",
           command: "codex",
-          model: "gpt-5.5",
+          model: "gpt-5.6-terra",
           reasoningEffort: "medium",
           outputMode: "concise"
         }

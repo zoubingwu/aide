@@ -25,7 +25,7 @@ vi.mock("execa", () => ({
 
 const agentConfig: CodexAgentConfig = {
   ...defaultCodexAgentConfig(),
-  model: "gpt-5.5",
+  model: "gpt-5.6-terra",
   reasoningEffort: "medium"
 };
 
@@ -59,7 +59,7 @@ describe("codex", () => {
     expect(buildCodexArgs(agentConfig, workspace, "hello")).toEqual([
       "exec",
       "--model",
-      "gpt-5.5",
+      "gpt-5.6-terra",
       "-c",
       "model_reasoning_effort=\"medium\"",
       "--cd",
@@ -79,7 +79,7 @@ describe("codex", () => {
     ).toEqual([
       "exec",
       "--model",
-      "gpt-5.5",
+      "gpt-5.6-terra",
       "-c",
       "model_reasoning_effort=\"medium\"",
       "-c",
@@ -97,7 +97,7 @@ describe("codex", () => {
     expect(buildFreshCodexArgs(agentConfig, workspace, "hello")).toEqual([
       "exec",
       "--model",
-      "gpt-5.5",
+      "gpt-5.6-terra",
       "-c",
       "model_reasoning_effort=\"medium\"",
       "--cd",
@@ -330,7 +330,7 @@ describe("codex", () => {
         args: [
           "exec",
           "--model",
-          "gpt-5.5",
+          "gpt-5.6-terra",
           "-c",
           "model_reasoning_effort=\"medium\"",
           "--cd",
@@ -426,7 +426,7 @@ describe("codex", () => {
     expect(execa).toHaveBeenCalledWith("codex", [
       "exec",
       "--model",
-      "gpt-5.5",
+      "gpt-5.6-terra",
       "-c",
       "model_reasoning_effort=\"medium\"",
       "--cd",

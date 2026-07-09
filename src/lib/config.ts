@@ -16,7 +16,7 @@ import {
 } from "./paths.js";
 import type { CodexAgentConfig, Endpoint, EndpointTriggerConfig, PiAgentConfig, RuntimeState } from "./types.js";
 
-const DEFAULT_RUNTIME_MODEL = "gpt-5.5";
+const DEFAULT_RUNTIME_MODEL = "gpt-5.6-terra";
 const DEFAULT_REASONING_EFFORT = "medium";
 const DEFAULT_OUTPUT_MODE = "concise";
 
