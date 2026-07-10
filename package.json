@@ -1,6 +1,6 @@
 {
   "name": "@inksphere/aide",
-  "version": "0.24.1",
+  "version": "0.24.2",
   "description": "Turn an agentic CLI into your personal assistant.",
   "license": "Apache-2.0",
   "type": "module",
