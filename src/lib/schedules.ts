@@ -5,7 +5,8 @@ import { assertInitialized, readJson } from "./config.js";
 import { schedulesPath } from "./paths.js";
 import type { Schedule, SchedulesFile, Weekday } from "./types.js";
 
-const idSchema = z.string().min(1).regex(/^[a-z0-9][a-z0-9-]*$/);
+const scheduleIdSchema = z.string().min(1).regex(/^[a-z0-9][a-z0-9-]*$/);
+const endpointIdSchema = z.string().min(1);
 const timeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const cronExpressionSchema = z.string().trim().min(1).refine(isValidCronExpression, { message: "Invalid 5-field cron expression" });
 const targetSchema = z.string().refine(isValidScheduleTarget, { message: "Unsupported schedule target. Use channel:<id> or user:<id>." });
@@ -21,8 +22,8 @@ const weekdayIndex: Record<Weekday, number> = {
   saturday: 6
 };
 const baseScheduleSchema = z.object({
-  id: idSchema,
-  endpoint: idSchema,
+  id: scheduleIdSchema,
+  endpoint: endpointIdSchema,
   enabled: z.boolean().default(true),
   target: targetSchema,
   message: z.string().min(1)

@@ -53,6 +53,25 @@ describe("schedules", () => {
     expect(fs.readFileSync(schedulesPath(home), "utf8")).toContain('"id": "daily-brief"');
   });
 
+  it("allows Unicode endpoint ids", () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    const schedule: Schedule = {
+      id: "daily-brief",
+      endpoint: "鱼鱼",
+      enabled: true,
+      kind: "daily",
+      time: "09:00",
+      timezone: "Asia/Shanghai",
+      target: "channel:123",
+      message: "Generate my daily brief."
+    };
+
+    writeSchedules(home, [schedule]);
+
+    expect(loadSchedules(home)).toEqual([schedule]);
+  });
+
   it("writes and loads cron schedules", () => {
     const home = tempHome();
     ensureAideHome(home);
