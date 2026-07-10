@@ -49,9 +49,11 @@ export async function statusCommand(options: CommandOptions): Promise<void> {
       endpoint.id,
       endpoint.provider === "discord" ? "Discord" : endpoint.provider,
       agentProviderLabel(endpoint.agent.provider),
+      endpoint.agent.model ?? "default",
+      endpoint.agent.reasoningEffort ?? "default",
       statusLabel(endpoint.enabled)
     ]);
-    console.log(printTable(["Endpoint", "Provider", "Agent", "Status"], rows));
+    console.log(printTable(["Endpoint", "Provider", "Agent", "Model", "Thinking", "Status"], rows));
   }
 
   console.log("\nTokens");

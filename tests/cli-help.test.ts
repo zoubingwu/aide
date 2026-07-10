@@ -72,6 +72,55 @@ describe("CLI help", () => {
     expect(stdout).not.toContain("test-token");
   });
 
+  it("shows endpoint model and thinking in status", async () => {
+    const home = tempHome();
+    ensureAideHome(home);
+    writeConfig(home, {
+      endpoints: [
+        {
+          id: "codex-main",
+          provider: "discord",
+          enabled: true,
+          token: "codex-token",
+          trigger: {
+            requireMention: true,
+            freeResponseSources: []
+          },
+          agent: {
+            provider: "codex",
+            command: "codex",
+            model: "gpt-5.6-sol",
+            reasoningEffort: "high",
+            outputMode: "concise"
+          }
+        },
+        {
+          id: "pi-main",
+          provider: "discord",
+          enabled: false,
+          token: "pi-token",
+          trigger: {
+            requireMention: true,
+            freeResponseSources: []
+          },
+          agent: {
+            provider: "pi",
+            command: "pi",
+            outputMode: "concise"
+          }
+        }
+      ]
+    });
+
+    const { stdout } = await runCli("--home", home, "status");
+
+    expect(stdout).toMatch(/Endpoint\s+Provider\s+Agent\s+Model\s+Thinking\s+Status/);
+    expect(stdout).toMatch(/codex-main\s+Discord\s+Codex\s+gpt-5\.6-sol\s+high\s+enabled/);
+    expect(stdout).toMatch(/pi-main\s+Discord\s+Pi\s+default\s+default\s+paused/);
+    expect(stdout).not.toContain("codex-token");
+    expect(stdout).not.toContain("pi-token");
+  });
+
   it("shows config list help examples", async () => {
     const { stdout } = await runCli("config", "list", "--help");
 
