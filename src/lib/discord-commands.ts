@@ -6,6 +6,7 @@ import {
   type InteractionReplyOptions,
   type Interaction
 } from "discord.js";
+import { agentProviderLabel } from "./agent.js";
 import { loadEndpoints, requireEndpointIndex, writeEndpoints } from "./config.js";
 import { chunkDiscordMessage } from "./discord-message-chunks.js";
 import { statusLabel } from "./format.js";
@@ -216,6 +217,9 @@ function discordStatusText(home: string, endpoint: Endpoint, source: string): st
   const pid = runtime.pid ? ` PID ${runtime.pid}` : "";
   return [
     `Endpoint: ${endpoint.id} (${endpoint.enabled ? "enabled" : "paused"})`,
+    `Agent: ${agentProviderLabel(endpoint.agent.provider)}`,
+    `Model: ${endpoint.agent.model ?? "default"}`,
+    `Thinking: ${endpoint.agent.reasoningEffort ?? "default"}`,
     `Runtime: ${runtime.status}${pid}`,
     `Output: ${endpoint.agent.outputMode}`,
     `Active run: ${hasActiveDiscordRun(endpoint, source) ? "active" : "idle"}`

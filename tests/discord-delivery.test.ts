@@ -366,6 +366,9 @@ describe("discord delivery", () => {
     expect(interaction.reply).toHaveBeenCalledWith(
       interactionResponse([
         "Endpoint: discord-agent-ops (enabled)",
+        "Agent: Codex",
+        `Model: ${endpoint.agent.model}`,
+        `Thinking: ${endpoint.agent.reasoningEffort}`,
         "Runtime: stopped",
         "Output: concise",
         "Active run: idle"
